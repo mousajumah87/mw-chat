@@ -1,0 +1,78 @@
+name: mw
+description: "A mw project."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  flutter_localizations:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+  firebase_core: ^4.2.1
+  firebase_auth: ^6.1.2
+  cloud_firestore: ^6.1.0
+  firebase_storage: ^13.0.4
+  image_picker: any
+  file_picker: ^10.3.6
+  intl: ^0.20.2
+  shared_preferences: ^2.5.3
+  provider: ^6.1.5+1
+  flutter_contacts: ^1.1.9+2
+  share_plus: ^12.0.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+  # App Icon generator
+  flutter_launcher_icons: ^0.14.4
+
+  # Splash screen generator
+  flutter_native_splash: ^2.4.1
+
+flutter:
+  uses-material-design: true
+
+  # Needed so Flutter generates app_localizations.dart
+  generate: true
+
+  assets:
+    - assets/logo/mw_mark.png
+    - assets/images/mw_bear_and_smurf.png
+    - assets/images/mw_bg.png
+
+
+# =========================
+# APP ICON CONFIGURATION
+# =========================
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/logo/mw_mark.png"
+  min_sdk_android: 23
+  web:
+    generate: true
+    image_path: "assets/logo/mw_mark.png"
+
+
+# =========================
+# SPLASH SCREEN CONFIGURATION
+# =========================
+flutter_native_splash:
+  color: "#000000"
+  image: assets/logo/mw_mark.png
+  android: true
+  ios: true
+  web: true
+
+  android_12:
+    image: assets/logo/mw_mark.png
+    icon_background_color: "#000000"

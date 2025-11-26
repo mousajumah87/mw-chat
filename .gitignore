@@ -1,0 +1,31 @@
+# Flutter/Dart/Pub related
+.dart_tool/
+.packages
+.pub-cache/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.melos_tool/
+
+# IntelliJ / Android Studio
+*.iml
+.idea/
+android/.gradle/
+android/local.properties
+
+# Xcode
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+macos/Flutter/Flutter.framework
+macos/Flutter/Flutter.podspec
+*.xcworkspace
+*.xcuserstate
+DerivedData/
+
+# VSCode
+.vscode/
+
+# Others
+*.log
