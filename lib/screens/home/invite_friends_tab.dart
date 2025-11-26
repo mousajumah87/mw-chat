@@ -1,6 +1,5 @@
 // Updated version of lib/screens/home/invite_friends_tab.dart
 // Polished UI & design consistent with the new login/register aesthetic.
-
 import 'package:flutter/material.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:share_plus/share_plus.dart';
