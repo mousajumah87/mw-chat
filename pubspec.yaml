@@ -19,6 +19,7 @@ dependencies:
   firebase_auth: ^6.1.2
   cloud_firestore: ^6.1.0
   firebase_storage: ^13.0.4
+  firebase_app_check: ^0.4.1+2
   image_picker: any
   file_picker: ^10.3.6
   intl: ^0.20.2

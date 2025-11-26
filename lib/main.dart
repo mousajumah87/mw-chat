@@ -16,11 +16,20 @@ import 'theme/app_theme.dart';
 import 'utils/presence_service.dart';
 import 'l10n/app_localizations.dart';
 import 'utils/locale_provider.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
+
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
+  );
+
+  await FirebaseAppCheck.instance.activate(
+    androidProvider: AndroidProvider.playIntegrity,
+    // You can later add iOS / web providers if you want:
+    // appleProvider: AppleProvider.appAttest,
+    // webProvider: ReCaptchaV3Provider('your-site-key'),
   );
 
   // Start presence tracking once Firebase is ready.
