@@ -27,6 +27,7 @@ Future<void> main() async {
 
   await FirebaseAppCheck.instance.activate(
     androidProvider: AndroidProvider.playIntegrity,
+    appleProvider: AppleProvider.debug,
     // You can later add iOS / web providers if you want:
     // appleProvider: AppleProvider.appAttest,
     // webProvider: ReCaptchaV3Provider('your-site-key'),
