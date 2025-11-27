@@ -287,6 +287,9 @@ class AppLocalizationsAr extends AppLocalizations {
   String get mwUsersTabTitle => 'أصدقاء MW';
 
   @override
+  String get search => 'بحث';
+
+  @override
   String get aboutTitle => 'حول MW Chat';
 
   @override

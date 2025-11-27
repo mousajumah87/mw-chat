@@ -1,5 +1,5 @@
 // lib/screens/home/invite_friends_tab.dart
-// Invite Friends tab – polished UI & proper contacts loading/permissions.
+// Invite Friends tab – polished UI, safe permissions, search over contacts.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
@@ -20,6 +20,7 @@ class _InviteFriendsTabState extends State<InviteFriendsTab> {
   bool _loadingContacts = true;
   bool _contactsPermissionDenied = false;
   List<Contact> _contacts = [];
+  String _searchQuery = '';
 
   @override
   void initState() {
@@ -28,7 +29,6 @@ class _InviteFriendsTabState extends State<InviteFriendsTab> {
   }
 
   Future<void> _loadContacts() async {
-    // Web: contacts plugin is not supported – show info message.
     if (kIsWeb) {
       setState(() {
         _loadingContacts = false;
@@ -37,31 +37,44 @@ class _InviteFriendsTabState extends State<InviteFriendsTab> {
       return;
     }
 
-    // Ask for permission
-    final granted = await FlutterContacts.requestPermission(readonly: true);
-    if (!mounted) return;
+    try {
+      // Ask for permission
+      final granted = await FlutterContacts.requestPermission(readonly: true);
+      if (!mounted) return;
 
-    if (!granted) {
+      if (!granted) {
+        setState(() {
+          _contactsPermissionDenied = true;
+          _loadingContacts = false;
+        });
+        return;
+      }
+
+      // Load contacts with phone numbers
+      final contacts = await FlutterContacts.getContacts(
+        withProperties: true,
+        withThumbnail: true,
+      );
+      if (!mounted) return;
+
+      final withPhones =
+      contacts.where((c) => c.phones.isNotEmpty).toList()
+        ..sort((a, b) =>
+            a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
+
+      setState(() {
+        _contacts = withPhones;
+        _loadingContacts = false;
+      });
+    } catch (e, st) {
+      // In case the plugin throws, just show a friendly error state
+      debugPrint('Error loading contacts: $e\n$st');
+      if (!mounted) return;
       setState(() {
         _contactsPermissionDenied = true;
         _loadingContacts = false;
       });
-      return;
     }
-
-    // Load contacts with phone numbers
-    final contacts = await FlutterContacts.getContacts(
-      withProperties: true,
-      withThumbnail: true,
-    );
-    if (!mounted) return;
-
-    final withPhones = contacts.where((c) => c.phones.isNotEmpty).toList();
-
-    setState(() {
-      _contacts = withPhones;
-      _loadingContacts = false;
-    });
   }
 
   void _sendInvite(Contact contact) {
@@ -73,20 +86,17 @@ class _InviteFriendsTabState extends State<InviteFriendsTab> {
         'https://play.google.com/store/apps/details?id=com.mw.chat';
     const iosLink = 'https://apps.apple.com/app/id1234567890';
 
-    // Call the generated localization function with parameters
     final message = l10n.inviteMessageTemplate(
       name,
       androidLink,
       iosLink,
     );
 
-    // You can keep this (warning is just deprecation, not an error)
     Share.share(
       message,
       subject: l10n.inviteSubject,
     );
   }
-
 
   Widget _buildContactTile(Contact c) {
     final name = c.displayName;
@@ -162,7 +172,6 @@ class _InviteFriendsTabState extends State<InviteFriendsTab> {
     }
 
     if (kIsWeb) {
-      // On web we just show an info message.
       return _buildMessage(l10n.inviteWebNotSupported);
     }
 
@@ -174,11 +183,69 @@ class _InviteFriendsTabState extends State<InviteFriendsTab> {
       return _buildMessage(l10n.noContactsFound);
     }
 
-    return ListView.separated(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: _contacts.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 6),
-      itemBuilder: (context, index) => _buildContactTile(_contacts[index]),
+    final query = _searchQuery.trim().toLowerCase();
+    final filtered = query.isEmpty
+        ? _contacts
+        : _contacts.where((c) {
+      final name = c.displayName.toLowerCase();
+      final phone = c.phones.isNotEmpty
+          ? c.phones.first.number.toLowerCase()
+          : '';
+      return name.contains(query) || phone.contains(query);
+    }).toList();
+
+    if (filtered.isEmpty) {
+      // Re-use the same string for "no matches"
+      return _buildMessage(l10n.noContactsFound);
+    }
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+          child: TextField(
+            onChanged: (value) {
+              setState(() {
+                _searchQuery = value;
+              });
+            },
+            style: const TextStyle(color: Colors.white),
+            decoration: InputDecoration(
+              hintText: l10n.search ?? 'Search contacts',
+              hintStyle: const TextStyle(color: Colors.white54),
+              prefixIcon: const Icon(Icons.search, color: Colors.white70),
+              filled: true,
+              fillColor: Colors.white.withOpacity(0.06),
+              contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide:
+                BorderSide(color: Colors.white.withOpacity(0.15)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide:
+                BorderSide(color: Colors.white.withOpacity(0.15)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide:
+                BorderSide(color: Colors.white.withOpacity(0.35)),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Expanded(
+          child: ListView.separated(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            itemCount: filtered.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 6),
+            itemBuilder: (context, index) => _buildContactTile(filtered[index]),
+          ),
+        ),
+      ],
     );
   }
 
@@ -206,7 +273,7 @@ class _InviteFriendsTabState extends State<InviteFriendsTab> {
       builder: (context, constraints) {
         final isWide = constraints.maxWidth > 900;
 
-        // Phone / narrow layout: card on top, contacts list under it
+        // Phone / narrow layout: MW card on top, contacts underneath
         if (!isWide) {
           return Column(
             children: [
@@ -219,7 +286,7 @@ class _InviteFriendsTabState extends State<InviteFriendsTab> {
           );
         }
 
-        // Wide layout (tablet/web): contacts on left, side panel on right
+        // Wide layout: contacts left, card right
         return Row(
           children: [
             Expanded(flex: 3, child: contactsList),

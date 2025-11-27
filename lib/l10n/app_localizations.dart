@@ -611,6 +611,12 @@ abstract class AppLocalizations {
   /// **'MW Friends'**
   String get mwUsersTabTitle;
 
+  /// No description provided for @search.
+  ///
+  /// In en, this message translates to:
+  /// **'search'**
+  String get search;
+
   /// No description provided for @aboutTitle.
   ///
   /// In en, this message translates to:

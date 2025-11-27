@@ -287,6 +287,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get mwUsersTabTitle => 'MW Friends';
 
   @override
+  String get search => 'search';
+
+  @override
   String get aboutTitle => 'About MW Chat';
 
   @override
