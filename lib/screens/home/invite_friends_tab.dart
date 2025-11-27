@@ -1,9 +1,11 @@
-// Updated version of lib/screens/home/invite_friends_tab.dart
-// Polished UI & design consistent with the new login/register aesthetic.
+// lib/screens/home/invite_friends_tab.dart
+// Invite Friends tab – polished UI & proper contacts loading/permissions.
+
 import 'package:flutter/material.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+
 import '../../l10n/app_localizations.dart';
 import '../../widgets/ui/mw_side_panel.dart';
 
@@ -26,6 +28,7 @@ class _InviteFriendsTabState extends State<InviteFriendsTab> {
   }
 
   Future<void> _loadContacts() async {
+    // Web: contacts plugin is not supported – show info message.
     if (kIsWeb) {
       setState(() {
         _loadingContacts = false;
@@ -34,7 +37,10 @@ class _InviteFriendsTabState extends State<InviteFriendsTab> {
       return;
     }
 
+    // Ask for permission
     final granted = await FlutterContacts.requestPermission(readonly: true);
+    if (!mounted) return;
+
     if (!granted) {
       setState(() {
         _contactsPermissionDenied = true;
@@ -43,7 +49,13 @@ class _InviteFriendsTabState extends State<InviteFriendsTab> {
       return;
     }
 
-    final contacts = await FlutterContacts.getContacts(withProperties: true, withThumbnail: true);
+    // Load contacts with phone numbers
+    final contacts = await FlutterContacts.getContacts(
+      withProperties: true,
+      withThumbnail: true,
+    );
+    if (!mounted) return;
+
     final withPhones = contacts.where((c) => c.phones.isNotEmpty).toList();
 
     setState(() {
@@ -56,16 +68,25 @@ class _InviteFriendsTabState extends State<InviteFriendsTab> {
     final l10n = AppLocalizations.of(context)!;
     final name = contact.displayName;
 
-    const androidLink = 'https://play.google.com/store/apps/details?id=com.mw.chat';
+    // TODO: replace with your real store links when published
+    const androidLink =
+        'https://play.google.com/store/apps/details?id=com.mw.chat';
     const iosLink = 'https://apps.apple.com/app/id1234567890';
 
-    String message = l10n.inviteMessageTemplate
-        .replaceAll('{name}', name)
-        .replaceAll('{androidLink}', androidLink)
-        .replaceAll('{iosLink}', iosLink);
+    // Call the generated localization function with parameters
+    final message = l10n.inviteMessageTemplate(
+      name,
+      androidLink,
+      iosLink,
+    );
 
-    Share.share(message, subject: l10n.inviteSubject);
+    // You can keep this (warning is just deprecation, not an error)
+    Share.share(
+      message,
+      subject: l10n.inviteSubject,
+    );
   }
+
 
   Widget _buildContactTile(Contact c) {
     final name = c.displayName;
@@ -73,7 +94,7 @@ class _InviteFriendsTabState extends State<InviteFriendsTab> {
 
     String initials = '';
     if (name.isNotEmpty) {
-      final parts = name.trim().split(RegExp(r'\\s+'));
+      final parts = name.trim().split(RegExp(r'\s+'));
       initials = parts.map((p) => p[0].toUpperCase()).take(2).join();
     }
 
@@ -92,16 +113,25 @@ class _InviteFriendsTabState extends State<InviteFriendsTab> {
             backgroundColor: Colors.white.withOpacity(0.1),
             child: Text(
               initials,
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
           title: Text(
             name,
-            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+            ),
           ),
           subtitle: Text(
             phone,
-            style: const TextStyle(color: Colors.white70, fontSize: 12),
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 12,
+            ),
           ),
           trailing: ElevatedButton.icon(
             onPressed: () => _sendInvite(c),
@@ -110,8 +140,13 @@ class _InviteFriendsTabState extends State<InviteFriendsTab> {
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.white.withOpacity(0.15),
               foregroundColor: Colors.white,
-              textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              textStyle: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
           ),
         ),
@@ -122,9 +157,12 @@ class _InviteFriendsTabState extends State<InviteFriendsTab> {
   Widget _buildContactsList() {
     final l10n = AppLocalizations.of(context)!;
 
-    if (_loadingContacts) return const Center(child: CircularProgressIndicator());
+    if (_loadingContacts) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
     if (kIsWeb) {
+      // On web we just show an info message.
       return _buildMessage(l10n.inviteWebNotSupported);
     }
 
@@ -151,7 +189,10 @@ class _InviteFriendsTabState extends State<InviteFriendsTab> {
         child: Text(
           text,
           textAlign: TextAlign.center,
-          style: const TextStyle(color: Colors.white70, fontSize: 14),
+          style: const TextStyle(
+            color: Colors.white70,
+            fontSize: 14,
+          ),
         ),
       ),
     );
@@ -159,35 +200,37 @@ class _InviteFriendsTabState extends State<InviteFriendsTab> {
 
   @override
   Widget build(BuildContext context) {
+    final contactsList = _buildContactsList();
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final isWide = constraints.maxWidth > 900;
-        final contactsList = _buildContactsList();
 
+        // Phone / narrow layout: card on top, contacts list under it
         if (!isWide) {
           return Column(
-            children: const [
-              Padding(
+            children: [
+              const Padding(
                 padding: EdgeInsets.all(12),
                 child: MwSidePanel(),
               ),
-              Expanded(child: Placeholder()), // contactsList goes here dynamically
+              Expanded(child: contactsList),
             ],
           );
         }
 
+        // Wide layout (tablet/web): contacts on left, side panel on right
         return Row(
           children: [
             Expanded(flex: 3, child: contactsList),
             const SizedBox(width: 16),
-            const SizedBox(width: 320, child: MwSidePanel()),
+            const SizedBox(
+              width: 320,
+              child: MwSidePanel(),
+            ),
           ],
         );
       },
     );
   }
-}
-
-extension on String Function(Object sndroidLink, Object nameink, Object name) {
-  replaceAll(Object s, Object name) {}
 }
