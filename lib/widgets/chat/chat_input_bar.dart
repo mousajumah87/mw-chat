@@ -27,6 +27,9 @@ class _ChatInputBarState extends State<ChatInputBar>
   late final AnimationController _sendController;
   late final Animation<double> _scaleAnim;
 
+  // Keep our own focus node so we can control focus if needed
+  final FocusNode _inputFocusNode = FocusNode();
+
   static const _sendGradient = LinearGradient(
     colors: [Color(0xFF0057FF), Color(0xFFFFB300)],
     begin: Alignment.topLeft,
@@ -48,6 +51,7 @@ class _ChatInputBarState extends State<ChatInputBar>
   @override
   void dispose() {
     _sendController.dispose();
+    _inputFocusNode.dispose();
     super.dispose();
   }
 
@@ -60,6 +64,9 @@ class _ChatInputBarState extends State<ChatInputBar>
     await _sendController.forward();
     await _sendController.reverse();
     widget.onSend();
+
+    // Keep focus so keyboard stays open after sending (WhatsApp-like)
+    _inputFocusNode.requestFocus();
   }
 
   @override
@@ -77,8 +84,8 @@ class _ChatInputBarState extends State<ChatInputBar>
             Expanded(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(
-                  minHeight: 48,
-                  maxHeight: 70,
+                  minHeight: 44,
+                  maxHeight: 120, // allow a few lines, similar to WhatsApp
                 ),
                 child: Container(
                   padding:
@@ -111,16 +118,18 @@ class _ChatInputBarState extends State<ChatInputBar>
 
                       const SizedBox(width: 6),
 
-                      // === Text input ===
+                      // === Text input (WhatsApp-like multiline) ===
                       Expanded(
                         child: TextField(
                           controller: widget.controller,
+                          focusNode: _inputFocusNode,
+                          keyboardType: TextInputType.multiline,
+                          textInputAction: TextInputAction.newline,
                           minLines: 1,
-                          maxLines: 1, // long text scrolls horizontally
+                          maxLines: 5, // auto-expand up to 5 lines
                           onChanged: widget.onTextChanged,
-                          onSubmitted: (_) => _triggerSend(),
-                          textInputAction: TextInputAction.send,
-                          keyboardType: TextInputType.text,
+                          // No onSubmitted -> Enter just creates a new line,
+                          // sending is done via the send button only.
                           textAlignVertical: TextAlignVertical.center,
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: Colors.white,
@@ -135,7 +144,6 @@ class _ChatInputBarState extends State<ChatInputBar>
                               color: kTextSecondary,
                               fontSize: 14,
                             ),
-                            // **override global theme borders**
                             border: InputBorder.none,
                             enabledBorder: InputBorder.none,
                             focusedBorder: InputBorder.none,
