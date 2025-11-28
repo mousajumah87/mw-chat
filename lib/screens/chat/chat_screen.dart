@@ -232,6 +232,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   // ---------- TEXT MESSAGE ----------
 
+  /// Send a text message and atomically update unread count for the other user.
   Future<void> _sendMessage() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
@@ -244,16 +245,27 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       await _updateMyTyping(false);
 
-      // load my profile / avatar info
+      // Load my profile / avatar info
       final meta = await _getSenderMeta(user);
       final profileUrl = meta['profileUrl'];
       final avatarType = meta['avatarType'];
 
-      await FirebaseFirestore.instance
-          .collection('privateChats')
-          .doc(widget.roomId)
-          .collection('messages')
-          .add({
+      // Ensure other user ID is known
+      final otherId = _otherUserId;
+      if (otherId == null || otherId.isEmpty) {
+        debugPrint('[ChatScreen] Cannot send message: otherUserId is null');
+        return;
+      }
+
+      // === 🔹 Use Firestore batch to ensure atomic consistency ===
+      final batch = FirebaseFirestore.instance.batch();
+
+      final roomRef =
+      FirebaseFirestore.instance.collection('privateChats').doc(widget.roomId);
+      final msgRef = roomRef.collection('messages').doc();
+
+      // 1️⃣ Add message document
+      batch.set(msgRef, {
         'type': 'text',
         'text': text,
         'senderId': user.uid,
@@ -264,10 +276,25 @@ class _ChatScreenState extends State<ChatScreen> {
         'seenBy': <String>[],
       });
 
-      // 🔔 increase unread for the other user
-      await _bumpUnreadForOther();
+      // 2️⃣ Update unread counts and participants atomically
+      batch.set(
+        roomRef,
+        {
+          'participants': [user.uid, otherId],
+          'unreadCounts': {
+            otherId: FieldValue.increment(1),
+            user.uid: 0,
+          },
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
 
+      await batch.commit();
       _msgController.clear();
+
+    } catch (e, st) {
+      debugPrint('[ChatScreen] _sendMessage error: $e\n$st');
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -405,9 +432,8 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
-    // 2) FIRESTORE MESSAGE
+    // 2) FIRESTORE MESSAGE + unread bump (atomic)
     try {
-      // sender profile info
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
@@ -416,13 +442,20 @@ class _ChatScreenState extends State<ChatScreen> {
       final profileUrl = userData?['profileUrl'];
       final avatarType = userData?['avatarType'];
 
-      await FirebaseFirestore.instance
+      if (_otherUserId == null) {
+        debugPrint('[ChatScreen] _otherUserId is null, cannot bump unread');
+        return;
+      }
+
+      final batch = FirebaseFirestore.instance.batch();
+      final roomRef = FirebaseFirestore.instance
           .collection('privateChats')
-          .doc(widget.roomId)
-          .collection('messages')
-          .add({
-        'type': msgType, // text / image / video / audio / file
-        'text': '', // label is derived in UI if empty
+          .doc(widget.roomId);
+      final msgRef = roomRef.collection('messages').doc();
+
+      batch.set(msgRef, {
+        'type': msgType,
+        'text': '',
         'fileName': file.name,
         'fileUrl': downloadUrl,
         'fileSize': file.size,
@@ -435,21 +468,23 @@ class _ChatScreenState extends State<ChatScreen> {
         'seenBy': <String>[],
       });
 
-      debugPrint('[_sendFileMessage] Firestore message created successfully');
+      batch.set(
+        roomRef,
+        {
+          'participants': [user.uid, _otherUserId],
+          'unreadCounts': {
+            _otherUserId!: FieldValue.increment(1),
+            user.uid: 0,
+          },
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
 
-      // 🔔 increase unread for the other user
-      await _bumpUnreadForOther();
-    } on FirebaseException catch (e, st) {
-      debugPrint(
-        '[_sendFileMessage] FIRESTORE error '
-            '[plugin=${e.plugin}, code=${e.code}]: ${e.message}\n$st',
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.uploadFailedMessageSave)),
-      );
+      await batch.commit();
+      debugPrint('[_sendFileMessage] Firestore message + unread bump OK');
     } catch (e, st) {
-      debugPrint('[_sendFileMessage] Unknown FIRESTORE error: $e\n$st');
+      debugPrint('[_sendFileMessage] FIRESTORE error: $e\n$st');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(l10n.uploadFailedMessageSave)),

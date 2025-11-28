@@ -27,6 +27,9 @@ dependencies:
   provider: ^6.1.5+1
   flutter_contacts: ^1.1.9+2
   share_plus: ^12.0.1
+  vibration: ^1.9.0
+  cached_network_image: ^3.4.0
+
 
 dev_dependencies:
   flutter_test:
@@ -44,6 +47,10 @@ flutter:
 
   # Needed so Flutter generates app_localizations.dart
   generate: true
+#  fonts:
+#    - family: NotoColorEmoji
+#      fonts:
+#        - asset: assets/fonts/NotoColorEmoji.ttf
 
   assets:
     - assets/logo/mw_mark.png

@@ -40,123 +40,89 @@ class AuthRegisterSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        // === Profile picture ===
+        // === Avatar Picker ===
         AuthAvatarPicker(
           imageBytes: imageBytes,
           imageFile: imageFile,
           isSubmitting: isSubmitting,
           onPickImage: onPickImage,
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 12),
 
-        // Choose Picture Button
-        ElevatedButton.icon(
-          onPressed: isSubmitting ? null : onPickImage,
-          icon: const Icon(Icons.photo_outlined, color: Colors.black),
-          label: Text(
-            l10n.choosePicture,
-            style: const TextStyle(
-              color: Colors.black,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.white,
-            elevation: 6,
-            shadowColor: Colors.black.withOpacity(0.5),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-          ),
-        ),
+        // Choose Picture
+        _buildPickImageButton(l10n),
+        const SizedBox(height: 20),
 
-        const SizedBox(height: 26),
-
-        // === Name fields ===
+        // === Name Fields (lightweight row rebuild) ===
         Row(
           children: [
-            Expanded(child: _buildTextField(
-              controller: firstNameCtrl,
-              label: l10n.firstName,
-              focusColor: kSecondaryAmber,
-              validator: (v) => v == null || v.trim().isEmpty
-                  ? l10n.requiredField
-                  : null,
-            )),
-            const SizedBox(width: 12),
-            Expanded(child: _buildTextField(
-              controller: lastNameCtrl,
-              label: l10n.lastName,
-              focusColor: kPrimaryBlue,
-              validator: (v) => v == null || v.trim().isEmpty
-                  ? l10n.requiredField
-                  : null,
-            )),
+            Expanded(
+              child: _buildTextField(
+                controller: firstNameCtrl,
+                label: l10n.firstName,
+                focusColor: kSecondaryAmber,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _buildTextField(
+                controller: lastNameCtrl,
+                label: l10n.lastName,
+                focusColor: kPrimaryBlue,
+              ),
+            ),
           ],
         ),
-        const SizedBox(height: 20),
+
+        const SizedBox(height: 18),
 
         // === Birthday ===
         _buildLabel(theme, l10n.birthday),
         const SizedBox(height: 6),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: isSubmitting ? null : onPickBirthday,
-            icon: const Icon(Icons.cake_outlined,
-                size: 18, color: Colors.white70),
-            label: Text(
-              birthdayLabel,
-              style: const TextStyle(color: Colors.white),
-            ),
-            style: OutlinedButton.styleFrom(
-              side: BorderSide(color: Colors.white.withOpacity(0.25)),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-              backgroundColor: Colors.white.withOpacity(0.05),
-            ),
-          ),
-        ),
+        _buildBirthdayButton(l10n),
 
         const SizedBox(height: 20),
 
-        // === Gender ===
+        // === Gender Selection ===
         _buildLabel(theme, l10n.gender),
-        const SizedBox(height: 10),
-        Wrap(
-          spacing: 12,
-          children: [
-            _genderChip(
-              label: l10n.male,
-              selected: gender == 'male',
-              color: kPrimaryBlue,
-              icon: Icons.male,
-              onTap: () => onGenderChanged('male'),
-            ),
-            _genderChip(
-              label: l10n.female,
-              selected: gender == 'female',
-              color: kSecondaryAmber,
-              icon: Icons.female,
-              onTap: () => onGenderChanged('female'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 8),
+        _buildGenderChips(l10n),
+        const SizedBox(height: 20),
       ],
     );
   }
 
-  // === Helper Widgets ===
+  // ===== UI Helpers =====
+
+  Widget _buildPickImageButton(AppLocalizations l10n) {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        onPressed: isSubmitting ? null : onPickImage,
+        icon: const Icon(Icons.photo_outlined, color: Colors.black),
+        label: Text(
+          l10n.choosePicture,
+          style: const TextStyle(
+            color: Colors.black,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.white,
+          elevation: 2,
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 20),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _buildTextField({
     required TextEditingController controller,
     required String label,
     required Color focusColor,
-    String? Function(String?)? validator,
   }) {
     return TextFormField(
       controller: controller,
@@ -165,17 +131,19 @@ class AuthRegisterSection extends StatelessWidget {
         labelText: label,
         labelStyle: const TextStyle(color: Colors.white70),
         filled: true,
-        fillColor: Colors.white.withOpacity(0.08),
+        fillColor: Colors.white.withOpacity(0.07),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: Colors.white.withOpacity(0.25)),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: focusColor, width: 1.4),
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: focusColor, width: 1.3),
         ),
       ),
-      validator: validator,
+      validator: (v) =>
+      v == null || v.trim().isEmpty ? 'Required' : null,
     );
   }
 
@@ -185,39 +153,105 @@ class AuthRegisterSection extends StatelessWidget {
       child: Text(
         text,
         style:
-        theme.textTheme.bodySmall?.copyWith(color: Colors.white70),
+        theme.textTheme.bodySmall?.copyWith(color: Colors.white70, fontSize: 13),
       ),
     );
   }
 
-  Widget _genderChip({
+  Widget _buildBirthdayButton(AppLocalizations l10n) {
+    return SizedBox(
+      width: double.infinity,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: isSubmitting ? null : onPickBirthday,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            color: Colors.white.withOpacity(0.07),
+            border: Border.all(color: Colors.white.withOpacity(0.25)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.cake_outlined, color: Colors.white70, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  birthdayLabel,
+                  style: const TextStyle(color: Colors.white),
+                ),
+              ),
+              const Icon(Icons.calendar_today_outlined,
+                  color: Colors.white54, size: 16),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGenderChips(AppLocalizations l10n) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _genderOption(
+          label: l10n.male,
+          selected: gender == 'male',
+          color: kPrimaryBlue,
+          icon: Icons.male,
+          onTap: () => onGenderChanged('male'),
+        ),
+        const SizedBox(width: 10),
+        _genderOption(
+          label: l10n.female,
+          selected: gender == 'female',
+          color: kSecondaryAmber,
+          icon: Icons.female,
+          onTap: () => onGenderChanged('female'),
+        ),
+      ],
+    );
+  }
+
+  Widget _genderOption({
     required String label,
     required bool selected,
     required Color color,
     required IconData icon,
     required VoidCallback onTap,
   }) {
-    return ChoiceChip(
-      label: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: selected ? Colors.black : Colors.white70),
-          const SizedBox(width: 6),
-          Text(label),
-        ],
-      ),
-      selected: selected,
-      selectedColor: color,
-      backgroundColor: Colors.white.withOpacity(0.08),
-      labelStyle: TextStyle(
-        color: selected ? Colors.black : Colors.white70,
-        fontWeight: FontWeight.w500,
-      ),
-      onSelected: (_) => onTap(),
-      elevation: selected ? 6 : 0,
-      shadowColor: selected ? Colors.black.withOpacity(0.4) : null,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
+    return GestureDetector(
+      onTap: isSubmitting ? null : onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 14),
+        decoration: BoxDecoration(
+          color: selected ? color : Colors.white.withOpacity(0.07),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: selected ? Colors.transparent : Colors.white.withOpacity(0.3),
+          ),
+          boxShadow: selected
+              ? [BoxShadow(color: color.withOpacity(0.4), blurRadius: 10)]
+              : [],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon,
+                size: 16,
+                color: selected ? Colors.black : Colors.white70),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: selected ? Colors.black : Colors.white70,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

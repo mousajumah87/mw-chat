@@ -10,148 +10,138 @@ class MwSidePanel extends StatelessWidget {
     final l10n = AppLocalizations.of(context)!;
     final isRtl = Directionality.of(context) == TextDirection.rtl;
 
+    // Responsive max width for small devices
+    final maxPanelWidth = MediaQuery.of(context).size.width > 600
+        ? 480.0
+        : MediaQuery.of(context).size.width * 0.9;
+
     return Align(
       alignment: Alignment.topCenter,
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Color(0xCC0057FF), // MW Blue
-              Color(0xCCFFB300), // MW Amber
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxPanelWidth),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Color(0xCC0057FF),
+                Color(0xCCFFB300),
+              ],
+            ),
+            color: Colors.black.withOpacity(0.55),
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: Colors.white.withOpacity(0.12)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.5),
+                blurRadius: 40,
+                offset: const Offset(0, 12),
+              ),
             ],
           ),
-          color: Colors.black.withOpacity(0.55),
-          borderRadius: BorderRadius.circular(28),
-          border: Border.all(color: Colors.white.withOpacity(0.12)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.5),
-              blurRadius: 40,
-              offset: const Offset(0, 12),
-            ),
-          ],
-        ),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(22, 20, 22, 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            mainAxisAlignment: MainAxisAlignment.start,
-            mainAxisSize: MainAxisSize.max,
-            children: [
-              // ===== Header =====
-              Text(
-                l10n.sidePanelAppName,
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 18,
-                  color: Colors.white,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 6),
-              Text(
-                l10n.sidePanelTagline,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: Colors.white70,
-                ),
-                textAlign: TextAlign.center,
-              ),
 
-              const SizedBox(height: 20),
-
-              // Mascot placeholder
-              ClipRRect(
-                borderRadius: BorderRadius.circular(20),
-                child: Container(
-                  height: 4,
-                  color: Colors.white.withOpacity(0.05),
-                ),
-              ),
-              const SizedBox(height: 24),
-
-              // ===== Features =====
-              _sectionTitle(
-                l10n.sidePanelFeatureTitle,
-                isRtl,
-                theme,
-              ),
-              const SizedBox(height: 8),
-              _featureRow(
-                context,
-                text: l10n.sidePanelFeaturePrivate,
-                isRtl: isRtl,
-              ),
-              const SizedBox(height: 6),
-              _featureRow(
-                context,
-                text: l10n.sidePanelFeatureStatus,
-                isRtl: isRtl,
-              ),
-              const SizedBox(height: 6),
-              _featureRow(
-                context,
-                text: l10n.sidePanelFeatureInvite,
-                isRtl: isRtl,
-              ),
-
-              const SizedBox(height: 16),
-
-              // ===== Tip =====
-              Align(
-                alignment:
-                isRtl ? Alignment.centerRight : Alignment.centerLeft,
-                child: Text(
-                  l10n.sidePanelTip,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: Colors.white54,
+          // ✅ Scrollable if contents overflow
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(22, 20, 22, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              mainAxisAlignment: MainAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // ===== Header =====
+                Text(
+                  l10n.sidePanelAppName,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                    color: Colors.white,
                   ),
-                  textAlign: isRtl ? TextAlign.right : TextAlign.left,
+                  textAlign: TextAlign.center,
                 ),
-              ),
-
-              const SizedBox(height: 24),
-
-              // ===== Social =====
-              _sectionTitle(
-                l10n.sidePanelFollowTitle,
-                isRtl,
-                theme,
-              ),
-              const SizedBox(height: 10),
-
-              Align(
-                alignment:
-                isRtl ? Alignment.centerRight : Alignment.centerLeft,
-                child: Wrap(
-                  spacing: 10,
-                  runSpacing: 8,
-                  alignment:
-                  isRtl ? WrapAlignment.end : WrapAlignment.start,
-                  children: [
-                    _socialChip(
-                      icon: Icons.facebook,
-                      label: l10n.socialFacebook,
-                      color: const Color(0xFF1778F2),
-                      onTap: () {},
-                    ),
-                    _socialChip(
-                      icon: Icons.camera_alt_outlined,
-                      label: l10n.socialInstagram,
-                      color: const Color(0xFFE4405F),
-                      onTap: () {},
-                    ),
-                    _socialChip(
-                      icon: Icons.alternate_email,
-                      label: l10n.socialX,
-                      color: const Color(0xFF1DA1F2),
-                      onTap: () {},
-                    ),
-                  ],
+                const SizedBox(height: 6),
+                Text(
+                  l10n.sidePanelTagline,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: Colors.white70,
+                  ),
+                  textAlign: TextAlign.center,
                 ),
-              ),
-            ],
+
+                const SizedBox(height: 20),
+
+                // Decorative line
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: Container(
+                    height: 4,
+                    color: Colors.white.withOpacity(0.05),
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+
+                // ===== Features =====
+                _sectionTitle(l10n.sidePanelFeatureTitle, isRtl, theme),
+                const SizedBox(height: 8),
+                _featureRow(context, text: l10n.sidePanelFeaturePrivate, isRtl: isRtl),
+                const SizedBox(height: 6),
+                _featureRow(context, text: l10n.sidePanelFeatureStatus, isRtl: isRtl),
+                const SizedBox(height: 6),
+                _featureRow(context, text: l10n.sidePanelFeatureInvite, isRtl: isRtl),
+
+                const SizedBox(height: 16),
+
+                // ===== Tip =====
+                Align(
+                  alignment: isRtl ? Alignment.centerRight : Alignment.centerLeft,
+                  child: Text(
+                    l10n.sidePanelTip,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: Colors.white54,
+                    ),
+                    textAlign: isRtl ? TextAlign.right : TextAlign.left,
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+
+                // ===== Social =====
+                _sectionTitle(l10n.sidePanelFollowTitle, isRtl, theme),
+                const SizedBox(height: 10),
+
+                Align(
+                  alignment: isRtl ? Alignment.centerRight : Alignment.centerLeft,
+                  child: Wrap(
+                    spacing: 10,
+                    runSpacing: 8,
+                    alignment:
+                    isRtl ? WrapAlignment.end : WrapAlignment.start,
+                    children: [
+                      _socialChip(
+                        icon: Icons.facebook,
+                        label: l10n.socialFacebook,
+                        color: const Color(0xFF1778F2),
+                        onTap: () {},
+                      ),
+                      _socialChip(
+                        icon: Icons.camera_alt_outlined,
+                        label: l10n.socialInstagram,
+                        color: const Color(0xFFE4405F),
+                        onTap: () {},
+                      ),
+                      _socialChip(
+                        icon: Icons.alternate_email,
+                        label: l10n.socialX,
+                        color: const Color(0xFF1DA1F2),
+                        onTap: () {},
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -182,11 +172,7 @@ class MwSidePanel extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.max,
       children: [
-        const Icon(
-          Icons.check_circle_rounded,
-          size: 18,
-          color: Color(0xFF22C55E),
-        ),
+        const Icon(Icons.check_circle_rounded, size: 18, color: Color(0xFF22C55E)),
         const SizedBox(width: 8),
         Expanded(
           child: Text(

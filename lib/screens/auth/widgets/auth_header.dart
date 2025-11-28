@@ -13,88 +13,104 @@ class AuthHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Logo with soft blue–amber glowing halo
-        Container(
-          width: 110,
-          height: 110,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: const RadialGradient(
-              colors: [
-                Color(0x80256EFF), // soft MW blue glow
-                Color(0x80FFB300), // soft MW amber glow
-                Colors.transparent,
-              ],
-              stops: [0.3, 0.8, 1.0],
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF0057FF).withOpacity(0.45),
-                blurRadius: 25,
-                spreadRadius: 2,
-              ),
-              BoxShadow(
-                color: const Color(0xFFFFB300).withOpacity(0.35),
-                blurRadius: 25,
-                spreadRadius: 4,
-              ),
-            ],
-          ),
-          child: Center(
-            child: Container(
-              width: 96,
-              height: 96,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.black,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.6),
-                    blurRadius: 20,
-                    offset: const Offset(0, 8),
-                  ),
+    return RepaintBoundary(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // === MW Logo Halo ===
+          Container(
+            width: 110,
+            height: 110,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: RadialGradient(
+                colors: [
+                  Color(0x55256EFF), // softer MW blue glow
+                  Color(0x55FFB300), // softer MW amber glow
+                  Colors.transparent,
                 ],
+                stops: [0.4, 0.8, 1.0],
               ),
-              child: Center(
-                child: Image.asset(
-                  'assets/logo/mw_mark.png',
-                  fit: BoxFit.contain,
+            ),
+            child: Center(
+              child: Container(
+                width: 94,
+                height: 94,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.black,
+                  border: Border.all(color: Colors.white12, width: 1),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.55),
+                      blurRadius: 14,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: ClipOval(
+                  child: Image.asset(
+                    'assets/logo/mw_mark.png',
+                    fit: BoxFit.cover,
+                    filterQuality: FilterQuality.medium,
+                  ),
                 ),
               ),
             ),
           ),
-        ),
 
-        const SizedBox(height: 18),
+          const SizedBox(height: 18),
 
-        // App name
-        ShaderMask(
-          shaderCallback: (bounds) => const LinearGradient(
-            colors: [Color(0xFF0057FF), Color(0xFFFFB300)],
-          ).createShader(bounds),
-          child: Text(
-            l10n.sidePanelAppName,
-            style: Theme.of(context)
-                .textTheme
-                .headlineSmall
-                ?.copyWith(fontWeight: FontWeight.bold, color: Colors.white),
+          // === App Name ===
+          ShaderMask(
+            shaderCallback: (bounds) => const LinearGradient(
+              colors: [Color(0xFF0057FF), Color(0xFFFFB300)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ).createShader(bounds),
+            blendMode: BlendMode.srcIn,
+            child: Text(
+              l10n.sidePanelAppName,
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.3,
+                color: Colors.white,
+                shadows: [
+                  const Shadow(
+                    color: Colors.black54,
+                    offset: Offset(0, 1),
+                    blurRadius: 3,
+                  ),
+                ],
+              ),
+            ),
           ),
-        ),
-        const SizedBox(height: 4),
+          const SizedBox(height: 6),
 
-        // Subtitle (login/register)
-        Text(
-          isRegister ? l10n.createAccount : l10n.loginTitle,
-          style: Theme.of(context)
-              .textTheme
-              .bodySmall
-              ?.copyWith(color: Colors.white70),
-          textAlign: TextAlign.center,
-        ),
-      ],
+          // === Subtitle (Login/Register) ===
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 200),
+            transitionBuilder: (child, anim) => FadeTransition(
+              opacity: anim,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                    begin: const Offset(0, 0.3), end: Offset.zero)
+                    .animate(anim),
+                child: child,
+              ),
+            ),
+            child: Text(
+              key: ValueKey(isRegister),
+              isRegister ? l10n.createAccount : l10n.loginTitle,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: Colors.white70),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

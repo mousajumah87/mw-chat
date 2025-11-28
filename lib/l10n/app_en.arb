@@ -23,6 +23,7 @@
     "minPassword": "Minimum 6 characters",
     "authError": "Authentication error",
     "failedToCreateUser": "Failed to create user",
+    "about": "About",
 
     "settingUpProfile": "Setting up your profile...",
     "accountNotActive": "Your account is not active yet.",
@@ -79,8 +80,11 @@
     "noContactsFound": "No contacts with phone numbers were found.",
     "inviteSubject": "Join me on MW Chat",
     "inviteMessageTemplate": "Hi {name}, I’m using MW Chat to stay in touch. Download it here:\nAndroid: {androidLink}\niOS: {iosLink}\nSee you there!",
+    "inviteSent": "Invite sent to {name}",
     "inviteContactsTabTitle": "Invite Contacts",
     "inviteWebNotSupported": "Inviting contacts from your address book is not supported on web. Please use the mobile app instead.",
+    "search": "Search contacts",
+    "retry": "Retry",
 
     "sidePanelAppName": "MW Chat",
     "sidePanelTagline": "Stay close to your favorite people.",
@@ -95,12 +99,23 @@
     "socialInstagram": "Instagram",
     "socialX": "X / Twitter",
     "mwUsersTabTitle": "MW Friends",
-    "search": "search",
+    "search": "Search contacts",
+
+    "deleteChatTitle": "Delete chat",
+    "deleteChatWarning": "Are you sure you want to delete this chat? This action cannot be undone.",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "chatDeleted": "Chat deleted successfully",
+    "sendFailed": "Failed to send message. Please try again.",
+    "deleteMessageTitle": "Delete message",
+    "deleteMessageConfirm": "Are you sure you want to delete this message?",
+    "deleteFailed": "Failed to delete the message. Please try again.",
 
     "aboutTitle": "About MW Chat",
     "aboutDescription": "MW Chat is a modern private messaging app designed for secure and smooth communication.\n\nChat with friends, send photos, videos, and voice messages with a clean and easy interface. MW Chat focuses on privacy, speed, and simplicity.\n\nFeatures:\n• Real-time messaging\n• Media sharing (photos & videos)\n• Secure authentication\n• Simple & elegant design\n• Fast and lightweight\n\nWhether for personal chats or family conversations, MW Chat keeps your communication safe and enjoyable.",
     "legalTitle": "Legal",
     "copyrightText": "MW Chat – modern private messaging app.\nCopyright © 2025 Mousa Abu Hilal. All rights reserved.",
+    "allRightsReserved": "All rights reserved.",
 
     "appBrandingBeta": "MW Chat • beta"
 }

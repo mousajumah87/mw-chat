@@ -1,27 +1,20 @@
-import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../l10n/app_localizations.dart';
+import '../../theme/app_theme.dart';
 import '../../widgets/ui/mw_background.dart';
 
-class UserProfileScreen extends StatelessWidget {
+class UserProfileScreen extends StatefulWidget {
   final String userId;
-
   const UserProfileScreen({super.key, required this.userId});
 
-  static const int _onlineTtlSeconds = 300;
+  @override
+  State<UserProfileScreen> createState() => _UserProfileScreenState();
+}
 
-  String _buildAgeLabel(DateTime? dob, AppLocalizations l10n) {
-    if (dob == null) return l10n.unknown;
-    final now = DateTime.now();
-    int years = now.year - dob.year;
-    if (now.month < dob.month ||
-        (now.month == dob.month && now.day < dob.day)) {
-      years--;
-    }
-    return years.toString();
-  }
+class _UserProfileScreenState extends State<UserProfileScreen> {
+  static const int _onlineTtlSeconds = 300;
 
   bool _isOnlineWithTtl({
     required bool rawIsOnline,
@@ -37,9 +30,19 @@ class UserProfileScreen extends StatelessWidget {
         required bool isActive,
         required bool effectiveOnline,
       }) {
-    if (!isActive) return (l10n.accountNotActive, Colors.orange);
+    if (!isActive) return (l10n.accountNotActive, Colors.orangeAccent);
     if (effectiveOnline) return (l10n.online, Colors.greenAccent.shade400);
     return (l10n.offline, Colors.grey);
+  }
+
+  String _ageLabel(DateTime? dob, AppLocalizations l10n) {
+    if (dob == null) return l10n.unknown;
+    int years = DateTime.now().year - dob.year;
+    final now = DateTime.now();
+    if (now.month < dob.month || (now.month == dob.month && now.day < dob.day)) {
+      years--;
+    }
+    return years.toString();
   }
 
   @override
@@ -47,11 +50,14 @@ class UserProfileScreen extends StatelessWidget {
     final l10n = AppLocalizations.of(context)!;
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: kBgColor,
       appBar: AppBar(
-        title: Text(l10n.userProfileTitle),
+        backgroundColor: kSurfaceColor,
+        title: Text(
+          l10n.userProfileTitle,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
         centerTitle: true,
-        backgroundColor: Colors.black.withOpacity(0.5),
         elevation: 0,
       ),
       body: MwBackground(
@@ -59,14 +65,19 @@ class UserProfileScreen extends StatelessWidget {
           child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
             stream: FirebaseFirestore.instance
                 .collection('users')
-                .doc(userId)
+                .doc(widget.userId)
                 .snapshots(),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
-                return const CircularProgressIndicator();
+                return const _ShimmerLoader();
               }
               if (!snapshot.hasData || !snapshot.data!.exists) {
-                return Center(child: Text(l10n.userNotFound));
+                return Center(
+                  child: Text(
+                    l10n.userNotFound,
+                    style: const TextStyle(color: Colors.white70),
+                  ),
+                );
               }
 
               final data = snapshot.data!.data()!;
@@ -78,7 +89,6 @@ class UserProfileScreen extends StatelessWidget {
               final gender = data['gender'] ?? '';
               final isActive = data['isActive'] != false;
 
-              // Online state
               final rawIsOnline = data['isOnline'] == true && isActive;
               final lastSeen = data['lastSeen'] is Timestamp
                   ? data['lastSeen'] as Timestamp
@@ -91,7 +101,6 @@ class UserProfileScreen extends StatelessWidget {
                 effectiveOnline: effectiveOnline,
               );
 
-              // Birthday & Age
               DateTime? dob;
               final rawBirthday = data['birthday'];
               if (rawBirthday is Timestamp) {
@@ -100,54 +109,59 @@ class UserProfileScreen extends StatelessWidget {
                 dob = DateTime.tryParse(rawBirthday);
               }
 
-              final ageLabel = _buildAgeLabel(dob, l10n);
+              final ageLabel = _ageLabel(dob, l10n);
               final birthdayLabel = dob != null
                   ? DateFormat.yMMMd(l10n.localeName).format(dob)
                   : l10n.unknown;
 
-              // Avatar
-              Widget avatar;
-              if (profileUrl.isNotEmpty) {
-                avatar = CircleAvatar(
+              // --- Avatar Section ---
+              Widget avatar = AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                child: profileUrl.isNotEmpty
+                    ? CircleAvatar(
+                  key: ValueKey(profileUrl),
                   radius: 60,
                   backgroundImage: NetworkImage(profileUrl),
-                );
-              } else {
-                final emoji = avatarType == 'smurf' ? '🧜‍♀️' : '🐻';
-                avatar = CircleAvatar(
+                )
+                    : CircleAvatar(
+                  key: ValueKey(avatarType),
                   radius: 60,
-                  backgroundColor: Colors.black.withOpacity(0.3),
-                  child: Text(emoji, style: const TextStyle(fontSize: 42)),
-                );
-              }
+                  backgroundColor: kSurfaceAltColor,
+                  child: Text(
+                    avatarType == 'smurf' ? '🧜‍♀️' : '🐻',
+                    style: const TextStyle(fontSize: 42),
+                  ),
+                ),
+              );
 
+              // --- Card Content (no blur, solid layers) ---
               return SingleChildScrollView(
                 padding: const EdgeInsets.all(16),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 420),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          Color(0x660057FF),
-                          Color(0x66FFB300),
-                          Colors.transparent
+                physics: const BouncingScrollPhysics(),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 420),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: kSurfaceAltColor,
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(color: kBorderColor, width: 0.8),
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            kSurfaceColor,
+                            kSurfaceAltColor.withOpacity(0.9),
+                          ],
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.4),
+                            blurRadius: 20,
+                            offset: const Offset(0, 8),
+                          ),
                         ],
                       ),
-                      color: Colors.black.withOpacity(0.6),
-                      borderRadius: BorderRadius.circular(28),
-                      border: Border.all(color: Colors.white.withOpacity(0.1)),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.6),
-                          blurRadius: 40,
-                          offset: const Offset(0, 20),
-                        ),
-                      ],
-                    ),
-                    child: Padding(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 24, vertical: 32),
                       child: Column(
@@ -164,15 +178,16 @@ class UserProfileScreen extends StatelessWidget {
                             ),
                             textAlign: TextAlign.center,
                           ),
-                          const SizedBox(height: 12),
-                          Container(
+                          const SizedBox(height: 14),
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 350),
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 14, vertical: 6),
                             decoration: BoxDecoration(
-                              color: Colors.black.withOpacity(0.4),
-                              borderRadius: BorderRadius.circular(16),
+                              color: presenceColor.withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(18),
                               border: Border.all(
-                                  color: presenceColor.withOpacity(0.8)),
+                                  color: presenceColor.withOpacity(0.7)),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
@@ -195,22 +210,24 @@ class UserProfileScreen extends StatelessWidget {
                           const Divider(color: Colors.white24, thickness: 0.5),
                           const SizedBox(height: 20),
                           _InfoRow(
-                              icon: Icons.cake_outlined,
-                              label: l10n.ageLabel,
-                              value: ageLabel),
+                            icon: Icons.cake_outlined,
+                            label: l10n.ageLabel,
+                            value: ageLabel,
+                          ),
                           const SizedBox(height: 12),
                           _InfoRow(
-                              icon: Icons.calendar_today_outlined,
-                              label: l10n.birthdayLabel,
-                              value: birthdayLabel),
+                            icon: Icons.calendar_today_outlined,
+                            label: l10n.birthdayLabel,
+                            value: birthdayLabel,
+                          ),
                           const SizedBox(height: 12),
                           _InfoRow(
-                              icon: Icons.person_outline,
-                              label: l10n.genderLabel,
-                              value: gender.isEmpty
-                                  ? l10n.notSpecified
-                                  : (gender[0].toUpperCase() +
-                                  gender.substring(1))),
+                            icon: Icons.person_outline,
+                            label: l10n.genderLabel,
+                            value: gender.isEmpty
+                                ? l10n.notSpecified
+                                : gender[0].toUpperCase() + gender.substring(1),
+                          ),
                         ],
                       ),
                     ),
@@ -229,7 +246,6 @@ class _InfoRow extends StatelessWidget {
   final IconData icon;
   final String label;
   final String value;
-
   const _InfoRow({
     required this.icon,
     required this.label,
@@ -238,24 +254,52 @@ class _InfoRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Row(
       children: [
         Icon(icon, size: 20, color: Colors.white70),
         const SizedBox(width: 10),
         Text(
           label,
-          style: const TextStyle(fontSize: 14, color: Colors.white70),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: Colors.white70,
+            fontSize: 14,
+          ),
         ),
         const Spacer(),
         Text(
           value,
-          style: const TextStyle(
-            fontSize: 15,
+          style: theme.textTheme.bodyLarge?.copyWith(
             fontWeight: FontWeight.w500,
             color: Colors.white,
           ),
         ),
       ],
+    );
+  }
+}
+
+class _ShimmerLoader extends StatelessWidget {
+  const _ShimmerLoader();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        width: 100,
+        height: 100,
+        decoration: const BoxDecoration(
+          color: kSurfaceAltColor,
+          shape: BoxShape.circle,
+        ),
+        child: const Padding(
+          padding: EdgeInsets.all(20),
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: Colors.white70,
+          ),
+        ),
+      ),
     );
   }
 }

@@ -23,17 +23,16 @@ class AuthAvatarPicker extends StatefulWidget {
 
 class _AuthAvatarPickerState extends State<AuthAvatarPicker>
     with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _scale;
-  bool _isHovering = false;
+  late final AnimationController _controller;
+  late final Animation<double> _scale;
 
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 260),
-      lowerBound: 0.94,
+      duration: const Duration(milliseconds: 220),
+      lowerBound: 0.95,
       upperBound: 1.08,
     );
     _scale = CurvedAnimation(
@@ -48,10 +47,9 @@ class _AuthAvatarPickerState extends State<AuthAvatarPicker>
     super.dispose();
   }
 
-  void _onPressed() async {
+  Future<void> _handleTap() async {
     if (widget.isSubmitting) return;
     await _controller.forward();
-    await Future.delayed(const Duration(milliseconds: 100));
     await _controller.reverse();
     widget.onPickImage();
   }
@@ -61,128 +59,122 @@ class _AuthAvatarPickerState extends State<AuthAvatarPicker>
     final l10n = AppLocalizations.of(context)!;
     final hasImage = widget.imageBytes != null || widget.imageFile != null;
 
-    Widget imageChild;
-    if (widget.imageBytes != null) {
-      imageChild = ClipOval(
-        child: Image.memory(
+    final Widget avatarImage = RepaintBoundary(
+      child: ClipOval(
+        child: hasImage
+            ? (widget.imageBytes != null
+            ? Image.memory(
           widget.imageBytes!,
           width: 112,
           height: 112,
           fit: BoxFit.cover,
-        ),
-      );
-    } else if (widget.imageFile != null) {
-      imageChild = ClipOval(
-        child: Image.file(
+          gaplessPlayback: true,
+        )
+            : Image.file(
           widget.imageFile!,
           width: 112,
           height: 112,
           fit: BoxFit.cover,
+          gaplessPlayback: true,
+        ))
+            : Icon(
+          Icons.person,
+          size: 60,
+          color: Colors.white.withOpacity(0.85),
         ),
-      );
-    } else {
-      imageChild = Icon(
-        Icons.person,
-        size: 60,
-        color: Colors.white.withOpacity(0.85),
-      );
-    }
+      ),
+    );
 
-    return MouseRegion(
-      onEnter: (_) => setState(() => _isHovering = true),
-      onExit: (_) => setState(() => _isHovering = false),
-      child: Tooltip(
-        message: l10n.choosePicture,
-        child: InkWell(
-          onTap: _onPressed,
-          customBorder: const CircleBorder(),
-          splashColor: Colors.transparent,
-          highlightColor: Colors.transparent,
+    return Tooltip(
+      message: l10n.choosePicture,
+      child: InkWell(
+        onTap: _handleTap,
+        customBorder: const CircleBorder(),
+        splashColor: Colors.transparent,
+        highlightColor: Colors.transparent,
+        child: RepaintBoundary(
           child: Stack(
             alignment: Alignment.center,
             children: [
-              // Outer gradient glow
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                width: _isHovering ? 136 : 130,
-                height: _isHovering ? 136 : 130,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: const RadialGradient(
-                    colors: [
-                      Color(0x80256EFF),
-                      Color(0x80FFB300),
-                      Colors.transparent,
-                    ],
-                    stops: [0.3, 0.8, 1.0],
+              // Background subtle glow
+              AnimatedScale(
+                duration: const Duration(milliseconds: 180),
+                scale: widget.isSubmitting ? 1.0 : 1.02,
+                child: Container(
+                  width: 132,
+                  height: 132,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: const RadialGradient(
+                      colors: [
+                        Color(0x4D0057FF), // subtle blue glow
+                        Color(0x33FFB300), // subtle amber
+                        Colors.transparent,
+                      ],
+                      stops: [0.5, 0.85, 1.0],
+                    ),
                   ),
-                  boxShadow: _isHovering
-                      ? [
-                    BoxShadow(
-                      color: const Color(0xFF0057FF).withOpacity(0.3),
-                      blurRadius: 30,
-                      spreadRadius: 4,
-                    ),
-                    BoxShadow(
-                      color: const Color(0xFFFFB300).withOpacity(0.25),
-                      blurRadius: 30,
-                      spreadRadius: 6,
-                    ),
-                  ]
-                      : [],
                 ),
               ),
 
-              // Avatar
+              // Main avatar circle
               Container(
                 padding: const EdgeInsets.all(3),
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: Colors.white.withOpacity(0.22),
-                    width: 2,
+                    color: Colors.white.withOpacity(0.25),
+                    width: 1.6,
                   ),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withOpacity(0.45),
-                      blurRadius: 16,
-                      offset: const Offset(0, 8),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
                     ),
                   ],
                 ),
                 child: CircleAvatar(
                   radius: 56,
                   backgroundColor:
-                  Colors.white.withOpacity(hasImage ? 0.06 : 0.12),
-                  child: imageChild,
+                  Colors.white.withOpacity(hasImage ? 0.08 : 0.14),
+                  child: avatarImage,
                 ),
               ),
 
+              // Overlay if no image
               if (!hasImage)
-                CircleAvatar(
-                  radius: 56,
-                  backgroundColor: Colors.black.withOpacity(0.1),
+                Container(
+                  width: 112,
+                  height: 112,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
                 ),
 
-              // Camera icon
+              // Camera icon — animated scale
               Positioned(
                 bottom: 6,
                 right: 8,
                 child: ScaleTransition(
                   scale: _scale,
                   child: Container(
-                    padding: const EdgeInsets.all(4),
+                    padding: const EdgeInsets.all(5),
                     decoration: BoxDecoration(
+                      shape: BoxShape.circle,
                       gradient: const LinearGradient(
-                        colors: [Color(0xFF0057FF), Color(0xFFFFB300)],
+                        colors: [
+                          Color(0xFF0057FF),
+                          Color(0xFFFFB300),
+                        ],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
-                      shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.4),
-                          blurRadius: 10,
+                          color: Colors.black.withOpacity(0.35),
+                          blurRadius: 8,
                           offset: const Offset(0, 3),
                         ),
                       ],

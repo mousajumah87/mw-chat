@@ -75,6 +75,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get failedToCreateUser => 'Failed to create user';
 
   @override
+  String get about => 'About';
+
+  @override
   String get settingUpProfile => 'Setting up your profile...';
 
   @override
@@ -242,10 +245,21 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String inviteSent(Object name) {
+    return 'Invite sent to $name';
+  }
+
+  @override
   String get inviteContactsTabTitle => 'Invite Contacts';
 
   @override
   String get inviteWebNotSupported => 'Inviting contacts from your address book is not supported on web. Please use the mobile app instead.';
+
+  @override
+  String get search => 'Search contacts';
+
+  @override
+  String get retry => 'Retry';
 
   @override
   String get sidePanelAppName => 'MW Chat';
@@ -287,7 +301,31 @@ class AppLocalizationsEn extends AppLocalizations {
   String get mwUsersTabTitle => 'MW Friends';
 
   @override
-  String get search => 'search';
+  String get deleteChatTitle => 'Delete chat';
+
+  @override
+  String get deleteChatWarning => 'Are you sure you want to delete this chat? This action cannot be undone.';
+
+  @override
+  String get cancel => 'Cancel';
+
+  @override
+  String get delete => 'Delete';
+
+  @override
+  String get chatDeleted => 'Chat deleted successfully';
+
+  @override
+  String get sendFailed => 'Failed to send message. Please try again.';
+
+  @override
+  String get deleteMessageTitle => 'Delete message';
+
+  @override
+  String get deleteMessageConfirm => 'Are you sure you want to delete this message?';
+
+  @override
+  String get deleteFailed => 'Failed to delete the message. Please try again.';
 
   @override
   String get aboutTitle => 'About MW Chat';
@@ -300,6 +338,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get copyrightText => 'MW Chat – modern private messaging app.\nCopyright © 2025 Mousa Abu Hilal. All rights reserved.';
+
+  @override
+  String get allRightsReserved => 'All rights reserved.';
 
   @override
   String get appBrandingBeta => 'MW Chat • beta';

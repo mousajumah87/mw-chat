@@ -7,6 +7,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../l10n/app_localizations.dart';
+import '../../theme/app_theme.dart';
 import '../../widgets/ui/mw_background.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -16,7 +17,8 @@ class ProfileScreen extends StatefulWidget {
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> {
+class _ProfileScreenState extends State<ProfileScreen>
+    with SingleTickerProviderStateMixin {
   File? _imageFile;
   Uint8List? _imageBytes;
   bool _saving = false;
@@ -27,19 +29,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
   DateTime? _birthday;
   String _gender = 'male';
 
+  late AnimationController _avatarController;
+  late Animation<double> _scale;
+
   @override
   void initState() {
     super.initState();
+    _avatarController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 250),
+      lowerBound: 0.95,
+      upperBound: 1.05,
+    );
+    _scale = CurvedAnimation(parent: _avatarController, curve: Curves.easeOut);
     _loadCurrentProfile();
+  }
+
+  @override
+  void dispose() {
+    _avatarController.dispose();
+    _firstNameCtrl.dispose();
+    _lastNameCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _loadCurrentProfile() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
-
-    final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+    final doc =
+    await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
     final data = doc.data() ?? {};
 
+    if (!mounted) return;
     setState(() {
       _currentUrl = data['profileUrl'] ?? '';
       _avatarType = data['avatarType'] ?? 'bear';
@@ -53,12 +74,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _pickImage() async {
     final picker = ImagePicker();
-    final picked = await picker.pickImage(source: ImageSource.gallery, maxWidth: 1024, maxHeight: 1024, imageQuality: 85);
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1024,
+      maxHeight: 1024,
+      imageQuality: 85,
+    );
     if (picked == null) return;
 
     if (kIsWeb) {
-      setState(() async {
-        _imageBytes = await picked.readAsBytes();
+      final bytes = await picked.readAsBytes();
+      setState(() {
+        _imageBytes = bytes;
         _imageFile = null;
       });
     } else {
@@ -67,6 +94,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _imageBytes = null;
       });
     }
+
+    _avatarController.forward().then((_) => _avatarController.reverse());
   }
 
   Future<void> _pickBirthday() async {
@@ -83,15 +112,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _saveProfile() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
+    final l10n = AppLocalizations.of(context)!;
 
     setState(() => _saving = true);
-
     try {
       String? url = _currentUrl;
       final ref = FirebaseStorage.instance.ref().child('profile_pics/${user.uid}');
+      final metadata = SettableMetadata(contentType: 'image/jpeg');
 
       if (_imageFile != null || _imageBytes != null) {
-        final metadata = SettableMetadata(contentType: 'image/jpeg');
         if (kIsWeb && _imageBytes != null) {
           await ref.putData(_imageBytes!, metadata);
         } else if (_imageFile != null) {
@@ -107,16 +136,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
         'lastName': _lastNameCtrl.text.trim(),
         'gender': _gender,
       };
-      if (_birthday != null) data['birthday'] = Timestamp.fromDate(_birthday!);
+      if (_birthday != null) {
+        data['birthday'] = Timestamp.fromDate(_birthday!);
+      }
 
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).set(data, SetOptions(merge: true));
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .set(data, SetOptions(merge: true));
+
       if (url != null && url.isNotEmpty) await user.updatePhotoURL(url);
 
-      setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile updated successfully')));
+      if (mounted) {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.profileUpdated)),
+        );
+      }
     } catch (e) {
-      setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      if (mounted) {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(l10n.authError)));
+      }
     }
   }
 
@@ -125,24 +167,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ? MemoryImage(_imageBytes!)
         : _imageFile != null
         ? FileImage(_imageFile!) as ImageProvider
-        : (_currentUrl != null && _currentUrl!.isNotEmpty)
+        : (_currentUrl?.isNotEmpty ?? false)
         ? NetworkImage(_currentUrl!)
         : null;
 
-    return Container(
-      decoration: const BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: RadialGradient(
-          colors: [Color(0x80256EFF), Color(0x80FFB300), Colors.transparent],
-          stops: [0.3, 0.8, 1.0],
-        ),
-      ),
+    return ScaleTransition(
+      scale: _scale,
       child: CircleAvatar(
         radius: 60,
-        backgroundColor: Colors.black.withOpacity(0.3),
+        backgroundColor: kSurfaceAltColor,
         backgroundImage: imageProvider,
         child: imageProvider == null
-            ? const Icon(Icons.person, size: 60, color: Colors.white70)
+            ? Text(
+          _avatarType == 'smurf' ? '🧜‍♀️' : '🐻',
+          style: const TextStyle(fontSize: 40),
+        )
             : null,
       ),
     );
@@ -161,45 +200,57 @@ class _ProfileScreenState extends State<ProfileScreen> {
       appBar: AppBar(
         title: Text(l10n.profileTitle),
         centerTitle: true,
-        backgroundColor: Colors.black.withOpacity(0.5),
+        backgroundColor: kSurfaceColor,
+        elevation: 0,
       ),
       body: MwBackground(
         child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(16),
+            physics: const BouncingScrollPhysics(),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 420),
               child: Container(
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
+                  color: kSurfaceAltColor,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: kBorderColor),
+                  gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: [Color(0x660057FF), Color(0x66FFB300), Colors.transparent],
+                    colors: [
+                      kSurfaceColor,
+                      kSurfaceAltColor.withOpacity(0.95),
+                    ],
                   ),
-                  color: Colors.black.withOpacity(0.6),
-                  borderRadius: BorderRadius.circular(28),
-                  border: Border.all(color: Colors.white.withOpacity(0.1)),
                   boxShadow: [
-                    BoxShadow(color: Colors.black.withOpacity(0.6), blurRadius: 40, offset: const Offset(0, 20)),
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.3),
+                      blurRadius: 16,
+                      offset: const Offset(0, 8),
+                    ),
                   ],
                 ),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 24, vertical: 28),
                   child: Column(
                     children: [
                       _buildAvatar(),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 16),
                       ElevatedButton.icon(
                         onPressed: _saving ? null : _pickImage,
-                        icon: const Icon(Icons.photo_outlined, color: Colors.black),
-                        label: Text(l10n.choosePicture, style: const TextStyle(color: Colors.black)),
+                        icon: const Icon(Icons.photo_outlined),
+                        label: Text(l10n.choosePicture),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          elevation: 6,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          backgroundColor: kPrimaryBlue,
+                          foregroundColor: Colors.white,
+                          elevation: 1,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
                         ),
                       ),
-                      const SizedBox(height: 26),
+                      const SizedBox(height: 28),
                       Row(
                         children: [
                           Expanded(
@@ -208,10 +259,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               style: const TextStyle(color: Colors.white),
                               decoration: InputDecoration(
                                 labelText: l10n.firstName,
-                                labelStyle: const TextStyle(color: Colors.white70),
-                                filled: true,
-                                fillColor: Colors.white.withOpacity(0.07),
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                               ),
                             ),
                           ),
@@ -222,10 +269,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               style: const TextStyle(color: Colors.white),
                               decoration: InputDecoration(
                                 labelText: l10n.lastName,
-                                labelStyle: const TextStyle(color: Colors.white70),
-                                filled: true,
-                                fillColor: Colors.white.withOpacity(0.07),
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                               ),
                             ),
                           ),
@@ -234,22 +277,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       const SizedBox(height: 20),
                       Align(
                         alignment: Alignment.centerLeft,
-                        child: Text(l10n.birthday, style: const TextStyle(color: Colors.white70)),
+                        child: Text(
+                          l10n.birthday,
+                          style: const TextStyle(color: Colors.white70),
+                        ),
                       ),
                       const SizedBox(height: 6),
                       OutlinedButton.icon(
                         onPressed: _saving ? null : _pickBirthday,
-                        icon: const Icon(Icons.cake_outlined, color: Colors.white70),
-                        label: Text(_birthdayLabel(l10n), style: const TextStyle(color: Colors.white)),
+                        icon: const Icon(Icons.cake_outlined,
+                            color: Colors.white70),
+                        label: Text(
+                          _birthdayLabel(l10n),
+                          style: const TextStyle(color: Colors.white),
+                        ),
                         style: OutlinedButton.styleFrom(
-                          side: BorderSide(color: Colors.white.withOpacity(0.2)),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          side:
+                          BorderSide(color: Colors.white.withOpacity(0.3)),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
                         ),
                       ),
                       const SizedBox(height: 22),
                       Align(
                         alignment: Alignment.centerLeft,
-                        child: Text(l10n.gender, style: const TextStyle(color: Colors.white70)),
+                        child: Text(
+                          l10n.gender,
+                          style: const TextStyle(color: Colors.white70),
+                        ),
                       ),
                       const SizedBox(height: 8),
                       Wrap(
@@ -258,18 +313,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ChoiceChip(
                             label: Text('${l10n.male} 🐻'),
                             selected: _gender == 'male',
-                            selectedColor: const Color(0xFF0057FF),
-                            backgroundColor: Colors.white.withOpacity(0.08),
-                            labelStyle: TextStyle(color: _gender == 'male' ? Colors.white : Colors.white70),
-                            onSelected: (_) => setState(() => _gender = 'male'),
+                            selectedColor: kPrimaryBlue,
+                            backgroundColor: kSurfaceColor,
+                            labelStyle: TextStyle(
+                              color: _gender == 'male'
+                                  ? Colors.white
+                                  : Colors.white70,
+                            ),
+                            onSelected: (_) =>
+                                setState(() => _gender = 'male'),
                           ),
                           ChoiceChip(
                             label: Text('${l10n.female} 💃'),
                             selected: _gender == 'female',
-                            selectedColor: const Color(0xFFFFB300),
-                            backgroundColor: Colors.white.withOpacity(0.08),
-                            labelStyle: TextStyle(color: _gender == 'female' ? Colors.black : Colors.white70),
-                            onSelected: (_) => setState(() => _gender = 'female'),
+                            selectedColor: kSecondaryAmber,
+                            backgroundColor: kSurfaceColor,
+                            labelStyle: TextStyle(
+                              color: _gender == 'female'
+                                  ? Colors.black
+                                  : Colors.white70,
+                            ),
+                            onSelected: (_) =>
+                                setState(() => _gender = 'female'),
                           ),
                         ],
                       ),
@@ -277,15 +342,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ElevatedButton.icon(
                         onPressed: _saving ? null : _saveProfile,
                         icon: _saving
-                            ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                            ? const SizedBox(
+                            height: 16,
+                            width: 16,
+                            child:
+                            CircularProgressIndicator(strokeWidth: 2))
                             : const Icon(Icons.save),
-                        label: Text(_saving ? l10n.saving : l10n.save),
+                        label: Text(
+                            _saving ? l10n.saving : l10n.save.toUpperCase()),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFFFB300),
+                          backgroundColor: kSecondaryAmber,
                           foregroundColor: Colors.black,
-                          elevation: 6,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
+                          elevation: 2,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                          padding: const EdgeInsets.symmetric(
+                              vertical: 14, horizontal: 24),
                         ),
                       ),
                     ],

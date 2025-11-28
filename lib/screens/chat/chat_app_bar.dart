@@ -1,4 +1,3 @@
-// lib/widgets/chat_app_bar.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../profile/profile_screen.dart';
@@ -22,7 +21,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
   });
 
   @override
-  Size get preferredSize => const Size.fromHeight(kToolbarHeight + 10);
+  Size get preferredSize => const Size.fromHeight(kToolbarHeight + 8);
 
   static const int _onlineTtlSeconds = 300;
 
@@ -36,10 +35,10 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
     if (profileUrl != null && profileUrl.isNotEmpty) {
       return CircleAvatar(radius: 18, backgroundImage: NetworkImage(profileUrl));
     }
-    final emoji = avatarType == 'smurf' ? '🧜‍♀️️' : '🐻';
+    final emoji = avatarType == 'smurf' ? '🧜‍♀️' : '🐻';
     return CircleAvatar(
       radius: 18,
-      backgroundColor: Colors.white.withOpacity(0.1),
+      backgroundColor: Colors.white10,
       child: Text(emoji, style: const TextStyle(fontSize: 18, color: Colors.white)),
     );
   }
@@ -48,7 +47,10 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
     final l10n = AppLocalizations.of(context)!;
 
     if (otherUserId == null) {
-      return Text(title, style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.white));
+      return Text(
+        title,
+        style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.white),
+      );
     }
 
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
@@ -59,17 +61,14 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
           return Text(title, style: const TextStyle(color: Colors.white));
         }
 
-        final email = data['email'] as String? ?? title;
         final firstName = data['firstName'] as String? ?? '';
         final lastName = data['lastName'] as String? ?? '';
+        final email = data['email'] as String? ?? title;
         final displayName = (firstName.isNotEmpty ? '$firstName $lastName' : email).trim();
 
-        final isActive = (data['isActive'] != false);
+        final isActive = data['isActive'] != false;
         final rawIsOnline = (data['isOnline'] == true) && isActive;
-
-        Timestamp? lastSeen;
-        final rawTs = data['lastSeen'];
-        if (rawTs is Timestamp) lastSeen = rawTs;
+        final lastSeen = data['lastSeen'] is Timestamp ? data['lastSeen'] as Timestamp : null;
 
         final effectiveOnline = _isOnlineWithTtl(rawIsOnline: rawIsOnline, lastSeen: lastSeen);
 
@@ -79,9 +78,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
         } else if (effectiveOnline) {
           subtitle = l10n.online;
         } else if (lastSeen != null) {
-          final now = DateTime.now();
-          final last = lastSeen.toDate();
-          final diff = now.difference(last);
+          final diff = DateTime.now().difference(lastSeen.toDate());
           if (diff.inMinutes < 1) {
             subtitle = l10n.lastSeenJustNow;
           } else if (diff.inMinutes < 60) {
@@ -97,9 +94,12 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
 
         final profileUrl = data['profileUrl'] as String?;
         final avatarType = data['avatarType'] as String?;
-        final dotColor = !isActive ? Colors.grey : (effectiveOnline ? Colors.greenAccent : Colors.grey);
+        final dotColor = !isActive
+            ? Colors.grey
+            : (effectiveOnline ? Colors.greenAccent : Colors.grey);
 
         return InkWell(
+          borderRadius: BorderRadius.circular(24),
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => UserProfileScreen(userId: otherUserId!)),
           ),
@@ -126,12 +126,20 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
               const SizedBox(width: 10),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
                     displayName,
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 16),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15.5,
+                    ),
                   ),
-                  Text(subtitle, style: const TextStyle(color: Colors.white70, fontSize: 11)),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(color: Colors.white70, fontSize: 11),
+                  ),
                 ],
               ),
             ],
@@ -156,13 +164,13 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
           final emoji = avatarType == 'smurf' ? '🧜‍♀️' : '🐻';
           avatar = CircleAvatar(
             radius: 14,
-            backgroundColor: Colors.white.withOpacity(0.1),
+            backgroundColor: Colors.white10,
             child: Text(emoji, style: const TextStyle(color: Colors.white, fontSize: 14)),
           );
         }
 
         return Padding(
-          padding: const EdgeInsets.only(right: 6.0),
+          padding: const EdgeInsets.only(right: 6),
           child: GestureDetector(
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const ProfileScreen()),
@@ -177,40 +185,31 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.3),
-        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
-        border: Border.all(color: Colors.white.withOpacity(0.08), width: 0.8),
+      decoration: const BoxDecoration(
         gradient: LinearGradient(
+          colors: [Color(0xFF101010), Color(0xFF1B1B1B)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            Colors.black.withOpacity(0.85),
-            Colors.black.withOpacity(0.65),
-          ],
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.3),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(20)),
       ),
       child: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
+        titleSpacing: 8,
         title: _buildTitle(context),
         centerTitle: false,
         actions: [
           if (onClearChat != null)
             IconButton(
               icon: const Icon(Icons.delete_outline, color: Colors.white70),
+              tooltip: 'Clear chat',
               onPressed: onClearChat,
             ),
           _buildMyAvatarAction(context),
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.white70),
+            tooltip: 'Logout',
             onPressed: onLogout,
           ),
         ],

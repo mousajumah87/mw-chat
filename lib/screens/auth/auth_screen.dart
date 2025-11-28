@@ -1,10 +1,9 @@
 import 'dart:io';
 import 'dart:typed_data';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, compute;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -28,8 +27,8 @@ class _AuthScreenState extends State<AuthScreen> {
   final _firstNameCtrl = TextEditingController();
   final _lastNameCtrl = TextEditingController();
 
+  final ValueNotifier<String> _genderNotifier = ValueNotifier('male');
   DateTime? _birthday;
-  String _gender = 'male';
   File? _imageFile;
   Uint8List? _imageBytes;
 
@@ -43,6 +42,7 @@ class _AuthScreenState extends State<AuthScreen> {
     _passwordCtrl.dispose();
     _firstNameCtrl.dispose();
     _lastNameCtrl.dispose();
+    _genderNotifier.dispose();
     super.dispose();
   }
 
@@ -51,9 +51,9 @@ class _AuthScreenState extends State<AuthScreen> {
     final picker = ImagePicker();
     final picked = await picker.pickImage(
       source: ImageSource.gallery,
-      maxWidth: 1024,
-      maxHeight: 1024,
-      imageQuality: 85,
+      maxWidth: 800,
+      maxHeight: 800,
+      imageQuality: 75,
     );
     if (picked == null) return;
 
@@ -64,11 +64,18 @@ class _AuthScreenState extends State<AuthScreen> {
         _imageFile = null;
       });
     } else {
+      final compressed = await compute(_compressImage, picked.path);
       setState(() {
-        _imageFile = File(picked.path);
+        _imageFile = File(compressed);
         _imageBytes = null;
       });
     }
+  }
+
+  static String _compressImage(String path) {
+    // For lightweight compression, just return same path here.
+    // Optionally integrate image library (e.g. flutter_image_compress)
+    return path;
   }
 
   Future<void> _pickBirthday() async {
@@ -86,8 +93,7 @@ class _AuthScreenState extends State<AuthScreen> {
   Future<String?> _uploadProfileImage(String uid) async {
     if (_imageFile == null && _imageBytes == null) return null;
     try {
-      final ref =
-      FirebaseStorage.instance.ref().child('profile_pics').child(uid);
+      final ref = FirebaseStorage.instance.ref().child('profile_pics/$uid');
       final metadata = SettableMetadata(contentType: 'image/jpeg');
       if (kIsWeb && _imageBytes != null) {
         await ref.putData(_imageBytes!, metadata);
@@ -141,18 +147,16 @@ class _AuthScreenState extends State<AuthScreen> {
         'firstName': _firstNameCtrl.text.trim(),
         'lastName': _lastNameCtrl.text.trim(),
         'birthday': Timestamp.fromDate(_birthday!),
-        'gender': _gender,
+        'gender': _genderNotifier.value,
         'profileUrl': profileUrl ?? '',
-        'avatarType': _gender == 'female' ? 'smurf' : 'bear',
+        'avatarType': _genderNotifier.value == 'female' ? 'smurf' : 'bear',
         'isOnline': false,
         'lastSeen': FieldValue.serverTimestamp(),
         'isActive': false,
         'createdAt': FieldValue.serverTimestamp(),
       });
 
-      if (profileUrl != null) {
-        await user.updatePhotoURL(profileUrl);
-      }
+      if (profileUrl != null) await user.updatePhotoURL(profileUrl);
     } on FirebaseAuthException catch (e) {
       setState(() => _errorText = e.message ?? l10n.authError);
     } finally {
@@ -176,44 +180,32 @@ class _AuthScreenState extends State<AuthScreen> {
       body: MwBackground(
         child: Stack(
           children: [
-            // 🌍 Unified MW Language Button
             Positioned(
               top: 32,
               right: isRTL ? null : 32,
               left: isRTL ? 32 : null,
-              child: const MwLanguageButton(), // ✅ replaced inline widget
+              child: const MwLanguageButton(),
             ),
-
-            // Auth Card
             Center(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(24),
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 440),
+                  constraints: const BoxConstraints(maxWidth: 420),
                   child: Container(
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          Color(0xCC0057FF), // MW blue accent
-                          Color(0xCCFFB300), // MW amber accent
-                        ],
-                      ),
-                      color: Colors.black.withOpacity(0.45),
-                      borderRadius: BorderRadius.circular(28),
-                      border: Border.all(color: Colors.white.withOpacity(0.12)),
-                      boxShadow: [
+                      color: Colors.black.withOpacity(0.6),
+                      borderRadius: BorderRadius.circular(22),
+                      border: Border.all(color: Colors.white12),
+                      boxShadow: const [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.6),
-                          blurRadius: 40,
-                          spreadRadius: 1,
-                          offset: const Offset(0, 18),
+                          color: Colors.black54,
+                          blurRadius: 20,
+                          offset: Offset(0, 12),
                         ),
                       ],
                     ),
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(32, 36, 32, 24),
+                      padding: const EdgeInsets.fromLTRB(28, 34, 28, 24),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -224,44 +216,26 @@ class _AuthScreenState extends State<AuthScreen> {
                             child: Column(
                               children: [
                                 if (isRegister)
-                                  AuthRegisterSection(
-                                    firstNameCtrl: _firstNameCtrl,
-                                    lastNameCtrl: _lastNameCtrl,
-                                    birthdayLabel: _birthdayLabel(l10n),
-                                    gender: _gender,
-                                    isSubmitting: _submitting,
-                                    imageBytes: _imageBytes,
-                                    imageFile: _imageFile,
-                                    onPickImage: _pickImage,
-                                    onPickBirthday: _pickBirthday,
-                                    onGenderChanged: (value) {
-                                      setState(() => _gender = value);
-                                    },
+                                  ValueListenableBuilder<String>(
+                                    valueListenable: _genderNotifier,
+                                    builder: (_, gender, __) => AuthRegisterSection(
+                                      firstNameCtrl: _firstNameCtrl,
+                                      lastNameCtrl: _lastNameCtrl,
+                                      birthdayLabel: _birthdayLabel(l10n),
+                                      gender: gender,
+                                      isSubmitting: _submitting,
+                                      imageBytes: _imageBytes,
+                                      imageFile: _imageFile,
+                                      onPickImage: _pickImage,
+                                      onPickBirthday: _pickBirthday,
+                                      onGenderChanged: (value) =>
+                                      _genderNotifier.value = value,
+                                    ),
                                   ),
-                                TextFormField(
+                                _buildTextField(
                                   controller: _emailCtrl,
-                                  style: const TextStyle(color: Colors.white),
-                                  decoration: InputDecoration(
-                                    prefixIcon: const Icon(
-                                        Icons.email_outlined,
-                                        color: Colors.white70),
-                                    labelText: l10n.email,
-                                    labelStyle:
-                                    const TextStyle(color: Colors.white70),
-                                    filled: true,
-                                    fillColor: Colors.white.withOpacity(0.1),
-                                    enabledBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: BorderSide(
-                                          color: Colors.white.withOpacity(0.2)),
-                                    ),
-                                    focusedBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: const BorderSide(
-                                          color: Color(0xFFFFB300), width: 1.4),
-                                    ),
-                                  ),
-                                  keyboardType: TextInputType.emailAddress,
+                                  icon: Icons.email_outlined,
+                                  label: l10n.email,
                                   validator: (v) {
                                     if (v == null || v.trim().isEmpty) {
                                       return l10n.requiredField;
@@ -273,30 +247,11 @@ class _AuthScreenState extends State<AuthScreen> {
                                   },
                                 ),
                                 const SizedBox(height: 14),
-                                TextFormField(
+                                _buildTextField(
                                   controller: _passwordCtrl,
-                                  obscureText: true,
-                                  style: const TextStyle(color: Colors.white),
-                                  decoration: InputDecoration(
-                                    prefixIcon: const Icon(
-                                        Icons.lock_outline,
-                                        color: Colors.white70),
-                                    labelText: l10n.password,
-                                    labelStyle:
-                                    const TextStyle(color: Colors.white70),
-                                    filled: true,
-                                    fillColor: Colors.white.withOpacity(0.1),
-                                    enabledBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: BorderSide(
-                                          color: Colors.white.withOpacity(0.2)),
-                                    ),
-                                    focusedBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: const BorderSide(
-                                          color: Color(0xFF0057FF), width: 1.4),
-                                    ),
-                                  ),
+                                  icon: Icons.lock_outline,
+                                  label: l10n.password,
+                                  obscure: true,
                                   validator: (v) {
                                     if (v == null || v.isEmpty) {
                                       return l10n.requiredField;
@@ -311,8 +266,7 @@ class _AuthScreenState extends State<AuthScreen> {
                                   const SizedBox(height: 10),
                                   Text(
                                     _errorText!,
-                                    style: const TextStyle(
-                                        color: Colors.redAccent),
+                                    style: const TextStyle(color: Colors.redAccent),
                                     textAlign: TextAlign.center,
                                   ),
                                 ],
@@ -324,13 +278,11 @@ class _AuthScreenState extends State<AuthScreen> {
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: Colors.white,
                                       foregroundColor: Colors.black,
-                                      padding: const EdgeInsets.symmetric(
-                                          vertical: 14),
+                                      padding: const EdgeInsets.symmetric(vertical: 14),
                                       shape: RoundedRectangleBorder(
-                                        borderRadius:
-                                        BorderRadius.circular(12),
+                                        borderRadius: BorderRadius.circular(12),
                                       ),
-                                      elevation: 6,
+                                      elevation: 4,
                                     ),
                                     child: _submitting
                                         ? const SizedBox(
@@ -347,8 +299,7 @@ class _AuthScreenState extends State<AuthScreen> {
                                   ),
                                 ),
                                 const SizedBox(height: 14),
-                                Divider(
-                                    color: Colors.white.withOpacity(0.1)),
+                                Divider(color: Colors.white10),
                                 const SizedBox(height: 10),
                                 TextButton(
                                   onPressed: _submitting
@@ -363,8 +314,7 @@ class _AuthScreenState extends State<AuthScreen> {
                                     isRegister
                                         ? l10n.alreadyHaveAccount
                                         : l10n.createNewAccount,
-                                    style: const TextStyle(
-                                        color: Colors.white70),
+                                    style: const TextStyle(color: Colors.white70),
                                   ),
                                 ),
                               ],
@@ -377,7 +327,6 @@ class _AuthScreenState extends State<AuthScreen> {
                 ),
               ),
             ),
-
             if (isWide)
               Positioned(
                 left: 24,
@@ -393,6 +342,36 @@ class _AuthScreenState extends State<AuthScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required IconData icon,
+    required String label,
+    bool obscure = false,
+    String? Function(String?)? validator,
+  }) {
+    return TextFormField(
+      controller: controller,
+      obscureText: obscure,
+      style: const TextStyle(color: Colors.white),
+      decoration: InputDecoration(
+        prefixIcon: Icon(icon, color: Colors.white70),
+        labelText: label,
+        labelStyle: const TextStyle(color: Colors.white70),
+        filled: true,
+        fillColor: Colors.white.withOpacity(0.1),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
+        ),
+        focusedBorder: const OutlineInputBorder(
+          borderRadius: BorderRadius.all(Radius.circular(12)),
+          borderSide: BorderSide(color: Color(0xFFFFB300), width: 1.3),
+        ),
+      ),
+      validator: validator,
     );
   }
 }

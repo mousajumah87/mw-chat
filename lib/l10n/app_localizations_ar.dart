@@ -75,6 +75,9 @@ class AppLocalizationsAr extends AppLocalizations {
   String get failedToCreateUser => 'فشل إنشاء المستخدم';
 
   @override
+  String get about => 'حول';
+
+  @override
   String get settingUpProfile => 'جارٍ إعداد ملفك الشخصي...';
 
   @override
@@ -242,10 +245,21 @@ class AppLocalizationsAr extends AppLocalizations {
   }
 
   @override
+  String inviteSent(Object name) {
+    return 'تم إرسال الدعوة إلى $name';
+  }
+
+  @override
   String get inviteContactsTabTitle => 'دعوة جهات الاتصال';
 
   @override
   String get inviteWebNotSupported => 'دعوة جهات الاتصال من دفتر العناوين غير مدعومة على نسخة الويب. يرجى استخدام تطبيق الهاتف بدلاً من ذلك.';
+
+  @override
+  String get search => 'بحث';
+
+  @override
+  String get retry => 'إعادة المحاولة';
 
   @override
   String get sidePanelAppName => 'MW شات';
@@ -287,7 +301,31 @@ class AppLocalizationsAr extends AppLocalizations {
   String get mwUsersTabTitle => 'أصدقاء MW';
 
   @override
-  String get search => 'بحث';
+  String get deleteChatTitle => 'حذف المحادثة';
+
+  @override
+  String get deleteChatWarning => 'هل أنت متأكد أنك تريد حذف هذه المحادثة؟ لا يمكن التراجع عن هذا الإجراء.';
+
+  @override
+  String get cancel => 'إلغاء';
+
+  @override
+  String get delete => 'حذف';
+
+  @override
+  String get chatDeleted => 'تم حذف المحادثة بنجاح';
+
+  @override
+  String get sendFailed => 'فشل إرسال الرسالة. يرجى المحاولة مرة أخرى.';
+
+  @override
+  String get deleteMessageTitle => 'حذف الرسالة';
+
+  @override
+  String get deleteMessageConfirm => 'هل أنت متأكد أنك تريد حذف هذه الرسالة؟';
+
+  @override
+  String get deleteFailed => 'فشل حذف الرسالة. يرجى المحاولة مرة أخرى.';
 
   @override
   String get aboutTitle => 'حول MW Chat';
@@ -300,6 +338,9 @@ class AppLocalizationsAr extends AppLocalizations {
 
   @override
   String get copyrightText => 'MW Chat – تطبيق مراسلة حديث للرسائل الخاصة.\nحقوق النشر © 2025 موسى أبو هلال. جميع الحقوق محفوظة.';
+
+  @override
+  String get allRightsReserved => 'جميع الحقوق محفوظة.';
 
   @override
   String get appBrandingBeta => 'MW شات • نسخة تجريبية';

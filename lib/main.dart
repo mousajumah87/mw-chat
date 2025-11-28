@@ -17,7 +17,7 @@ import 'utils/presence_service.dart';
 import 'l10n/app_localizations.dart';
 import 'utils/locale_provider.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
-
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,13 +25,15 @@ Future<void> main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  await FirebaseAppCheck.instance.activate(
-    androidProvider: AndroidProvider.playIntegrity,
-    appleProvider: AppleProvider.debug,
-    // You can later add iOS / web providers if you want:
-    // appleProvider: AppleProvider.appAttest,
-    // webProvider: ReCaptchaV3Provider('your-site-key'),
-  );
+  if (!kIsWeb) {
+    await FirebaseAppCheck.instance.activate(
+      androidProvider: AndroidProvider.playIntegrity,
+      appleProvider: AppleProvider.debug,
+      // You can later add iOS / web providers if you want:
+      // appleProvider: AppleProvider.appAttest,
+      // webProvider: ReCaptchaV3Provider('your-site-key'),
+    );
+  }
 
   // Start presence tracking once Firebase is ready.
   PresenceService.instance.init();

@@ -6,8 +6,28 @@ import 'mw_friends_tab.dart';
 import 'invite_friends_tab.dart';
 import '../../../l10n/app_localizations.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -15,147 +35,54 @@ class HomeScreen extends StatelessWidget {
     final isWide = MediaQuery.of(context).size.width > 900;
     final l10n = AppLocalizations.of(context)!;
 
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        body: MwBackground(
-          child: Stack(
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: MwBackground(
+        child: SafeArea(
+          child: Column(
             children: [
-              // Soft MW gradient overlay
-              Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      Color(0x660057FF),
-                      Color(0x66FFB300),
-                      Colors.transparent,
+              /// ======= HEADER + TABS =======
+              MwAppHeader(
+                title: 'MW Chat',
+                showTabs: true,
+                tabBar: _buildFixedTabBar(l10n), // ✅ Now returns TabBar directly
+              ),
+
+              const SizedBox(height: 8),
+
+              /// ======= BODY =======
+              Expanded(
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.4),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: Colors.white.withOpacity(0.08)),
+                  ),
+                  child: TabBarView(
+                    controller: _tabController,
+                    physics: const BouncingScrollPhysics(),
+                    children: [
+                      _KeepAlive(child: MwFriendsTab(currentUser: currentUser)),
+                      const _KeepAlive(child: InviteFriendsTab()),
                     ],
                   ),
                 ),
               ),
 
-              Column(
-                children: [
-                  // === Header ===
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xCC0057FF), Color(0xCCFFB300)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: const BorderRadius.only(
-                        bottomLeft: Radius.circular(28),
-                        bottomRight: Radius.circular(28),
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.6),
-                          blurRadius: 40,
-                          offset: const Offset(0, 10),
-                        ),
-                      ],
-                    ),
-                    child: SafeArea(
-                      bottom: false,
-                      child: MwAppHeader(
-                        title: 'MW Chat',
-                        showTabs: true,
-                        tabBar: TabBar(
-                          indicator: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Colors.white, Colors.white70],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            borderRadius: BorderRadius.circular(12),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.white.withOpacity(0.25),
-                                blurRadius: 12,
-                                offset: Offset(0, 3),
-                              ),
-                            ],
-                          ),
-                          indicatorSize: TabBarIndicatorSize.tab,
-                          labelColor: Colors.black,
-                          unselectedLabelColor: Colors.white70,
-                          labelStyle: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 14,
-                          ),
-                          tabs: [
-                            Tab(
-                              icon: const Icon(Icons.people_alt_outlined, size: 22),
-                              text: l10n.usersTitle,
-                            ),
-                            Tab(
-                              icon: const Icon(Icons.person_add_alt_1_outlined, size: 22),
-                              text: l10n.inviteFriendsTitle,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 22),
-
-                  // === Main Body ===
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              Color(0x330057FF),
-                              Color(0x33FFB300),
-                              Colors.transparent,
-                            ],
-                          ),
-                          color: Colors.black.withOpacity(0.55),
-                          borderRadius: BorderRadius.circular(28),
-                          border: Border.all(color: Colors.white.withOpacity(0.12)),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.6),
-                              blurRadius: 50,
-                              offset: const Offset(0, 20),
-                            ),
-                          ],
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(18),
-                          child: TabBarView(
-                            children: [
-                              MwFriendsTab(currentUser: currentUser),
-                              const InviteFriendsTab(),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-
-              // === Footer (desktop hint) ===
+              /// ======= FOOTER =======
               if (isWide)
-                Positioned(
-                  left: 24,
-                  bottom: 20,
-                  child: Text(
-                    'MW Chat • Beta',
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodySmall
-                        ?.copyWith(color: Colors.white38),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8, left: 16, top: 4),
+                  child: Align(
+                    alignment: Alignment.bottomLeft,
+                    child: Text(
+                      'MW Chat • v2.0',
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: Colors.white38),
+                    ),
                   ),
                 ),
             ],
@@ -163,5 +90,53 @@ class HomeScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  /// ✅ Returns a real TabBar (not wrapped) — fully compatible with MwAppHeader
+  TabBar _buildFixedTabBar(AppLocalizations l10n) {
+    return TabBar(
+      controller: _tabController,
+      labelColor: Colors.black,
+      unselectedLabelColor: Colors.white70,
+      indicator: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      indicatorSize: TabBarIndicatorSize.tab,
+      labelStyle: const TextStyle(
+        fontWeight: FontWeight.w600,
+        fontSize: 14,
+      ),
+      tabs: [
+        Tab(
+          icon: const Icon(Icons.people_alt_outlined, size: 22),
+          text: l10n.usersTitle,
+        ),
+        Tab(
+          icon: const Icon(Icons.person_add_alt_1_outlined, size: 22),
+          text: l10n.inviteFriendsTitle,
+        ),
+      ],
+    );
+  }
+}
+
+/// Keeps tabs alive to prevent rebuilding when switching
+class _KeepAlive extends StatefulWidget {
+  final Widget child;
+  const _KeepAlive({required this.child});
+
+  @override
+  State<_KeepAlive> createState() => _KeepAliveState();
+}
+
+class _KeepAliveState extends State<_KeepAlive>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
   }
 }

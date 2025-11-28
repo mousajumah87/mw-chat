@@ -1,35 +1,32 @@
 import 'package:flutter/material.dart';
 
-// === MW Unified Theme System ===
+// === MW Optimized Theme (Performance-First) ===
 
-// Core colors (Glassmorphic base)
-const kBgColor = Color(0xFF050505);
-const kSurfaceColor = Color(0xFF111111);
-const kSurfaceAltColor = Color(0xFF181818);
-const kBorderColor = Color(0xFF2A2A2A);
+// Core background colors
+const kBgColor = Color(0xFF0B0B0B);
+const kSurfaceColor = Color(0xFF141414);
+const kSurfaceAltColor = Color(0xFF1C1C1C);
+const kBorderColor = Color(0xFF2C2C2C);
 
+// Text
 const kTextPrimary = Colors.white;
 const kTextSecondary = Color(0xFF9CA3AF);
 
-// === MW Gradient Brand Accents ===
+// Brand accents
 const kPrimaryBlue = Color(0xFF0057FF);
 const kSecondaryAmber = Color(0xFFFFB300);
-const kGradientStart = Color(0xCC0057FF);
-const kGradientEnd = Color(0xCCFFB300);
-const kGlassSurface = Color(0x73000000);
+const kAccentColor = Color(0xFF22C55E);
+const kErrorColor = Colors.redAccent;
 
 // Chat bubbles
 const kBubbleMeColor = Colors.white;
 const kBubbleOtherColor = Color(0xFF1E1E1E);
 
-// === Accent Elements ===
-const kAccentColor = Color(0xFF22C55E);
-const kErrorColor = Colors.redAccent;
-
+// Lightweight gradient (used in headers/buttons)
 final LinearGradient mwGradient = const LinearGradient(
   begin: Alignment.topLeft,
   end: Alignment.bottomRight,
-  colors: [kGradientStart, kGradientEnd],
+  colors: [kPrimaryBlue, kSecondaryAmber],
 );
 
 // === THEME DATA ===
@@ -43,7 +40,7 @@ ThemeData buildAppTheme() {
       secondary: kSecondaryAmber,
       surface: kSurfaceColor,
       background: kBgColor,
-      error: Colors.redAccent,
+      error: kErrorColor,
     ),
   );
 
@@ -51,7 +48,7 @@ ThemeData buildAppTheme() {
     headlineLarge: const TextStyle(
       fontSize: 28,
       fontWeight: FontWeight.w700,
-      letterSpacing: 0.4,
+      letterSpacing: 0.3,
       color: kTextPrimary,
     ),
     headlineSmall: const TextStyle(
@@ -81,8 +78,10 @@ ThemeData buildAppTheme() {
 
   return base.copyWith(
     textTheme: textTheme,
+
+    // === APP BAR ===
     appBarTheme: AppBarTheme(
-      backgroundColor: Colors.transparent,
+      backgroundColor: kSurfaceColor,
       elevation: 0,
       centerTitle: true,
       foregroundColor: kTextPrimary,
@@ -93,89 +92,88 @@ ThemeData buildAppTheme() {
       iconTheme: const IconThemeData(color: kTextPrimary),
     ),
 
-    // === MW Glassmorphic Buttons ===
+    // === BUTTONS ===
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-        elevation: 10,
-        shadowColor: Colors.black.withOpacity(0.6),
+        backgroundColor: kPrimaryBlue,
+        foregroundColor: Colors.white,
+        elevation: 2,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(10),
         ),
-        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 22),
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 18),
         textStyle: textTheme.labelLarge,
       ),
     ),
 
-    // === MW Secondary Buttons ===
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(
-        foregroundColor: Colors.white70,
+        foregroundColor: kPrimaryBlue,
         textStyle: textTheme.bodyMedium?.copyWith(
-          decoration: TextDecoration.underline,
+          fontWeight: FontWeight.w500,
         ),
       ),
     ),
 
-    // === MW Input Field Styling ===
+    // === INPUT FIELDS ===
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: Colors.white.withOpacity(0.1),
+      fillColor: kSurfaceAltColor,
       contentPadding:
-      const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-      hintStyle: const TextStyle(
-        color: Colors.white70,
-        fontWeight: FontWeight.w400,
-      ),
-      labelStyle: const TextStyle(color: Colors.white70),
-      prefixIconColor: Colors.white70,
+      const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      hintStyle: const TextStyle(color: kTextSecondary),
+      labelStyle: const TextStyle(color: kTextSecondary),
+      prefixIconColor: kTextSecondary,
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: kBorderColor.withOpacity(0.8)),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: kBorderColor.withOpacity(0.8)),
       ),
       focusedBorder: const OutlineInputBorder(
-        borderRadius: BorderRadius.all(Radius.circular(12)),
-        borderSide: BorderSide(color: kPrimaryBlue, width: 1.4),
+        borderRadius: BorderRadius.all(Radius.circular(10)),
+        borderSide: BorderSide(color: kPrimaryBlue, width: 1.3),
       ),
       errorBorder: const OutlineInputBorder(
-        borderRadius: BorderRadius.all(Radius.circular(12)),
-        borderSide: BorderSide(color: Colors.redAccent, width: 1.4),
+        borderRadius: BorderRadius.all(Radius.circular(10)),
+        borderSide: BorderSide(color: kErrorColor, width: 1.2),
       ),
     ),
 
-    // === MW Floating Button ===
+    // === FLOATING BUTTON ===
     floatingActionButtonTheme: const FloatingActionButtonThemeData(
-      backgroundColor: Colors.white,
-      foregroundColor: Colors.black,
-      elevation: 8,
+      backgroundColor: kPrimaryBlue,
+      foregroundColor: Colors.white,
+      elevation: 4,
     ),
 
-    // === Cards / Containers ===
-    cardTheme: const CardThemeData(
-      color: kGlassSurface,
-      elevation: 10,
-      margin: EdgeInsets.all(8),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.all(Radius.circular(28)),
-        side: BorderSide(color: Colors.white12),
-      ),
-      shadowColor: Colors.black54,
-    ),
-
-
-
-  // === Scrollbar ===
+    // === SCROLLBAR ===
     scrollbarTheme: ScrollbarThemeData(
-      thumbColor: MaterialStateProperty.all(
-        Colors.white.withOpacity(0.2),
-      ),
-      radius: const Radius.circular(12),
+      thumbColor: MaterialStateProperty.all(kTextSecondary.withOpacity(0.3)),
+      radius: const Radius.circular(10),
       thickness: MaterialStateProperty.all(4),
+    ),
+
+    // === ICONS ===
+    iconTheme: const IconThemeData(color: Colors.white70, size: 22),
+
+    // === TOOLTIP ===
+    tooltipTheme: TooltipThemeData(
+      textStyle: textTheme.bodySmall?.copyWith(color: Colors.black),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(6),
+      ),
+    ),
+
+    // === SNACKBAR ===
+    snackBarTheme: SnackBarThemeData(
+      backgroundColor: kSurfaceAltColor,
+      contentTextStyle: textTheme.bodyMedium,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
     ),
   );
 }

@@ -227,6 +227,12 @@ abstract class AppLocalizations {
   /// **'Failed to create user'**
   String get failedToCreateUser;
 
+  /// No description provided for @about.
+  ///
+  /// In en, this message translates to:
+  /// **'About'**
+  String get about;
+
   /// No description provided for @settingUpProfile.
   ///
   /// In en, this message translates to:
@@ -521,6 +527,12 @@ abstract class AppLocalizations {
   /// **'Hi {name}, I’m using MW Chat to stay in touch. Download it here:\nAndroid: {androidLink}\niOS: {iosLink}\nSee you there!'**
   String inviteMessageTemplate(Object androidLink, Object iosLink, Object name);
 
+  /// No description provided for @inviteSent.
+  ///
+  /// In en, this message translates to:
+  /// **'Invite sent to {name}'**
+  String inviteSent(Object name);
+
   /// No description provided for @inviteContactsTabTitle.
   ///
   /// In en, this message translates to:
@@ -532,6 +544,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Inviting contacts from your address book is not supported on web. Please use the mobile app instead.'**
   String get inviteWebNotSupported;
+
+  /// No description provided for @search.
+  ///
+  /// In en, this message translates to:
+  /// **'Search contacts'**
+  String get search;
+
+  /// No description provided for @retry.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get retry;
 
   /// No description provided for @sidePanelAppName.
   ///
@@ -611,11 +635,59 @@ abstract class AppLocalizations {
   /// **'MW Friends'**
   String get mwUsersTabTitle;
 
-  /// No description provided for @search.
+  /// No description provided for @deleteChatTitle.
   ///
   /// In en, this message translates to:
-  /// **'search'**
-  String get search;
+  /// **'Delete chat'**
+  String get deleteChatTitle;
+
+  /// No description provided for @deleteChatWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'Are you sure you want to delete this chat? This action cannot be undone.'**
+  String get deleteChatWarning;
+
+  /// No description provided for @cancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get cancel;
+
+  /// No description provided for @delete.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete'**
+  String get delete;
+
+  /// No description provided for @chatDeleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Chat deleted successfully'**
+  String get chatDeleted;
+
+  /// No description provided for @sendFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to send message. Please try again.'**
+  String get sendFailed;
+
+  /// No description provided for @deleteMessageTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete message'**
+  String get deleteMessageTitle;
+
+  /// No description provided for @deleteMessageConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Are you sure you want to delete this message?'**
+  String get deleteMessageConfirm;
+
+  /// No description provided for @deleteFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to delete the message. Please try again.'**
+  String get deleteFailed;
 
   /// No description provided for @aboutTitle.
   ///
@@ -640,6 +712,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'MW Chat – modern private messaging app.\nCopyright © 2025 Mousa Abu Hilal. All rights reserved.'**
   String get copyrightText;
+
+  /// No description provided for @allRightsReserved.
+  ///
+  /// In en, this message translates to:
+  /// **'All rights reserved.'**
+  String get allRightsReserved;
 
   /// No description provided for @appBrandingBeta.
   ///
