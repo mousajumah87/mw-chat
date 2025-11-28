@@ -25,6 +25,7 @@ DerivedData/
 
 # VSCode
 .vscode/
+ios/Runner.xcodeproj/project.xcworkspace/
 
 # Others
 *.log
