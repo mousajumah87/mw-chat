@@ -20,7 +20,6 @@ ios/Flutter/Flutter.framework
 ios/Flutter/Flutter.podspec
 macos/Flutter/Flutter.framework
 macos/Flutter/Flutter.podspec
-*.xcworkspace
 *.xcuserstate
 DerivedData/
 
