@@ -117,7 +117,8 @@ class _ProfileScreenState extends State<ProfileScreen>
     setState(() => _saving = true);
     try {
       String? url = _currentUrl;
-      final ref = FirebaseStorage.instance.ref().child('profile_pics/${user.uid}');
+      final ref =
+      FirebaseStorage.instance.ref().child('profile_pics/${user.uid}');
       final metadata = SettableMetadata(contentType: 'image/jpeg');
 
       if (_imageFile != null || _imageBytes != null) {
@@ -195,6 +196,8 @@ class _ProfileScreenState extends State<ProfileScreen>
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
+    final textDirection = Directionality.of(context);
+    final isRtl = textDirection == TextDirection.rtl;
 
     return Scaffold(
       appBar: AppBar(
@@ -232,8 +235,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                   ],
                 ),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 24, vertical: 28),
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
                   child: Column(
                     children: [
                       _buildAvatar(),
@@ -247,7 +250,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                           foregroundColor: Colors.white,
                           elevation: 1,
                           shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
                       ),
                       const SizedBox(height: 28),
@@ -275,42 +279,75 @@ class _ProfileScreenState extends State<ProfileScreen>
                         ],
                       ),
                       const SizedBox(height: 20),
+
+                      // === Birthday label ===
                       Align(
-                        alignment: Alignment.centerLeft,
+                        alignment: isRtl
+                            ? Alignment.centerRight
+                            : Alignment.centerLeft,
                         child: Text(
                           l10n.birthday,
+                          textDirection: textDirection,
                           style: const TextStyle(color: Colors.white70),
                         ),
                       ),
                       const SizedBox(height: 6),
-                      OutlinedButton.icon(
+
+                      // === Birthday button (LTR + RTL aware) ===
+                      OutlinedButton(
                         onPressed: _saving ? null : _pickBirthday,
-                        icon: const Icon(Icons.cake_outlined,
-                            color: Colors.white70),
-                        label: Text(
-                          _birthdayLabel(l10n),
-                          style: const TextStyle(color: Colors.white),
-                        ),
                         style: OutlinedButton.styleFrom(
-                          side:
-                          BorderSide(color: Colors.white.withOpacity(0.3)),
+                          side: BorderSide(
+                            color: Colors.white.withOpacity(0.3),
+                          ),
                           shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 12,
+                            horizontal: 14,
+                          ),
+                        ),
+                        child: Row(
+                          textDirection: textDirection,
+                          children: [
+                            const Icon(
+                              Icons.cake_outlined,
+                              color: Colors.white70,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                _birthdayLabel(l10n),
+                                style: const TextStyle(color: Colors.white),
+                                textAlign:
+                                isRtl ? TextAlign.right : TextAlign.left,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
+
                       const SizedBox(height: 22),
+
+                      // === Gender label ===
                       Align(
-                        alignment: Alignment.centerLeft,
+                        alignment: isRtl
+                            ? Alignment.centerRight
+                            : Alignment.centerLeft,
                         child: Text(
                           l10n.gender,
+                          textDirection: textDirection,
                           style: const TextStyle(color: Colors.white70),
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 10,
-                        children: [
-                          ChoiceChip(
+
+                      // === Gender chips (order + alignment depend on locale) ===
+                      Builder(
+                        builder: (_) {
+                          final maleChip = ChoiceChip(
                             label: Text('${l10n.male} 🐻'),
                             selected: _gender == 'male',
                             selectedColor: kPrimaryBlue,
@@ -322,8 +359,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                             ),
                             onSelected: (_) =>
                                 setState(() => _gender = 'male'),
-                          ),
-                          ChoiceChip(
+                          );
+
+                          final femaleChip = ChoiceChip(
                             label: Text('${l10n.female} 💃'),
                             selected: _gender == 'female',
                             selectedColor: kSecondaryAmber,
@@ -335,29 +373,46 @@ class _ProfileScreenState extends State<ProfileScreen>
                             ),
                             onSelected: (_) =>
                                 setState(() => _gender = 'female'),
-                          ),
-                        ],
+                          );
+
+                          final chips = isRtl
+                              ? <Widget>[femaleChip, maleChip]
+                              : <Widget>[maleChip, femaleChip];
+
+                          return Wrap(
+                            spacing: 10,
+                            textDirection: textDirection,
+                            children: chips,
+                          );
+                        },
                       ),
+
                       const SizedBox(height: 30),
                       ElevatedButton.icon(
                         onPressed: _saving ? null : _saveProfile,
                         icon: _saving
                             ? const SizedBox(
-                            height: 16,
-                            width: 16,
-                            child:
-                            CircularProgressIndicator(strokeWidth: 2))
+                          height: 16,
+                          width: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                          ),
+                        )
                             : const Icon(Icons.save),
                         label: Text(
-                            _saving ? l10n.saving : l10n.save.toUpperCase()),
+                          _saving ? l10n.saving : l10n.save.toUpperCase(),
+                        ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: kSecondaryAmber,
                           foregroundColor: Colors.black,
                           elevation: 2,
                           shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                           padding: const EdgeInsets.symmetric(
-                              vertical: 14, horizontal: 24),
+                            vertical: 14,
+                            horizontal: 24,
+                          ),
                         ),
                       ),
                     ],

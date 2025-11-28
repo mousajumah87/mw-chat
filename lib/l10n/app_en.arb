@@ -110,6 +110,10 @@
     "deleteMessageTitle": "Delete message",
     "deleteMessageConfirm": "Are you sure you want to delete this message?",
     "deleteFailed": "Failed to delete the message. Please try again.",
+    "chatHistoryDeleteFailed": "Failed to delete chat history",
+    "deleteChatDescription": "Are you sure you want to delete this chat history? This action cannot be undone.",
+    "chatHistoryDeleted": "Chat history deleted successfully",
+
 
     "aboutTitle": "About MW Chat",
     "aboutDescription": "MW Chat is a modern private messaging app designed for secure and smooth communication.\n\nChat with friends, send photos, videos, and voice messages with a clean and easy interface. MW Chat focuses on privacy, speed, and simplicity.\n\nFeatures:\n• Real-time messaging\n• Media sharing (photos & videos)\n• Secure authentication\n• Simple & elegant design\n• Fast and lightweight\n\nWhether for personal chats or family conversations, MW Chat keeps your communication safe and enjoyable.",

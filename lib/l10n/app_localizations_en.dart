@@ -328,6 +328,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get deleteFailed => 'Failed to delete the message. Please try again.';
 
   @override
+  String get chatHistoryDeleteFailed => 'Failed to delete chat history';
+
+  @override
+  String get deleteChatDescription => 'Are you sure you want to delete this chat history? This action cannot be undone.';
+
+  @override
+  String get chatHistoryDeleted => 'Chat history deleted successfully';
+
+  @override
   String get aboutTitle => 'About MW Chat';
 
   @override

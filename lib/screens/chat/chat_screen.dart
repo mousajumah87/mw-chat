@@ -3,7 +3,6 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -48,6 +47,10 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isOtherTyping = false;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _roomSub;
 
+  // lightweight typing debounce (to avoid hammering Firestore)
+  Timer? _typingDebounce;
+  bool _isMeTypingFlag = false;
+
   @override
   void initState() {
     super.initState();
@@ -73,10 +76,10 @@ class _ChatScreenState extends State<ChatScreen> {
           'currentUserId=$_currentUserId, otherUserId=$_otherUserId',
     );
 
-    // ✅ When the chat is opened, reset my unread counter for this room.
+    // When the chat is opened, reset my unread counter for this room.
     _resetMyUnread();
 
-    // listen for typing flags
+    // listen for typing flags (other user)
     _roomSub = FirebaseFirestore.instance
         .collection('privateChats')
         .doc(widget.roomId)
@@ -128,9 +131,7 @@ class _ChatScreenState extends State<ChatScreen> {
         {
           'participants': [_currentUserId, _otherUserId],
           'unreadCounts': {
-            // other user gets +1 unread
             _otherUserId!: FieldValue.increment(1),
-            // my counter stays at 0 for this room
             _currentUserId: 0,
           },
         },
@@ -155,6 +156,24 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  /// Debounced handler for text changes in the composer.
+  void _onComposerChanged(String value) {
+    final hasText = value.trim().isNotEmpty;
+
+    // only send "true" when transitioning from not-typing -> typing
+    if (hasText && !_isMeTypingFlag) {
+      _isMeTypingFlag = true;
+      _updateMyTyping(true);
+    }
+
+    // reset timer; when user stops for 600ms, send "false"
+    _typingDebounce?.cancel();
+    _typingDebounce = Timer(const Duration(milliseconds: 600), () {
+      _isMeTypingFlag = false;
+      _updateMyTyping(false);
+    });
+  }
+
   // ---------- CLEAR CHAT / DELETE HISTORY ----------
 
   Future<void> _confirmAndClearChat() async {
@@ -164,22 +183,19 @@ class _ChatScreenState extends State<ChatScreen> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('Delete chat'),
-          content: const Text(
-            'This will permanently delete all messages in this conversation '
-                'for both of you. This action cannot be undone.',
-          ),
+          title: Text(l10n.deleteChatTitle),
+          content: Text(l10n.deleteChatDescription),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Cancel'),
+              child: Text(l10n.cancel),
             ),
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(true),
               style: TextButton.styleFrom(
                 foregroundColor: Colors.redAccent,
               ),
-              child: const Text('Delete'),
+              child: Text(l10n.delete),
             ),
           ],
         );
@@ -217,15 +233,13 @@ class _ChatScreenState extends State<ChatScreen> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Chat history deleted')),
+        SnackBar(content: Text(l10n.chatHistoryDeleted)),
       );
     } catch (e, st) {
       debugPrint('[ChatScreen] clearChat error: $e\n$st');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Failed to delete chat. Please try again.'),
-        ),
+        SnackBar(content: Text(l10n.chatHistoryDeleteFailed)),
       );
     }
   }
@@ -244,27 +258,28 @@ class _ChatScreenState extends State<ChatScreen> {
 
     try {
       await _updateMyTyping(false);
+      _isMeTypingFlag = false;
+      _typingDebounce?.cancel();
 
       // Load my profile / avatar info
       final meta = await _getSenderMeta(user);
       final profileUrl = meta['profileUrl'];
       final avatarType = meta['avatarType'];
 
-      // Ensure other user ID is known
       final otherId = _otherUserId;
       if (otherId == null || otherId.isEmpty) {
         debugPrint('[ChatScreen] Cannot send message: otherUserId is null');
         return;
       }
 
-      // === 🔹 Use Firestore batch to ensure atomic consistency ===
       final batch = FirebaseFirestore.instance.batch();
 
-      final roomRef =
-      FirebaseFirestore.instance.collection('privateChats').doc(widget.roomId);
+      final roomRef = FirebaseFirestore.instance
+          .collection('privateChats')
+          .doc(widget.roomId);
       final msgRef = roomRef.collection('messages').doc();
 
-      // 1️⃣ Add message document
+      // message
       batch.set(msgRef, {
         'type': 'text',
         'text': text,
@@ -276,7 +291,7 @@ class _ChatScreenState extends State<ChatScreen> {
         'seenBy': <String>[],
       });
 
-      // 2️⃣ Update unread counts and participants atomically
+      // unread counts
       batch.set(
         roomRef,
         {
@@ -292,7 +307,6 @@ class _ChatScreenState extends State<ChatScreen> {
 
       await batch.commit();
       _msgController.clear();
-
     } catch (e, st) {
       debugPrint('[ChatScreen] _sendMessage error: $e\n$st');
     } finally {
@@ -302,7 +316,6 @@ class _ChatScreenState extends State<ChatScreen> {
 
   // ---------- FILE UPLOADS ----------
 
-  /// Pick a file from the device and send it as a message.
   Future<void> _pickAndSendFile() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
@@ -312,7 +325,7 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       final result = await FilePicker.platform.pickFiles(
         allowMultiple: false,
-        withData: true, // important so we can upload bytes on web
+        withData: true,
         type: FileType.any,
       );
 
@@ -329,11 +342,9 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  /// Classify file extension into message type + basic contentType for Storage.
   (String type, String? contentType) _classifyFile(PlatformFile file) {
     final ext = (file.extension ?? '').toLowerCase();
 
-    // default
     String type = 'file';
     String? contentType;
 
@@ -348,7 +359,7 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     } else if (['mp4', 'mov', 'mkv', 'avi', 'webm'].contains(ext)) {
       type = 'video';
-      contentType = 'video/mp4'; // generic, still matches video/.*
+      contentType = 'video/mp4';
     } else if (['mp3', 'wav', 'm4a', 'aac', 'ogg'].contains(ext)) {
       type = 'audio';
       if (ext == 'wav') {
@@ -366,7 +377,6 @@ class _ChatScreenState extends State<ChatScreen> {
     return (type, contentType);
   }
 
-  /// Upload file bytes to Firebase Storage and create a Firestore message.
   Future<void> _sendFileMessage(PlatformFile file) async {
     final user = FirebaseAuth.instance.currentUser;
     final l10n = AppLocalizations.of(context)!;
@@ -379,16 +389,13 @@ class _ChatScreenState extends State<ChatScreen> {
     final Uint8List? bytes = file.bytes;
     if (bytes == null) {
       debugPrint(
-        '[_sendFileMessage] File bytes are null – ensure withData: true on FilePicker',
-      );
+          '[_sendFileMessage] File bytes are null – ensure withData: true');
       return;
     }
 
     final (msgType, rawContentType) = _classifyFile(file);
-    // Fallback so Storage rules don’t choke on null contentType
     final contentType = rawContentType ?? 'application/octet-stream';
 
-    // path in Storage: chat_uploads/<roomId>/<timestamp>_<filename>
     final storageRef = FirebaseStorage.instance
         .ref()
         .child('chat_uploads')
@@ -397,32 +404,18 @@ class _ChatScreenState extends State<ChatScreen> {
 
     String? downloadUrl;
 
-    // 1) STORAGE UPLOAD
     try {
-      debugPrint('[_sendFileMessage] Uploading as uid=${user.uid}');
-      debugPrint('[_sendFileMessage] RoomId=${widget.roomId}');
-      debugPrint(
-        '[_sendFileMessage] File=${file.name}, size=${file.size}, contentType=$contentType',
-      );
-
-      final metadata = SettableMetadata(
-        contentType: contentType,
-      );
-
+      final metadata = SettableMetadata(contentType: contentType);
       await storageRef.putData(bytes, metadata);
       downloadUrl = await storageRef.getDownloadURL();
-
-      debugPrint('[_sendFileMessage] Upload OK, url=$downloadUrl');
     } on FirebaseException catch (e, st) {
       debugPrint(
-        '[_sendFileMessage] STORAGE error '
-            '[plugin=${e.plugin}, code=${e.code}]: ${e.message}\n$st',
-      );
+          '[_sendFileMessage] STORAGE error [${e.code}]: ${e.message}\n$st');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(l10n.uploadFailedStorage)),
       );
-      return; // don’t try to create Firestore message if upload failed
+      return;
     } catch (e, st) {
       debugPrint('[_sendFileMessage] Unknown STORAGE error: $e\n$st');
       if (!mounted) return;
@@ -432,7 +425,6 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
-    // 2) FIRESTORE MESSAGE + unread bump (atomic)
     try {
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
@@ -482,7 +474,6 @@ class _ChatScreenState extends State<ChatScreen> {
       );
 
       await batch.commit();
-      debugPrint('[_sendFileMessage] Firestore message + unread bump OK');
     } catch (e, st) {
       debugPrint('[_sendFileMessage] FIRESTORE error: $e\n$st');
       if (!mounted) return;
@@ -492,7 +483,6 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  /// Helper: load sender profile metadata (profileUrl + avatarType)
   Future<Map<String, dynamic>> _getSenderMeta(User user) async {
     final snap = await FirebaseFirestore.instance
         .collection('users')
@@ -500,9 +490,8 @@ class _ChatScreenState extends State<ChatScreen> {
         .get();
 
     final data = snap.data() ?? {};
-
-    final profileUrl = data['profileUrl'] as String?; // may be null
-    final avatarType = data['avatarType'] as String?; // "smurf" / "bear" / etc.
+    final profileUrl = data['profileUrl'] as String?;
+    final avatarType = data['avatarType'] as String?;
 
     return {
       'profileUrl': profileUrl,
@@ -514,6 +503,7 @@ class _ChatScreenState extends State<ChatScreen> {
   void dispose() {
     _msgController.dispose();
     _roomSub?.cancel();
+    _typingDebounce?.cancel();
     _updateMyTyping(false); // best-effort
     super.dispose();
   }
@@ -535,13 +525,11 @@ class _ChatScreenState extends State<ChatScreen> {
             Navigator.of(context).popUntil((route) => route.isFirst);
           }
         },
-        // NEW: hook clear-chat button
         onClearChat: _confirmAndClearChat,
       ),
       body: MwBackground(
         child: Column(
           children: [
-            // messages
             Expanded(
               child: ChatMessageList(
                 roomId: widget.roomId,
@@ -550,28 +538,20 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
 
-            // typing indicator
             TypingIndicator(
               isVisible: _isOtherTyping,
               text: l10n.isTyping(widget.title),
             ),
 
-            // fancy composer bar
-            SafeArea(
-              top: false,
-              child: Padding(
-                padding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                child: ChatInputBar(
-                  controller: _msgController,
-                  sending: _sending,
-                  onAttach: _pickAndSendFile,
-                  onSend: _sendMessage,
-                  onTextChanged: (value) {
-                    final hasText = value.trim().isNotEmpty;
-                    _updateMyTyping(hasText);
-                  },
-                ),
+            // bottom composer – no extra SafeArea (ChatInputBar already has it)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: ChatInputBar(
+                controller: _msgController,
+                sending: _sending,
+                onAttach: _pickAndSendFile,
+                onSend: _sendMessage,
+                onTextChanged: _onComposerChanged,
               ),
             ),
           ],

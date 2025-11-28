@@ -328,6 +328,15 @@ class AppLocalizationsAr extends AppLocalizations {
   String get deleteFailed => 'فشل حذف الرسالة. يرجى المحاولة مرة أخرى.';
 
   @override
+  String get chatHistoryDeleteFailed => 'فشل حذف سجل المحادثة';
+
+  @override
+  String get deleteChatDescription => 'هل أنت متأكد أنك تريد حذف سجل هذه المحادثة؟ لا يمكن التراجع عن هذا الإجراء.';
+
+  @override
+  String get chatHistoryDeleted => 'تم حذف سجل المحادثة بنجاح';
+
+  @override
   String get aboutTitle => 'حول MW Chat';
 
   @override

@@ -689,6 +689,24 @@ abstract class AppLocalizations {
   /// **'Failed to delete the message. Please try again.'**
   String get deleteFailed;
 
+  /// No description provided for @chatHistoryDeleteFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to delete chat history'**
+  String get chatHistoryDeleteFailed;
+
+  /// No description provided for @deleteChatDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Are you sure you want to delete this chat history? This action cannot be undone.'**
+  String get deleteChatDescription;
+
+  /// No description provided for @chatHistoryDeleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Chat history deleted successfully'**
+  String get chatHistoryDeleted;
+
   /// No description provided for @aboutTitle.
   ///
   /// In en, this message translates to:

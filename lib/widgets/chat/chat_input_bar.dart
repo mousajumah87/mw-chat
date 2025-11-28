@@ -27,7 +27,6 @@ class _ChatInputBarState extends State<ChatInputBar>
   late final AnimationController _sendController;
   late final Animation<double> _scaleAnim;
 
-  // Lightweight gradient reused across rebuilds
   static const _sendGradient = LinearGradient(
     colors: [Color(0xFF0057FF), Color(0xFFFFB300)],
     begin: Alignment.topLeft,
@@ -37,13 +36,10 @@ class _ChatInputBarState extends State<ChatInputBar>
   @override
   void initState() {
     super.initState();
-
-    // Shorter duration & smoother curve for faster feedback
     _sendController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 150),
     );
-
     _scaleAnim = Tween<double>(begin: 0.9, end: 1.05).animate(
       CurvedAnimation(parent: _sendController, curve: Curves.easeOutCubic),
     );
@@ -55,8 +51,12 @@ class _ChatInputBarState extends State<ChatInputBar>
     super.dispose();
   }
 
-  Future<void> _handleSend() async {
+  Future<void> _triggerSend() async {
     if (widget.sending) return;
+
+    final text = widget.controller.text.trim();
+    if (text.isEmpty) return;
+
     await _sendController.forward();
     await _sendController.reverse();
     widget.onSend();
@@ -73,72 +73,94 @@ class _ChatInputBarState extends State<ChatInputBar>
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // === Input Bubble ===
+            // === Input bubble ===
             Expanded(
-              child: Container(
-                padding:
-                const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                constraints:
-                const BoxConstraints(minHeight: 44, maxHeight: 110),
-                decoration: BoxDecoration(
-                  color: kSurfaceAltColor.withOpacity(0.9),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(
-                    color: kBorderColor.withOpacity(0.8),
-                    width: 0.7,
-                  ),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  minHeight: 48,
+                  maxHeight: 70,
                 ),
-                child: Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(
-                        Icons.attach_file,
-                        size: 20,
-                        color: kTextSecondary,
-                      ),
-                      splashRadius: 22,
-                      tooltip: l10n.attachFile,
-                      onPressed: widget.onAttach,
+                child: Container(
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: kSurfaceAltColor.withOpacity(0.9),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: kBorderColor.withOpacity(0.8),
+                      width: 0.7,
                     ),
+                  ),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(
+                          Icons.attach_file,
+                          size: 20,
+                          color: kTextSecondary,
+                        ),
+                        splashRadius: 22,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 32,
+                          minHeight: 32,
+                        ),
+                        tooltip: l10n.attachFile,
+                        onPressed: widget.onAttach,
+                      ),
 
-                    // === Text Input ===
-                    Expanded(
-                      child: TextField(
-                        controller: widget.controller,
-                        minLines: 1,
-                        maxLines: 4,
-                        onChanged: widget.onTextChanged,
-                        textInputAction: TextInputAction.newline,
-                        keyboardType: TextInputType.multiline,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: Colors.white,
-                          fontSize: 15,
-                        ),
-                        cursorColor: Colors.white70,
-                        decoration: InputDecoration(
-                          hintText: l10n.typeMessageHint,
-                          hintStyle: const TextStyle(
-                            color: kTextSecondary,
-                            fontSize: 14,
+                      const SizedBox(width: 6),
+
+                      // === Text input ===
+                      Expanded(
+                        child: TextField(
+                          controller: widget.controller,
+                          minLines: 1,
+                          maxLines: 1, // long text scrolls horizontally
+                          onChanged: widget.onTextChanged,
+                          onSubmitted: (_) => _triggerSend(),
+                          textInputAction: TextInputAction.send,
+                          keyboardType: TextInputType.text,
+                          textAlignVertical: TextAlignVertical.center,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: Colors.white,
+                            fontSize: 15,
                           ),
-                          border: InputBorder.none,
-                          isDense: true,
-                          contentPadding: EdgeInsets.zero,
+                          cursorColor: Colors.white70,
+                          decoration: InputDecoration(
+                            isCollapsed: true,
+                            isDense: true,
+                            hintText: l10n.typeMessageHint,
+                            hintStyle: const TextStyle(
+                              color: kTextSecondary,
+                              fontSize: 14,
+                            ),
+                            // **override global theme borders**
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            disabledBorder: InputBorder.none,
+                            errorBorder: InputBorder.none,
+                            focusedErrorBorder: InputBorder.none,
+                            filled: false,
+                            contentPadding:
+                            const EdgeInsets.symmetric(vertical: 8),
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
 
             const SizedBox(width: 8),
 
-            // === Send Button (optimized animation) ===
+            // === Send button ===
             ScaleTransition(
               scale: _scaleAnim,
               child: GestureDetector(
-                onTap: widget.sending ? null : _handleSend,
+                onTap: widget.sending ? null : _triggerSend,
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 180),
                   width: 46,
