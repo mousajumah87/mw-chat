@@ -1,32 +1,13 @@
 {
   "project_info": {
-    "project_number": "131927411918",
-    "project_id": "mw-app-821f8",
-    "storage_bucket": "mw-app-821f8.firebasestorage.app"
+    "project_number": "1007212667628",
+    "project_id": "mw-chat-prod",
+    "storage_bucket": "mw-chat-prod.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:131927411918:android:4c2f8c048a11dc37a8949f",
-        "android_client_info": {
-          "package_name": "com.example.mw"
-        }
-      },
-      "oauth_client": [],
-      "api_key": [
-        {
-          "current_key": "AIzaSyDCIqNCaORbXa-oVpM5uH7xli9aLcQi13Q"
-        }
-      ],
-      "services": {
-        "appinvite_service": {
-          "other_platform_oauth_client": []
-        }
-      }
-    },
-    {
-      "client_info": {
-        "mobilesdk_app_id": "1:131927411918:android:8bc82cbd7264f568a8949f",
+        "mobilesdk_app_id": "1:1007212667628:android:564158376711dbeb2b7bc9",
         "android_client_info": {
           "package_name": "com.mwchat.app"
         }
@@ -34,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyDCIqNCaORbXa-oVpM5uH7xli9aLcQi13Q"
+          "current_key": "AIzaSyBTGTGnZC-wx7tYNMCjMYBZcPlesAUJ1qk"
         }
       ],
       "services": {
