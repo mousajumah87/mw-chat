@@ -27,7 +27,13 @@ class _AuthScreenState extends State<AuthScreen> {
   final _firstNameCtrl = TextEditingController();
   final _lastNameCtrl = TextEditingController();
 
-  final ValueNotifier<String> _genderNotifier = ValueNotifier('male');
+// 'none' means user did not specify gender (gender is optional)
+  static const String _genderNone = 'none';
+  static const String _genderMale = 'male';
+  static const String _genderFemale = 'female';
+
+  final ValueNotifier<String> _genderNotifier = ValueNotifier(_genderNone);
+
   DateTime? _birthday;
   File? _imageFile;
   Uint8List? _imageBytes;
@@ -142,19 +148,41 @@ class _AuthScreenState extends State<AuthScreen> {
 
       final profileUrl = await _uploadProfileImage(user.uid);
 
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+      final gender = _genderNotifier.value;
+      final hasGender =
+          gender == _genderMale || gender == _genderFemale;
+
+      // Decide avatarType:
+      // - if user chose female → smurf
+      // - if user chose male  → bear
+      // - if user did not choose → default bear
+      final avatarType = hasGender && gender == _genderFemale
+          ? 'smurf'
+          : 'bear';
+
+      final userData = <String, dynamic>{
         'email': user.email,
         'firstName': _firstNameCtrl.text.trim(),
         'lastName': _lastNameCtrl.text.trim(),
         'birthday': Timestamp.fromDate(_birthday!),
-        'gender': _genderNotifier.value,
         'profileUrl': profileUrl ?? '',
-        'avatarType': _genderNotifier.value == 'female' ? 'smurf' : 'bear',
+        'avatarType': avatarType,
         'isOnline': false,
         'lastSeen': FieldValue.serverTimestamp(),
         'isActive': false,
         'createdAt': FieldValue.serverTimestamp(),
-      });
+      };
+
+      // Only store gender if the user actually chose male/female
+      if (hasGender) {
+        userData['gender'] = gender;
+      }
+
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .set(userData);
+
 
       if (profileUrl != null) await user.updatePhotoURL(profileUrl);
     } on FirebaseAuthException catch (e) {

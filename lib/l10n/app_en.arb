@@ -113,6 +113,16 @@
     "chatHistoryDeleteFailed": "Failed to delete chat history",
     "deleteChatDescription": "Are you sure you want to delete this chat history? This action cannot be undone.",
     "chatHistoryDeleted": "Chat history deleted successfully",
+    "preferNotToSay": "Prefer not to say",
+    "deletingAccount": "Deleting account...",
+    "deleteMyAccount": "Delete my account",
+    "deleteAccountWarning": "This will permanently delete your account and profile data. This action cannot be undone. Do you want to continue?",
+    "loginAgainToDelete": "Please log in again and retry account deletion",
+    "deleteAccountFailed": "Failed to delete account.",
+    "deleteAccountFailedRetry": "Failed to delete account. Please try again.",
+    "accountDeletedSuccessfully": "Account deleted successfully",
+    "deleteAccountDescription": "Deleting your account will permanently remove your profile and data.",
+    "dangerZone": "Sensitive actions",
 
 
     "aboutTitle": "About MW Chat",

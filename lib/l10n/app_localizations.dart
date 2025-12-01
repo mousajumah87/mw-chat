@@ -707,6 +707,66 @@ abstract class AppLocalizations {
   /// **'Chat history deleted successfully'**
   String get chatHistoryDeleted;
 
+  /// No description provided for @preferNotToSay.
+  ///
+  /// In en, this message translates to:
+  /// **'Prefer not to say'**
+  String get preferNotToSay;
+
+  /// No description provided for @deletingAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'Deleting account...'**
+  String get deletingAccount;
+
+  /// No description provided for @deleteMyAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete my account'**
+  String get deleteMyAccount;
+
+  /// No description provided for @deleteAccountWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'This will permanently delete your account and profile data. This action cannot be undone. Do you want to continue?'**
+  String get deleteAccountWarning;
+
+  /// No description provided for @loginAgainToDelete.
+  ///
+  /// In en, this message translates to:
+  /// **'Please log in again and retry account deletion'**
+  String get loginAgainToDelete;
+
+  /// No description provided for @deleteAccountFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to delete account.'**
+  String get deleteAccountFailed;
+
+  /// No description provided for @deleteAccountFailedRetry.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to delete account. Please try again.'**
+  String get deleteAccountFailedRetry;
+
+  /// No description provided for @accountDeletedSuccessfully.
+  ///
+  /// In en, this message translates to:
+  /// **'Account deleted successfully'**
+  String get accountDeletedSuccessfully;
+
+  /// No description provided for @deleteAccountDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Deleting your account will permanently remove your profile and data.'**
+  String get deleteAccountDescription;
+
+  /// No description provided for @dangerZone.
+  ///
+  /// In en, this message translates to:
+  /// **'Sensitive actions'**
+  String get dangerZone;
+
   /// No description provided for @aboutTitle.
   ///
   /// In en, this message translates to:

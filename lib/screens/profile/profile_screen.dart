@@ -1,11 +1,13 @@
 import 'dart:io';
 import 'dart:typed_data';
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+
 import '../../l10n/app_localizations.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ui/mw_background.dart';
@@ -22,12 +24,16 @@ class _ProfileScreenState extends State<ProfileScreen>
   File? _imageFile;
   Uint8List? _imageBytes;
   bool _saving = false;
+  bool _deletingAccount = false;
+
   String? _currentUrl;
   String _avatarType = 'bear';
   final _firstNameCtrl = TextEditingController();
   final _lastNameCtrl = TextEditingController();
   DateTime? _birthday;
-  String _gender = 'male';
+
+  // 'none' = user did not specify gender (optional)
+  String _gender = 'none';
 
   late AnimationController _avatarController;
   late Animation<double> _scale;
@@ -56,6 +62,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   Future<void> _loadCurrentProfile() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
+
     final doc =
     await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
     final data = doc.data() ?? {};
@@ -66,9 +73,19 @@ class _ProfileScreenState extends State<ProfileScreen>
       _avatarType = data['avatarType'] ?? 'bear';
       _firstNameCtrl.text = data['firstName'] ?? '';
       _lastNameCtrl.text = data['lastName'] ?? '';
-      _gender = data['gender'] ?? 'male';
+
+      // gender is optional; only accept known values
+      final rawGender = data['gender'];
+      if (rawGender == 'male' || rawGender == 'female') {
+        _gender = rawGender;
+      } else {
+        _gender = 'none';
+      }
+
       final birthdayField = data['birthday'];
-      if (birthdayField is Timestamp) _birthday = birthdayField.toDate();
+      if (birthdayField is Timestamp) {
+        _birthday = birthdayField.toDate();
+      }
     });
   }
 
@@ -135,10 +152,19 @@ class _ProfileScreenState extends State<ProfileScreen>
         'avatarType': _avatarType,
         'firstName': _firstNameCtrl.text.trim(),
         'lastName': _lastNameCtrl.text.trim(),
-        'gender': _gender,
       };
+
       if (_birthday != null) {
         data['birthday'] = Timestamp.fromDate(_birthday!);
+      }
+
+      // Gender is optional:
+      // - if male/female → store
+      // - otherwise → remove the field from Firestore
+      if (_gender == 'male' || _gender == 'female') {
+        data['gender'] = _gender;
+      } else {
+        data['gender'] = FieldValue.delete();
       }
 
       await FirebaseFirestore.instance
@@ -146,21 +172,179 @@ class _ProfileScreenState extends State<ProfileScreen>
           .doc(user.uid)
           .set(data, SetOptions(merge: true));
 
-      if (url != null && url.isNotEmpty) await user.updatePhotoURL(url);
+      if (url != null && url.isNotEmpty) {
+        await user.updatePhotoURL(url);
+      }
 
       if (mounted) {
         setState(() => _saving = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(l10n.profileUpdated)),
         );
+
+        // If this screen was pushed from somewhere (e.g. settings),
+        // go back after successful save.
+        if (Navigator.of(context).canPop()) {
+          Navigator.of(context).pop();
+        }
+        // If shown from AuthGate as the initial screen, there's nothing to pop;
+        // AuthGate will switch to HomeScreen once profile is complete.
       }
-    } catch (e) {
+    } catch (_) {
       if (mounted) {
         setState(() => _saving = false);
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(l10n.authError)));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.authError)),
+        );
       }
     }
+  }
+
+  // === Account deletion ===
+
+  Future<void> _confirmDeleteAccount() async {
+    final l10n = AppLocalizations.of(context)!;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.deleteMyAccount),
+        content: Text(l10n.deleteAccountWarning),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(l10n.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text(
+              'Delete',
+              style: TextStyle(color: Colors.red),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _deleteAccount();
+    }
+  }
+
+  /// Deletes:
+  /// - Firestore user document
+  /// - All messages authored by this user under privateChats/*/messages
+  /// - Removes the user from any chat `participants` array
+  /// - Profile picture from Storage
+  /// - Auth account itself
+  Future<void> _deleteAccount() async {
+    final l10n = AppLocalizations.of(context)!;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    setState(() => _deletingAccount = true);
+
+    try {
+      final uid = user.uid;
+      final db = FirebaseFirestore.instance;
+
+      // 1) Delete Firestore user data (profile + messages, etc.)
+      await _deleteUserData(db, uid);
+
+      // 2) Delete profile picture from Storage, if present
+      if (_currentUrl != null && _currentUrl!.isNotEmpty) {
+        try {
+          final ref = FirebaseStorage.instance.refFromURL(_currentUrl!);
+          await ref.delete();
+        } catch (_) {
+          // Ignore if already deleted or URL invalid
+        }
+      }
+
+      // 3) Delete auth account
+      await user.delete();
+
+      // 4) Sign out so AuthGate shows AuthScreen again
+      await FirebaseAuth.instance.signOut();
+
+      if (!mounted) return;
+
+      // Show info before navigating away
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.accountDeletedSuccessfully),
+        ),
+      );
+
+      // 5) Go back to the first route (AuthGate -> login)
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e.code == 'requires-recent-login'
+                ? l10n.deleteAccountFailedRetry
+                : (e.message ?? l10n.deleteAccountFailed),
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.deleteAccountFailedRetry),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _deletingAccount = false);
+      }
+    }
+  }
+
+  /// Best-effort client-side cleanup of the user’s data.
+  /// For very large datasets, consider moving this to a Cloud Function.
+  Future<void> _deleteUserData(FirebaseFirestore db, String uid) async {
+    // Delete the user profile document
+    await db.collection('users').doc(uid).delete();
+
+    // Delete messages authored by this user from private chats
+    final chatsSnap = await db
+        .collection('privateChats')
+        .where('participants', arrayContains: uid)
+        .get();
+
+    for (final chatDoc in chatsSnap.docs) {
+      final messagesRef = chatDoc.reference.collection('messages');
+
+      // Delete in small batches to avoid huge writes.
+      const batchSize = 50;
+      while (true) {
+        final msgSnap = await messagesRef
+            .where('senderId', isEqualTo: uid)
+            .limit(batchSize)
+            .get();
+
+        if (msgSnap.docs.isEmpty) break;
+
+        final batch = db.batch();
+        for (final m in msgSnap.docs) {
+          batch.delete(m.reference);
+        }
+        await batch.commit();
+      }
+
+      // Remove the user from participants array.
+      await chatDoc.reference.update({
+        'participants': FieldValue.arrayRemove([uid]),
+      });
+    }
+
+    // If you have other collections like "friendships", "blocks", etc.,
+    // you can extend this method to clean those as well.
   }
 
   Widget _buildAvatar() {
@@ -235,8 +419,10 @@ class _ProfileScreenState extends State<ProfileScreen>
                   ],
                 ),
                 child: Padding(
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 28,
+                  ),
                   child: Column(
                     children: [
                       _buildAvatar(),
@@ -331,20 +517,20 @@ class _ProfileScreenState extends State<ProfileScreen>
 
                       const SizedBox(height: 22),
 
-                      // === Gender label ===
+                      // === Gender label (optional) ===
                       Align(
                         alignment: isRtl
                             ? Alignment.centerRight
                             : Alignment.centerLeft,
                         child: Text(
-                          l10n.gender,
+                          '${l10n.gender} (optional)',
                           textDirection: textDirection,
                           style: const TextStyle(color: Colors.white70),
                         ),
                       ),
                       const SizedBox(height: 8),
 
-                      // === Gender chips (order + alignment depend on locale) ===
+                      // === Gender chips (male / female / prefer not to say) ===
                       Builder(
                         builder: (_) {
                           final maleChip = ChoiceChip(
@@ -375,12 +561,27 @@ class _ProfileScreenState extends State<ProfileScreen>
                                 setState(() => _gender = 'female'),
                           );
 
+                          final preferNotChip = ChoiceChip(
+                            label: Text(l10n.preferNotToSay),
+                            selected: _gender == 'none',
+                            selectedColor: Colors.grey,
+                            backgroundColor: kSurfaceColor,
+                            labelStyle: TextStyle(
+                              color: _gender == 'none'
+                                  ? Colors.black
+                                  : Colors.white70,
+                            ),
+                            onSelected: (_) =>
+                                setState(() => _gender = 'none'),
+                          );
+
                           final chips = isRtl
-                              ? <Widget>[femaleChip, maleChip]
-                              : <Widget>[maleChip, femaleChip];
+                              ? <Widget>[femaleChip, maleChip, preferNotChip]
+                              : <Widget>[maleChip, femaleChip, preferNotChip];
 
                           return Wrap(
                             spacing: 10,
+                            runSpacing: 8,
                             textDirection: textDirection,
                             children: chips,
                           );
@@ -388,6 +589,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                       ),
 
                       const SizedBox(height: 30),
+
+                      // === Save profile ===
                       ElevatedButton.icon(
                         onPressed: _saving ? null : _saveProfile,
                         icon: _saving
@@ -413,6 +616,59 @@ class _ProfileScreenState extends State<ProfileScreen>
                             vertical: 14,
                             horizontal: 24,
                           ),
+                        ),
+                      ),
+
+                      // === Danger zone / Delete account ===
+                      const SizedBox(height: 40),
+                      const Divider(height: 32),
+                      Align(
+                        alignment: isRtl
+                            ? Alignment.centerRight
+                            : Alignment.centerLeft,
+                        child: Text(
+                          l10n.dangerZone,
+                          style:
+                          Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: Colors.redAccent,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: isRtl
+                            ? Alignment.centerRight
+                            : Alignment.centerLeft,
+                        child: Text(
+                          l10n.deleteAccountDescription,
+                          style:
+                          Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Colors.white60,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.delete_forever),
+                          label: Text(
+                            _deletingAccount
+                                ? l10n.deletingAccount
+                                : l10n.deleteMyAccount,
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.red,
+                            side: const BorderSide(color: Colors.red),
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 12,
+                              horizontal: 16,
+                            ),
+                          ),
+                          onPressed: _deletingAccount
+                              ? null
+                              : _confirmDeleteAccount,
                         ),
                       ),
                     ],

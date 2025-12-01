@@ -83,8 +83,8 @@ class AuthRegisterSection extends StatelessWidget {
 
         const SizedBox(height: 20),
 
-        // === Gender Selection ===
-        _buildLabel(theme, l10n.gender),
+        // === Gender Selection (optional) ===
+        _buildLabel(theme, '${l10n.gender} (optional)'),
         const SizedBox(height: 8),
         _buildGenderChips(l10n),
         const SizedBox(height: 20),
@@ -152,8 +152,8 @@ class AuthRegisterSection extends StatelessWidget {
       alignment: Alignment.centerLeft,
       child: Text(
         text,
-        style:
-        theme.textTheme.bodySmall?.copyWith(color: Colors.white70, fontSize: 13),
+        style: theme.textTheme.bodySmall
+            ?.copyWith(color: Colors.white70, fontSize: 13),
       ),
     );
   }
@@ -191,8 +191,11 @@ class AuthRegisterSection extends StatelessWidget {
   }
 
   Widget _buildGenderChips(AppLocalizations l10n) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
+    // Wrap instead of Row so 3 chips fit nicely on small screens
+    return Wrap(
+      alignment: WrapAlignment.center,
+      spacing: 10,
+      runSpacing: 8,
       children: [
         _genderOption(
           label: l10n.male,
@@ -201,13 +204,20 @@ class AuthRegisterSection extends StatelessWidget {
           icon: Icons.male,
           onTap: () => onGenderChanged('male'),
         ),
-        const SizedBox(width: 10),
         _genderOption(
           label: l10n.female,
           selected: gender == 'female',
           color: kSecondaryAmber,
           icon: Icons.female,
           onTap: () => onGenderChanged('female'),
+        ),
+        // Optional choice – maps to 'none' in AuthScreen
+        _genderOption(
+          label: 'Prefer not to say',
+          selected: gender == 'none',
+          color: Colors.grey,
+          icon: Icons.remove_circle_outline,
+          onTap: () => onGenderChanged('none'),
         ),
       ],
     );
@@ -239,9 +249,11 @@ class AuthRegisterSection extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon,
-                size: 16,
-                color: selected ? Colors.black : Colors.white70),
+            Icon(
+              icon,
+              size: 16,
+              color: selected ? Colors.black : Colors.white70,
+            ),
             const SizedBox(width: 6),
             Text(
               label,

@@ -337,6 +337,36 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chatHistoryDeleted => 'Chat history deleted successfully';
 
   @override
+  String get preferNotToSay => 'Prefer not to say';
+
+  @override
+  String get deletingAccount => 'Deleting account...';
+
+  @override
+  String get deleteMyAccount => 'Delete my account';
+
+  @override
+  String get deleteAccountWarning => 'This will permanently delete your account and profile data. This action cannot be undone. Do you want to continue?';
+
+  @override
+  String get loginAgainToDelete => 'Please log in again and retry account deletion';
+
+  @override
+  String get deleteAccountFailed => 'Failed to delete account.';
+
+  @override
+  String get deleteAccountFailedRetry => 'Failed to delete account. Please try again.';
+
+  @override
+  String get accountDeletedSuccessfully => 'Account deleted successfully';
+
+  @override
+  String get deleteAccountDescription => 'Deleting your account will permanently remove your profile and data.';
+
+  @override
+  String get dangerZone => 'Sensitive actions';
+
+  @override
   String get aboutTitle => 'About MW Chat';
 
   @override

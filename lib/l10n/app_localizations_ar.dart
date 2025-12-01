@@ -337,6 +337,36 @@ class AppLocalizationsAr extends AppLocalizations {
   String get chatHistoryDeleted => 'تم حذف سجل المحادثة بنجاح';
 
   @override
+  String get preferNotToSay => 'أفضل عدم الإفصاح';
+
+  @override
+  String get deletingAccount => 'جاري حذف الحساب...';
+
+  @override
+  String get deleteMyAccount => 'حذف حسابي';
+
+  @override
+  String get deleteAccountWarning => 'سيؤدي هذا إلى حذف حسابك وبيانات ملفك الشخصي بشكل دائم. لا يمكن التراجع عن هذا الإجراء. هل تريد المتابعة؟';
+
+  @override
+  String get loginAgainToDelete => 'يرجى تسجيل الدخول مرة أخرى ثم إعادة محاولة حذف الحساب';
+
+  @override
+  String get deleteAccountFailed => 'فشل حذف الحساب.';
+
+  @override
+  String get deleteAccountFailedRetry => 'فشل حذف الحساب. يرجى المحاولة مرة أخرى.';
+
+  @override
+  String get accountDeletedSuccessfully => 'تم حذف الحساب بنجاح';
+
+  @override
+  String get deleteAccountDescription => 'سيؤدي حذف حسابك إلى إزالة ملفك الشخصي وبياناتك بشكل دائم.';
+
+  @override
+  String get dangerZone => 'إجراءات حساسة';
+
+  @override
   String get aboutTitle => 'حول MW Chat';
 
   @override

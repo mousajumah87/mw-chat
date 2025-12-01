@@ -75,20 +75,26 @@ class MyApp extends StatelessWidget {
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
 
+  /// Profile is considered complete when these **required** fields exist:
+  /// - firstName
+  /// - lastName
+  /// - birthday (used only for age-related safety, not for ads or tracking)
+  ///
+  /// Gender is **optional** and is intentionally NOT checked here to comply
+  /// with App Store guideline 5.1.1 – the app does not require gender to
+  /// function, so users can skip it completely.
   bool _isProfileComplete(Map<String, dynamic>? data) {
     if (data == null) return false;
 
     final firstName = (data['firstName'] ?? '').toString().trim();
-    final lastName = (data['lastName'] ?? '').toString().trim();
-    final gender = (data['gender'] ?? '').toString();
-    final birthday = data['birthday'];
+    final lastName  = (data['lastName']  ?? '').toString().trim();
+    final birthday  = data['birthday'];
 
     final hasFirstName = firstName.isNotEmpty;
-    final hasLastName = lastName.isNotEmpty;
-    final hasGender = gender == 'male' || gender == 'female';
-    final hasBirthday = birthday != null; // Timestamp or string is fine
+    final hasLastName  = lastName.isNotEmpty;
+    final hasBirthday  = birthday != null; // Timestamp or any non-null value
 
-    return hasFirstName && hasLastName && hasGender && hasBirthday;
+    return hasFirstName && hasLastName && hasBirthday;
   }
 
   @override
@@ -136,11 +142,11 @@ class AuthGate extends StatelessWidget {
 
             // 1) If profile is missing required fields → force ProfileScreen
             if (!_isProfileComplete(data)) {
-              // User can fill first/last name, birthday, gender here
+              // User can fill first/last name, birthday and (optional) gender here
               return const ProfileScreen();
             }
 
-            // 2) Profile is complete; check activation
+            // 2) Profile is complete; check activation flag
             final isActive = data['isActive'] == true;
             if (!isActive) {
               // Account created but not activated yet
@@ -178,9 +184,9 @@ class AuthGate extends StatelessWidget {
                 ),
               );
             }
+
             // 3) Active + profile complete → go to main user list
             return const HomeScreen();
-
           },
         );
       },
