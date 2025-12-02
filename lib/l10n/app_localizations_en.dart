@@ -78,6 +78,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get about => 'About';
 
   @override
+  String get website => 'Website';
+
+  @override
   String get settingUpProfile => 'Setting up your profile...';
 
   @override

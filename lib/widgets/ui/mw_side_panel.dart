@@ -1,8 +1,26 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../l10n/app_localizations.dart';
 
 class MwSidePanel extends StatelessWidget {
   const MwSidePanel({super.key});
+
+  // ===== URLs =====
+  static const String _websiteUrl = 'https://www.mwchats.com';
+  static const String _facebookUrl = 'https://www.facebook.com'; // TODO: your real page
+  static const String _instagramUrl = 'https://www.instagram.com'; // TODO: your real page
+  static const String _xUrl = 'https://x.com'; // TODO: your real page
+
+  Future<void> _openUrl(String url) async {
+    final uri = Uri.parse(url);
+    if (!await launchUrl(
+      uri,
+      mode: LaunchMode.externalApplication,
+    )) {
+      // Optional: log or show a snackbar instead of failing silently
+      debugPrint('Could not launch $url');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -85,17 +103,30 @@ class MwSidePanel extends StatelessWidget {
                 // ===== Features =====
                 _sectionTitle(l10n.sidePanelFeatureTitle, isRtl, theme),
                 const SizedBox(height: 8),
-                _featureRow(context, text: l10n.sidePanelFeaturePrivate, isRtl: isRtl),
+                _featureRow(
+                  context,
+                  text: l10n.sidePanelFeaturePrivate,
+                  isRtl: isRtl,
+                ),
                 const SizedBox(height: 6),
-                _featureRow(context, text: l10n.sidePanelFeatureStatus, isRtl: isRtl),
+                _featureRow(
+                  context,
+                  text: l10n.sidePanelFeatureStatus,
+                  isRtl: isRtl,
+                ),
                 const SizedBox(height: 6),
-                _featureRow(context, text: l10n.sidePanelFeatureInvite, isRtl: isRtl),
+                _featureRow(
+                  context,
+                  text: l10n.sidePanelFeatureInvite,
+                  isRtl: isRtl,
+                ),
 
                 const SizedBox(height: 16),
 
                 // ===== Tip =====
                 Align(
-                  alignment: isRtl ? Alignment.centerRight : Alignment.centerLeft,
+                  alignment:
+                  isRtl ? Alignment.centerRight : Alignment.centerLeft,
                   child: Text(
                     l10n.sidePanelTip,
                     style: theme.textTheme.bodySmall?.copyWith(
@@ -112,30 +143,36 @@ class MwSidePanel extends StatelessWidget {
                 const SizedBox(height: 10),
 
                 Align(
-                  alignment: isRtl ? Alignment.centerRight : Alignment.centerLeft,
+                  alignment:
+                  isRtl ? Alignment.centerRight : Alignment.centerLeft,
                   child: Wrap(
                     spacing: 10,
                     runSpacing: 8,
                     alignment:
                     isRtl ? WrapAlignment.end : WrapAlignment.start,
                     children: [
+                      // 🌐 Website (new)
+                      _socialChip(
+                        icon: Icons.public,
+                        label: l10n.website,
+                        color: const Color(0xFF6366F1),
+                        onTap: () => _openUrl(_websiteUrl),
+                      ),
+
+                      // Facebook
                       _socialChip(
                         icon: Icons.facebook,
                         label: l10n.socialFacebook,
                         color: const Color(0xFF1778F2),
-                        onTap: () {},
+                        onTap: () => _openUrl(_facebookUrl),
                       ),
+
+                      // Instagram
                       _socialChip(
                         icon: Icons.camera_alt_outlined,
                         label: l10n.socialInstagram,
                         color: const Color(0xFFE4405F),
-                        onTap: () {},
-                      ),
-                      _socialChip(
-                        icon: Icons.alternate_email,
-                        label: l10n.socialX,
-                        color: const Color(0xFF1DA1F2),
-                        onTap: () {},
+                        onTap: () => _openUrl(_instagramUrl),
                       ),
                     ],
                   ),
@@ -172,7 +209,11 @@ class MwSidePanel extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.max,
       children: [
-        const Icon(Icons.check_circle_rounded, size: 18, color: Color(0xFF22C55E)),
+        const Icon(
+          Icons.check_circle_rounded,
+          size: 18,
+          color: Color(0xFF22C55E),
+        ),
         const SizedBox(width: 8),
         Expanded(
           child: Text(

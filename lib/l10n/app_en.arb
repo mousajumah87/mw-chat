@@ -24,6 +24,8 @@
     "authError": "Authentication error",
     "failedToCreateUser": "Failed to create user",
     "about": "About",
+    "website": "Website",
+
 
     "settingUpProfile": "Setting up your profile...",
     "accountNotActive": "Your account is not active yet.",

@@ -1,5 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+
 import '../../widgets/ui/mw_background.dart';
 import '../../widgets/ui/mw_app_header.dart';
 import 'mw_friends_tab.dart';
@@ -17,6 +19,9 @@ class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
 
+  static const String _appVersion = 'v2.0';
+  static const String _websiteUrl = 'https://www.mwchats.com';
+
   @override
   void initState() {
     super.initState();
@@ -27,6 +32,16 @@ class _HomeScreenState extends State<HomeScreen>
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  Future<void> _openMwWebsite() async {
+    final uri = Uri.parse(_websiteUrl);
+    if (!await launchUrl(
+      uri,
+      mode: LaunchMode.externalApplication,
+    )) {
+      debugPrint('Could not launch $_websiteUrl');
+    }
   }
 
   @override
@@ -45,7 +60,7 @@ class _HomeScreenState extends State<HomeScreen>
               MwAppHeader(
                 title: 'MW Chat',
                 showTabs: true,
-                tabBar: _buildFixedTabBar(l10n), // ✅ Now returns TabBar directly
+                tabBar: _buildFixedTabBar(l10n),
               ),
 
               const SizedBox(height: 8),
@@ -73,15 +88,34 @@ class _HomeScreenState extends State<HomeScreen>
               /// ======= FOOTER =======
               if (isWide)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 8, left: 16, top: 4),
+                  padding:
+                  const EdgeInsets.only(bottom: 8, left: 16, top: 4),
                   child: Align(
                     alignment: Alignment.bottomLeft,
-                    child: Text(
-                      'MW Chat • v2.0',
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodySmall
-                          ?.copyWith(color: Colors.white38),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'MW Chat • $_appVersion • ',
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: Colors.white38),
+                        ),
+                        GestureDetector(
+                          onTap: _openMwWebsite,
+                          child: Text(
+                            'mwchats.com',
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(
+                              color: Colors.white60,
+                              decoration: TextDecoration.underline,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -92,7 +126,7 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  /// ✅ Returns a real TabBar (not wrapped) — fully compatible with MwAppHeader
+  /// Keeps tabs alive to prevent rebuilding when switching
   TabBar _buildFixedTabBar(AppLocalizations l10n) {
     return TabBar(
       controller: _tabController,
@@ -134,6 +168,7 @@ class _KeepAliveState extends State<_KeepAlive>
     with AutomaticKeepAliveClientMixin {
   @override
   bool get wantKeepAlive => true;
+
   @override
   Widget build(BuildContext context) {
     super.build(context);

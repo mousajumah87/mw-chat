@@ -78,6 +78,9 @@ class AppLocalizationsAr extends AppLocalizations {
   String get about => 'حول';
 
   @override
+  String get website => 'الموقع الإلكتروني';
+
+  @override
   String get settingUpProfile => 'جارٍ إعداد ملفك الشخصي...';
 
   @override

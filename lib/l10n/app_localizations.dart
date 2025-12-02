@@ -233,6 +233,12 @@ abstract class AppLocalizations {
   /// **'About'**
   String get about;
 
+  /// No description provided for @website.
+  ///
+  /// In en, this message translates to:
+  /// **'Website'**
+  String get website;
+
   /// No description provided for @settingUpProfile.
   ///
   /// In en, this message translates to:
