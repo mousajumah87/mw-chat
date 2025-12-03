@@ -25,31 +25,38 @@ class _InviteFriendsTabState extends State<InviteFriendsTab>
       'https://apps.apple.com/app/id1234567890'; // TODO: replace with real App Store ID
   static const String _websiteLink = 'https://www.mwchats.com';
 
-  Future<void> _shareInvite(AppLocalizations l10n) async {
+  Future<void> _shareInvite(BuildContext context, AppLocalizations l10n) async {
     final message = "${l10n.inviteFromContactsFuture}\n\n"
         "${l10n.inviteShareManual}\n\n"
         "Android: $_androidLink\n"
-        "iOS: $_iosLink";
+        "iOS: $_iosLink\n";
+    _websiteLink;
 
     if (await Vibration.hasVibrator() ?? false) {
       Vibration.vibrate(duration: 40);
     }
 
-    await Share.share(message, subject: l10n.inviteFriendsTitle);
+    // Make sure the share sheet has a valid source rect on iPad
+    final box = context.findRenderObject() as RenderBox?;
+    final origin = box != null
+        ? box.localToGlobal(Offset.zero) & box.size
+        : const Rect.fromLTWH(0, 0, 1, 1);
+
+    await Share.share(
+      message,
+      subject: l10n.inviteFriendsTitle,
+      sharePositionOrigin: origin,
+    );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    super.build(context);
-    final l10n = AppLocalizations.of(context)!;
-
-    // ===== Core content shown on ALL platforms =====
-    final content = Column(
+  Widget _buildCoreContent(BuildContext context, AppLocalizations l10n) {
+    return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         const Icon(Icons.group_add_outlined, color: Colors.white, size: 40),
         const SizedBox(height: 16),
 
+        // Title
         Text(
           l10n.inviteFriendsTitle,
           style: const TextStyle(
@@ -62,6 +69,7 @@ class _InviteFriendsTabState extends State<InviteFriendsTab>
 
         const SizedBox(height: 12),
 
+        // Future contacts feature text
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Text(
@@ -70,7 +78,10 @@ class _InviteFriendsTabState extends State<InviteFriendsTab>
             textAlign: TextAlign.center,
           ),
         ),
+
         const SizedBox(height: 8),
+
+        // Manual share text
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Text(
@@ -82,33 +93,40 @@ class _InviteFriendsTabState extends State<InviteFriendsTab>
 
         const SizedBox(height: 20),
 
+        // Invite button
         SizedBox(
           width: 240,
-          child: ElevatedButton.icon(
-            onPressed: () => _shareInvite(l10n),
-            icon: const Icon(Icons.share, color: Colors.black),
-            label: Text(
-              l10n.inviteFriendsTitle,
-              style: const TextStyle(
-                color: Colors.black,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-            ),
+          child: Builder(
+            // Use a Builder so we get a context attached to this button for sharePositionOrigin
+            builder: (buttonContext) {
+              return ElevatedButton.icon(
+                onPressed: () => _shareInvite(buttonContext, l10n),
+                icon: const Icon(Icons.share, color: Colors.black),
+                label: Text(
+                  l10n.inviteFriendsTitle,
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+              );
+            },
           ),
         ),
 
         const SizedBox(height: 24),
 
-        Text(
+        // Website text
+        const Text(
           _websiteLink,
-          style: const TextStyle(
+          style: TextStyle(
             color: Colors.white54,
             fontSize: 12,
             decoration: TextDecoration.underline,
@@ -116,8 +134,13 @@ class _InviteFriendsTabState extends State<InviteFriendsTab>
         ),
       ],
     );
+  }
 
-    // ===== Layout (mobile / web / desktop) =====
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    final l10n = AppLocalizations.of(context)!;
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final isWide = constraints.maxWidth > 900;
@@ -131,21 +154,19 @@ class _InviteFriendsTabState extends State<InviteFriendsTab>
               const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: const [
-                  SizedBox(height: 8),
-                  // Centered invite content
-                  Center(child: _InviteContentWrapper()),
-                  SizedBox(height: 16),
-                  // MW side panel below, scrollable with everything
-                  RepaintBoundary(child: MwSidePanel()),
-                  SizedBox(height: 8),
+                children: [
+                  const SizedBox(height: 8),
+                  Center(child: _buildCoreContent(context, l10n)),
+                  const SizedBox(height: 16),
+                  const RepaintBoundary(child: MwSidePanel()),
+                  const SizedBox(height: 8),
                 ],
               ),
             ),
           );
         }
 
-        // ---- DESKTOP / WIDE ----
+        // ---- DESKTOP / WIDE / iPad landscape ----
         return Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -154,7 +175,7 @@ class _InviteFriendsTabState extends State<InviteFriendsTab>
                 child: Padding(
                   padding:
                   const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                  child: content,
+                  child: _buildCoreContent(context, l10n),
                 ),
               ),
             ),
@@ -172,92 +193,6 @@ class _InviteFriendsTabState extends State<InviteFriendsTab>
           ],
         );
       },
-    );
-  }
-}
-
-/// Small wrapper so we can reuse the same `content` without rebuilding layout logic.
-class _InviteContentWrapper extends StatelessWidget {
-  const _InviteContentWrapper();
-
-  @override
-  Widget build(BuildContext context) {
-    final state =
-    context.findAncestorStateOfType<_InviteFriendsTabState>()!;
-    final l10n = AppLocalizations.of(context)!;
-
-    // Reuse the "content" built above via a helper method
-    return state._buildCoreContent(l10n);
-  }
-}
-
-extension on _InviteFriendsTabState {
-  // Re-expose the core content so _InviteContentWrapper can use it.
-  Widget _buildCoreContent(AppLocalizations l10n) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Icon(Icons.group_add_outlined, color: Colors.white, size: 40),
-        const SizedBox(height: 16),
-        Text(
-          l10n.inviteFriendsTitle,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 20,
-            fontWeight: FontWeight.w600,
-          ),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 12),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text(
-            l10n.inviteFromContactsFuture,
-            style: const TextStyle(color: Colors.white70, fontSize: 14),
-            textAlign: TextAlign.center,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text(
-            l10n.inviteShareManual,
-            style: const TextStyle(color: Colors.white70, fontSize: 14),
-            textAlign: TextAlign.center,
-          ),
-        ),
-        const SizedBox(height: 20),
-        SizedBox(
-          width: 240,
-          child: ElevatedButton.icon(
-            onPressed: () => _shareInvite(l10n),
-            icon: const Icon(Icons.share, color: Colors.black),
-            label: Text(
-              l10n.inviteFriendsTitle,
-              style: const TextStyle(
-                color: Colors.black,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 24),
-        const Text(
-          _InviteFriendsTabState._websiteLink,
-          style: TextStyle(
-            color: Colors.white54,
-            fontSize: 12,
-            decoration: TextDecoration.underline,
-          ),
-        ),
-      ],
     );
   }
 }
