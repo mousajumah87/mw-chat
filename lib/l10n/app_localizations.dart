@@ -773,6 +773,24 @@ abstract class AppLocalizations {
   /// **'Sensitive actions'**
   String get dangerZone;
 
+  /// No description provided for @inviteFromContactsFuture.
+  ///
+  /// In en, this message translates to:
+  /// **'Inviting friends directly from your contacts will be available in a future update of MW Chat.'**
+  String get inviteFromContactsFuture;
+
+  /// No description provided for @inviteShareManual.
+  ///
+  /// In en, this message translates to:
+  /// **'For now, you can share MW Chat with friends by sending them the app link manually.'**
+  String get inviteShareManual;
+
+  /// No description provided for @optional.
+  ///
+  /// In en, this message translates to:
+  /// **'Optional'**
+  String get optional;
+
   /// No description provided for @aboutTitle.
   ///
   /// In en, this message translates to:

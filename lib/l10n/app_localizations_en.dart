@@ -370,6 +370,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get dangerZone => 'Sensitive actions';
 
   @override
+  String get inviteFromContactsFuture => 'Inviting friends directly from your contacts will be available in a future update of MW Chat.';
+
+  @override
+  String get inviteShareManual => 'For now, you can share MW Chat with friends by sending them the app link manually.';
+
+  @override
+  String get optional => 'Optional';
+
+  @override
   String get aboutTitle => 'About MW Chat';
 
   @override

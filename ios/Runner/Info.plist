@@ -2,15 +2,11 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- Contacts (for invite friends) -->
-    <key>NSContactsUsageDescription</key>
-    <string>MW Chat needs access to your contacts so you can invite your friends.</string>
-
-    <!-- 🔥 NEW: required by Apple for picking/sending photos -->
+    <!-- NEW: required by Apple for picking/sending photos -->
     <key>NSPhotoLibraryUsageDescription</key>
     <string>MW Chat needs access to your photos so you can choose pictures to send in chat.</string>
 
-    <!-- 🔥 NEW: only if you allow taking a photo with the camera; safe to keep if you use image_picker -->
+    <!-- NEW: only if you allow taking a photo with the camera; safe to keep if you use image_picker -->
     <key>NSCameraUsageDescription</key>
     <string>MW Chat needs access to your camera so you can take photos and send them in chat.</string>
 

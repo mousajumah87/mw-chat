@@ -85,6 +85,8 @@ class _ProfileScreenState extends State<ProfileScreen>
       final birthdayField = data['birthday'];
       if (birthdayField is Timestamp) {
         _birthday = birthdayField.toDate();
+      } else {
+        _birthday = null;
       }
     });
   }
@@ -123,7 +125,9 @@ class _ProfileScreenState extends State<ProfileScreen>
       firstDate: DateTime(1900),
       lastDate: now,
     );
-    if (picked != null) setState(() => _birthday = picked);
+    if (picked != null) {
+      setState(() => _birthday = picked);
+    }
   }
 
   Future<void> _saveProfile() async {
@@ -154,11 +158,16 @@ class _ProfileScreenState extends State<ProfileScreen>
         'lastName': _lastNameCtrl.text.trim(),
       };
 
+      // Birthday is OPTIONAL:
+      // - if user picked a date -> store
+      // - if null -> remove field from Firestore so it is not required
       if (_birthday != null) {
         data['birthday'] = Timestamp.fromDate(_birthday!);
+      } else {
+        data['birthday'] = FieldValue.delete();
       }
 
-      // Gender is optional:
+      // Gender is OPTIONAL:
       // - if male/female → store
       // - otherwise → remove the field from Firestore
       if (_gender == 'male' || _gender == 'female') {
@@ -187,8 +196,8 @@ class _ProfileScreenState extends State<ProfileScreen>
         if (Navigator.of(context).canPop()) {
           Navigator.of(context).pop();
         }
-        // If shown from AuthGate as the initial screen, there's nothing to pop;
-        // AuthGate will switch to HomeScreen once profile is complete.
+        // If shown from AuthGate as the initial screen, AuthGate will
+        // switch to HomeScreen once profile is complete.
       }
     } catch (_) {
       if (mounted) {
@@ -277,9 +286,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       );
 
       // 5) Go back to the first route (AuthGate -> login)
-      if (Navigator.of(context).canPop()) {
-        Navigator.of(context).popUntil((route) => route.isFirst);
-      }
+      Navigator.of(context).popUntil((route) => route.isFirst);
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -343,8 +350,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       });
     }
 
-    // If you have other collections like "friendships", "blocks", etc.,
-    // you can extend this method to clean those as well.
+    // Extend here if you add more collections tied to the user.
   }
 
   Widget _buildAvatar() {
@@ -466,13 +472,13 @@ class _ProfileScreenState extends State<ProfileScreen>
                       ),
                       const SizedBox(height: 20),
 
-                      // === Birthday label ===
+                      // === Birthday label (optional) ===
                       Align(
                         alignment: isRtl
                             ? Alignment.centerRight
                             : Alignment.centerLeft,
                         child: Text(
-                          l10n.birthday,
+                          '${l10n.birthday} ${l10n.optional}',
                           textDirection: textDirection,
                           style: const TextStyle(color: Colors.white70),
                         ),
@@ -523,7 +529,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                             ? Alignment.centerRight
                             : Alignment.centerLeft,
                         child: Text(
-                          '${l10n.gender} (optional)',
+                          '${l10n.gender} ${l10n.optional}',
                           textDirection: textDirection,
                           style: const TextStyle(color: Colors.white70),
                         ),

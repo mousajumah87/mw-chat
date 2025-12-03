@@ -27,14 +27,14 @@ class _AuthScreenState extends State<AuthScreen> {
   final _firstNameCtrl = TextEditingController();
   final _lastNameCtrl = TextEditingController();
 
-// 'none' means user did not specify gender (gender is optional)
+  // 'none' means user did not specify gender (gender is optional)
   static const String _genderNone = 'none';
   static const String _genderMale = 'male';
   static const String _genderFemale = 'female';
 
   final ValueNotifier<String> _genderNotifier = ValueNotifier(_genderNone);
 
-  DateTime? _birthday;
+  DateTime? _birthday; // ✅ Optional
   File? _imageFile;
   Uint8List? _imageBytes;
 
@@ -122,6 +122,7 @@ class _AuthScreenState extends State<AuthScreen> {
     });
 
     try {
+      // ===== LOGIN FLOW =====
       if (_isLogin) {
         await FirebaseAuth.instance.signInWithEmailAndPassword(
           email: _emailCtrl.text.trim(),
@@ -130,10 +131,8 @@ class _AuthScreenState extends State<AuthScreen> {
         return;
       }
 
-      if (_birthday == null) {
-        setState(() => _errorText = l10n.selectBirthday);
-        return;
-      }
+      // ===== REGISTER FLOW =====
+      // ✅ Birthday is OPTIONAL – do NOT block registration if it's null
 
       final cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: _emailCtrl.text.trim(),
@@ -149,31 +148,32 @@ class _AuthScreenState extends State<AuthScreen> {
       final profileUrl = await _uploadProfileImage(user.uid);
 
       final gender = _genderNotifier.value;
-      final hasGender =
-          gender == _genderMale || gender == _genderFemale;
+      final hasGender = gender == _genderMale || gender == _genderFemale;
 
       // Decide avatarType:
       // - if user chose female → smurf
       // - if user chose male  → bear
       // - if user did not choose → default bear
-      final avatarType = hasGender && gender == _genderFemale
-          ? 'smurf'
-          : 'bear';
+      final avatarType = hasGender && gender == _genderFemale ? 'smurf' : 'bear';
 
       final userData = <String, dynamic>{
         'email': user.email,
         'firstName': _firstNameCtrl.text.trim(),
         'lastName': _lastNameCtrl.text.trim(),
-        'birthday': Timestamp.fromDate(_birthday!),
         'profileUrl': profileUrl ?? '',
         'avatarType': avatarType,
         'isOnline': false,
         'lastSeen': FieldValue.serverTimestamp(),
-        'isActive': false,
+        'isActive': false, // or true if you don't need manual activation
         'createdAt': FieldValue.serverTimestamp(),
       };
 
-      // Only store gender if the user actually chose male/female
+      // ✅ Birthday optional: only store if provided
+      if (_birthday != null) {
+        userData['birthday'] = Timestamp.fromDate(_birthday!);
+      }
+
+      // ✅ Gender optional: only store male/female
       if (hasGender) {
         userData['gender'] = gender;
       }
@@ -183,12 +183,15 @@ class _AuthScreenState extends State<AuthScreen> {
           .doc(user.uid)
           .set(userData);
 
-
-      if (profileUrl != null) await user.updatePhotoURL(profileUrl);
+      if (profileUrl != null) {
+        await user.updatePhotoURL(profileUrl);
+      }
     } on FirebaseAuthException catch (e) {
       setState(() => _errorText = e.message ?? l10n.authError);
     } finally {
-      if (mounted) setState(() => _submitting = false);
+      if (mounted) {
+        setState(() => _submitting = false);
+      }
     }
   }
 
@@ -246,19 +249,20 @@ class _AuthScreenState extends State<AuthScreen> {
                                 if (isRegister)
                                   ValueListenableBuilder<String>(
                                     valueListenable: _genderNotifier,
-                                    builder: (_, gender, __) => AuthRegisterSection(
-                                      firstNameCtrl: _firstNameCtrl,
-                                      lastNameCtrl: _lastNameCtrl,
-                                      birthdayLabel: _birthdayLabel(l10n),
-                                      gender: gender,
-                                      isSubmitting: _submitting,
-                                      imageBytes: _imageBytes,
-                                      imageFile: _imageFile,
-                                      onPickImage: _pickImage,
-                                      onPickBirthday: _pickBirthday,
-                                      onGenderChanged: (value) =>
-                                      _genderNotifier.value = value,
-                                    ),
+                                    builder: (_, gender, __) =>
+                                        AuthRegisterSection(
+                                          firstNameCtrl: _firstNameCtrl,
+                                          lastNameCtrl: _lastNameCtrl,
+                                          birthdayLabel: _birthdayLabel(l10n),
+                                          gender: gender,
+                                          isSubmitting: _submitting,
+                                          imageBytes: _imageBytes,
+                                          imageFile: _imageFile,
+                                          onPickImage: _pickImage,
+                                          onPickBirthday: _pickBirthday,
+                                          onGenderChanged: (value) =>
+                                          _genderNotifier.value = value,
+                                        ),
                                   ),
                                 _buildTextField(
                                   controller: _emailCtrl,
@@ -294,7 +298,9 @@ class _AuthScreenState extends State<AuthScreen> {
                                   const SizedBox(height: 10),
                                   Text(
                                     _errorText!,
-                                    style: const TextStyle(color: Colors.redAccent),
+                                    style: const TextStyle(
+                                      color: Colors.redAccent,
+                                    ),
                                     textAlign: TextAlign.center,
                                   ),
                                 ],
@@ -306,7 +312,9 @@ class _AuthScreenState extends State<AuthScreen> {
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: Colors.white,
                                       foregroundColor: Colors.black,
-                                      padding: const EdgeInsets.symmetric(vertical: 14),
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 14,
+                                      ),
                                       shape: RoundedRectangleBorder(
                                         borderRadius: BorderRadius.circular(12),
                                       ),
@@ -321,9 +329,11 @@ class _AuthScreenState extends State<AuthScreen> {
                                         color: Colors.black,
                                       ),
                                     )
-                                        : Text(isRegister
-                                        ? l10n.register
-                                        : l10n.login),
+                                        : Text(
+                                      isRegister
+                                          ? l10n.register
+                                          : l10n.login,
+                                    ),
                                   ),
                                 ),
                                 const SizedBox(height: 14),
@@ -342,7 +352,9 @@ class _AuthScreenState extends State<AuthScreen> {
                                     isRegister
                                         ? l10n.alreadyHaveAccount
                                         : l10n.createNewAccount,
-                                    style: const TextStyle(color: Colors.white70),
+                                    style: const TextStyle(
+                                      color: Colors.white70,
+                                    ),
                                   ),
                                 ),
                               ],
@@ -396,7 +408,10 @@ class _AuthScreenState extends State<AuthScreen> {
         ),
         focusedBorder: const OutlineInputBorder(
           borderRadius: BorderRadius.all(Radius.circular(12)),
-          borderSide: BorderSide(color: Color(0xFFFFB300), width: 1.3),
+          borderSide: BorderSide(
+            color: Color(0xFFFFB300),
+            width: 1.3,
+          ),
         ),
       ),
       validator: validator,

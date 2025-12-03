@@ -6,18 +6,18 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:mw/screens/home/home_screen.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 import 'firebase_options.dart';
 import 'screens/auth/auth_screen.dart';
+import 'screens/home/home_screen.dart';
 import 'screens/profile/profile_screen.dart';
 import 'theme/app_theme.dart';
 import 'utils/presence_service.dart';
 import 'l10n/app_localizations.dart';
 import 'utils/locale_provider.dart';
-import 'package:firebase_app_check/firebase_app_check.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -29,7 +29,7 @@ Future<void> main() async {
     await FirebaseAppCheck.instance.activate(
       androidProvider: AndroidProvider.playIntegrity,
       appleProvider: AppleProvider.debug,
-      // You can later add iOS / web providers if you want:
+      // Later you can switch to:
       // appleProvider: AppleProvider.appAttest,
       // webProvider: ReCaptchaV3Provider('your-site-key'),
     );
@@ -75,26 +75,22 @@ class MyApp extends StatelessWidget {
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
 
-  /// Profile is considered complete when these **required** fields exist:
+  /// Profile is considered complete with ONLY:
   /// - firstName
   /// - lastName
-  /// - birthday (used only for age-related safety, not for ads or tracking)
   ///
-  /// Gender is **optional** and is intentionally NOT checked here to comply
-  /// with App Store guideline 5.1.1 – the app does not require gender to
-  /// function, so users can skip it completely.
+  /// Birthday and gender are BOTH optional and are **not required**
+  /// for the app to function, to comply with App Store guideline 5.1.1.
   bool _isProfileComplete(Map<String, dynamic>? data) {
     if (data == null) return false;
 
     final firstName = (data['firstName'] ?? '').toString().trim();
-    final lastName  = (data['lastName']  ?? '').toString().trim();
-    final birthday  = data['birthday'];
+    final lastName = (data['lastName'] ?? '').toString().trim();
 
     final hasFirstName = firstName.isNotEmpty;
-    final hasLastName  = lastName.isNotEmpty;
-    final hasBirthday  = birthday != null; // Timestamp or any non-null value
+    final hasLastName = lastName.isNotEmpty;
 
-    return hasFirstName && hasLastName && hasBirthday;
+    return hasFirstName && hasLastName;
   }
 
   @override
@@ -140,9 +136,10 @@ class AuthGate extends StatelessWidget {
 
             final data = userSnap.data!.data() ?? {};
 
-            // 1) If profile is missing required fields → force ProfileScreen
+            // 1) If profile is missing REQUIRED fields (name only) → ProfileScreen
             if (!_isProfileComplete(data)) {
-              // User can fill first/last name, birthday and (optional) gender here
+              // User can fill first/last name here.
+              // Birthday and gender are OPTIONAL and not required.
               return const ProfileScreen();
             }
 

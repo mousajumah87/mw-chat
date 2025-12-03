@@ -36,6 +36,7 @@ class AuthRegisterSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
+    final isRTL = Directionality.of(context) == TextDirection.rtl;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -53,14 +54,17 @@ class AuthRegisterSection extends StatelessWidget {
         _buildPickImageButton(l10n),
         const SizedBox(height: 20),
 
-        // === Name Fields (lightweight row rebuild) ===
+        // === Name Fields (in a Row, direction-aware) ===
         Row(
+          textDirection: isRTL ? TextDirection.rtl : TextDirection.ltr,
           children: [
             Expanded(
               child: _buildTextField(
                 controller: firstNameCtrl,
                 label: l10n.firstName,
                 focusColor: kSecondaryAmber,
+                isRTL: isRTL,
+                requiredError: l10n.requiredField,
               ),
             ),
             const SizedBox(width: 10),
@@ -69,6 +73,8 @@ class AuthRegisterSection extends StatelessWidget {
                 controller: lastNameCtrl,
                 label: l10n.lastName,
                 focusColor: kPrimaryBlue,
+                isRTL: isRTL,
+                requiredError: l10n.requiredField,
               ),
             ),
           ],
@@ -76,17 +82,17 @@ class AuthRegisterSection extends StatelessWidget {
 
         const SizedBox(height: 18),
 
-        // === Birthday ===
-        _buildLabel(theme, l10n.birthday),
+        // === Birthday (optional) ===
+        _buildLabel(theme, '${l10n.birthday} ${l10n.optional}'),
         const SizedBox(height: 6),
         _buildBirthdayButton(l10n),
 
         const SizedBox(height: 20),
 
         // === Gender Selection (optional) ===
-        _buildLabel(theme, '${l10n.gender} (optional)'),
+        _buildLabel(theme, '${l10n.gender} ${l10n.optional}'),
         const SizedBox(height: 8),
-        _buildGenderChips(l10n),
+        _buildGenderChips(l10n, isRTL),
         const SizedBox(height: 20),
       ],
     );
@@ -123,16 +129,20 @@ class AuthRegisterSection extends StatelessWidget {
     required TextEditingController controller,
     required String label,
     required Color focusColor,
+    required bool isRTL,
+    required String requiredError,
   }) {
     return TextFormField(
       controller: controller,
+      textAlign: isRTL ? TextAlign.right : TextAlign.left,
       style: const TextStyle(color: Colors.white),
       decoration: InputDecoration(
         labelText: label,
         labelStyle: const TextStyle(color: Colors.white70),
         filled: true,
         fillColor: Colors.white.withOpacity(0.07),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        contentPadding:
+        const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
           borderSide: BorderSide(color: Colors.white.withOpacity(0.25)),
@@ -142,14 +152,15 @@ class AuthRegisterSection extends StatelessWidget {
           borderSide: BorderSide(color: focusColor, width: 1.3),
         ),
       ),
-      validator: (v) =>
-      v == null || v.trim().isEmpty ? 'Required' : null,
+      // First/last name can stay required – error text now localized
+      validator: (v) => v == null || v.trim().isEmpty ? requiredError : null,
     );
   }
 
   Widget _buildLabel(ThemeData theme, String text) {
     return Align(
-      alignment: Alignment.centerLeft,
+      // Direction-aware: start = left in LTR, right in RTL
+      alignment: AlignmentDirectional.centerStart,
       child: Text(
         text,
         style: theme.textTheme.bodySmall
@@ -181,8 +192,11 @@ class AuthRegisterSection extends StatelessWidget {
                   style: const TextStyle(color: Colors.white),
                 ),
               ),
-              const Icon(Icons.calendar_today_outlined,
-                  color: Colors.white54, size: 16),
+              const Icon(
+                Icons.calendar_today_outlined,
+                color: Colors.white54,
+                size: 16,
+              ),
             ],
           ),
         ),
@@ -190,10 +204,9 @@ class AuthRegisterSection extends StatelessWidget {
     );
   }
 
-  Widget _buildGenderChips(AppLocalizations l10n) {
-    // Wrap instead of Row so 3 chips fit nicely on small screens
+  Widget _buildGenderChips(AppLocalizations l10n, bool isRTL) {
     return Wrap(
-      alignment: WrapAlignment.center,
+      alignment: isRTL ? WrapAlignment.end : WrapAlignment.start,
       spacing: 10,
       runSpacing: 8,
       children: [
@@ -213,7 +226,7 @@ class AuthRegisterSection extends StatelessWidget {
         ),
         // Optional choice – maps to 'none' in AuthScreen
         _genderOption(
-          label: 'Prefer not to say',
+          label: l10n.preferNotToSay, // ✅ localized
           selected: gender == 'none',
           color: Colors.grey,
           icon: Icons.remove_circle_outline,
@@ -240,7 +253,8 @@ class AuthRegisterSection extends StatelessWidget {
           color: selected ? color : Colors.white.withOpacity(0.07),
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color: selected ? Colors.transparent : Colors.white.withOpacity(0.3),
+            color:
+            selected ? Colors.transparent : Colors.white.withOpacity(0.3),
           ),
           boxShadow: selected
               ? [BoxShadow(color: color.withOpacity(0.4), blurRadius: 10)]

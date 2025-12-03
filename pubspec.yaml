@@ -2,7 +2,7 @@ name: mw
 description: "A mw project."
 publish_to: 'none'
 
-version: 1.0.0+4
+version: 1.0.0+7
 
 environment:
   sdk: ^3.10.0
@@ -25,7 +25,6 @@ dependencies:
   intl: ^0.20.2
   shared_preferences: ^2.5.3
   provider: ^6.1.5+1
-  flutter_contacts: ^1.1.9+2
   share_plus: ^12.0.1
   vibration: ^1.9.0
   cached_network_image: ^3.4.0
@@ -51,16 +50,12 @@ flutter:
 
   # Needed so Flutter generates app_localizations.dart
   generate: true
-#  fonts:
-#    - family: NotoColorEmoji
-#      fonts:
-#        - asset: assets/fonts/NotoColorEmoji.ttf
 
   assets:
     - assets/logo/mw_mark.png
     - assets/images/mw_bear_and_smurf.png
     - assets/images/mw_bg.png
-
+    - assets/fonts/
 
 # =========================
 # APP ICON CONFIGURATION

@@ -124,6 +124,9 @@
     "accountDeletedSuccessfully": "تم حذف الحساب بنجاح",
     "deleteAccountDescription": "سيؤدي حذف حسابك إلى إزالة ملفك الشخصي وبياناتك بشكل دائم.",
     "dangerZone": "إجراءات حساسة",
+    "inviteFromContactsFuture": "دعوة الأصدقاء مباشرةً من جهات الاتصال ستكون متاحة في تحديث قادم من تطبيق MW Chat.",
+    "inviteShareManual": "حالياً، يمكنك مشاركة تطبيق MW Chat مع أصدقائك من خلال إرسال رابط التطبيق لهم يدوياً.",
+    "optional": "اختياري",
 
 
     "aboutTitle": "حول MW Chat",

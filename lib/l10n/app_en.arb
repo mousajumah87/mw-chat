@@ -125,6 +125,9 @@
     "accountDeletedSuccessfully": "Account deleted successfully",
     "deleteAccountDescription": "Deleting your account will permanently remove your profile and data.",
     "dangerZone": "Sensitive actions",
+    "inviteFromContactsFuture": "Inviting friends directly from your contacts will be available in a future update of MW Chat.",
+    "inviteShareManual": "For now, you can share MW Chat with friends by sending them the app link manually.",
+    "optional": "Optional",
 
 
     "aboutTitle": "About MW Chat",
