@@ -1,5 +1,8 @@
+// lib/screens/auth/auth_screen.dart
+
 import 'dart:io';
 import 'dart:typed_data';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -10,6 +13,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../l10n/app_localizations.dart';
 import '../../widgets/ui/mw_background.dart';
 import '../../widgets/ui/mw_language_button.dart';
+import '../legal/terms_of_use_screen.dart';
 import 'widgets/auth_header.dart';
 import 'widgets/auth_register_section.dart';
 
@@ -22,25 +26,25 @@ class AuthScreen extends StatefulWidget {
 
 class _AuthScreenState extends State<AuthScreen> {
   final _formKey = GlobalKey<FormState>();
+
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _firstNameCtrl = TextEditingController();
   final _lastNameCtrl = TextEditingController();
 
-  // 'none' means user did not specify gender (gender is optional)
-  static const String _genderNone = 'none';
-  static const String _genderMale = 'male';
-  static const String _genderFemale = 'female';
+  // gender: 'none' | 'male' | 'female'
+  final ValueNotifier<String> _genderNotifier = ValueNotifier('none');
 
-  final ValueNotifier<String> _genderNotifier = ValueNotifier(_genderNone);
-
-  DateTime? _birthday; // ✅ Optional
+  DateTime? _birthday;
   File? _imageFile;
   Uint8List? _imageBytes;
 
   bool _isLogin = true;
   bool _submitting = false;
   String? _errorText;
+
+  /// ⭐ REQUIRED BY APPLE 1.2 – user must accept Terms before registering
+  bool _agreedToTerms = false;
 
   @override
   void dispose() {
@@ -52,8 +56,12 @@ class _AuthScreenState extends State<AuthScreen> {
     super.dispose();
   }
 
+  // -------------------------
+  // IMAGE PICKING
+  // -------------------------
   Future<void> _pickImage() async {
     if (_submitting) return;
+
     final picker = ImagePicker();
     final picked = await picker.pickImage(
       source: ImageSource.gallery,
@@ -61,6 +69,7 @@ class _AuthScreenState extends State<AuthScreen> {
       maxHeight: 800,
       imageQuality: 75,
     );
+
     if (picked == null) return;
 
     if (kIsWeb) {
@@ -78,42 +87,55 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
-  static String _compressImage(String path) {
-    // For lightweight compression, just return same path here.
-    // Optionally integrate image library (e.g. flutter_image_compress)
-    return path;
-  }
+  static String _compressImage(String path) => path;
 
+  // -------------------------
+  // BIRTHDAY
+  // -------------------------
   Future<void> _pickBirthday() async {
     final now = DateTime.now();
     final initial = _birthday ?? DateTime(now.year - 18, now.month, now.day);
+
     final picked = await showDatePicker(
       context: context,
       initialDate: initial,
       firstDate: DateTime(1900),
       lastDate: now,
     );
-    if (picked != null) setState(() => _birthday = picked);
-  }
 
-  Future<String?> _uploadProfileImage(String uid) async {
-    if (_imageFile == null && _imageBytes == null) return null;
-    try {
-      final ref = FirebaseStorage.instance.ref().child('profile_pics/$uid');
-      final metadata = SettableMetadata(contentType: 'image/jpeg');
-      if (kIsWeb && _imageBytes != null) {
-        await ref.putData(_imageBytes!, metadata);
-      } else if (_imageFile != null) {
-        await ref.putFile(_imageFile!, metadata);
-      }
-      return await ref.getDownloadURL();
-    } catch (_) {
-      return null;
+    if (picked != null) {
+      setState(() => _birthday = picked);
     }
   }
 
+  // -------------------------
+  // TERMS OF USE
+  // -------------------------
+  Future<void> _openTerms() async {
+    final accepted = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => const TermsOfUseScreen()),
+    );
+
+    if (accepted == true) {
+      setState(() {
+        _agreedToTerms = true;
+        _errorText = null; // clear error once user accepts via full screen
+      });
+    }
+  }
+
+  // -------------------------
+  // SUBMIT
+  // -------------------------
   Future<void> _submit() async {
     final l10n = AppLocalizations.of(context)!;
+
+    // Apple 1.2 – must accept Terms before account creation
+    if (!_isLogin && !_agreedToTerms) {
+      setState(() => _errorText = l10n.mustAcceptTerms);
+      return;
+    }
+
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
     setState(() {
@@ -122,8 +144,8 @@ class _AuthScreenState extends State<AuthScreen> {
     });
 
     try {
-      // ===== LOGIN FLOW =====
       if (_isLogin) {
+        // ----- Login -----
         await FirebaseAuth.instance.signInWithEmailAndPassword(
           email: _emailCtrl.text.trim(),
           password: _passwordCtrl.text.trim(),
@@ -131,30 +153,37 @@ class _AuthScreenState extends State<AuthScreen> {
         return;
       }
 
-      // ===== REGISTER FLOW =====
-      // ✅ Birthday is OPTIONAL – do NOT block registration if it's null
-
-      final cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+      // ----- Registration -----
+      final cred = await FirebaseAuth.instance
+          .createUserWithEmailAndPassword(
         email: _emailCtrl.text.trim(),
         password: _passwordCtrl.text.trim(),
       );
 
       final user = cred.user;
       if (user == null) {
-        setState(() => _errorText = l10n.failedToCreateUser);
+        setState(() => _errorText = l10n.authError);
         return;
       }
 
-      final profileUrl = await _uploadProfileImage(user.uid);
+      // Upload profile picture if present
+      String? profileUrl;
+      if (_imageBytes != null || _imageFile != null) {
+        final ref =
+        FirebaseStorage.instance.ref().child('profile_pics/${user.uid}');
+        final metadata = SettableMetadata(contentType: 'image/jpeg');
+
+        if (kIsWeb && _imageBytes != null) {
+          await ref.putData(_imageBytes!, metadata);
+        } else if (_imageFile != null) {
+          await ref.putFile(_imageFile!, metadata);
+        }
+
+        profileUrl = await ref.getDownloadURL();
+      }
 
       final gender = _genderNotifier.value;
-      final hasGender = gender == _genderMale || gender == _genderFemale;
-
-      // Decide avatarType:
-      // - if user chose female → smurf
-      // - if user chose male  → bear
-      // - if user did not choose → default bear
-      final avatarType = hasGender && gender == _genderFemale ? 'smurf' : 'bear';
+      final avatarType = gender == 'female' ? 'smurf' : 'bear';
 
       final userData = <String, dynamic>{
         'email': user.email,
@@ -163,18 +192,22 @@ class _AuthScreenState extends State<AuthScreen> {
         'profileUrl': profileUrl ?? '',
         'avatarType': avatarType,
         'isOnline': false,
+        'isActive': false,
         'lastSeen': FieldValue.serverTimestamp(),
-        'isActive': false, // or true if you don't need manual activation
         'createdAt': FieldValue.serverTimestamp(),
+
+        // For block / privacy system
+        'blockedUserIds': <String>[],
+
+        // ⭐ Store terms acceptance at registration time
+        'hasAcceptedTerms': true,
+        'termsAcceptedAt': FieldValue.serverTimestamp(),
       };
 
-      // ✅ Birthday optional: only store if provided
       if (_birthday != null) {
         userData['birthday'] = Timestamp.fromDate(_birthday!);
       }
-
-      // ✅ Gender optional: only store male/female
-      if (hasGender) {
+      if (gender != 'none') {
         userData['gender'] = gender;
       }
 
@@ -182,10 +215,6 @@ class _AuthScreenState extends State<AuthScreen> {
           .collection('users')
           .doc(user.uid)
           .set(userData);
-
-      if (profileUrl != null) {
-        await user.updatePhotoURL(profileUrl);
-      }
     } on FirebaseAuthException catch (e) {
       setState(() => _errorText = e.message ?? l10n.authError);
     } finally {
@@ -197,26 +226,29 @@ class _AuthScreenState extends State<AuthScreen> {
 
   String _birthdayLabel(AppLocalizations l10n) {
     if (_birthday == null) return l10n.selectBirthday;
-    return '${_birthday!.year}-${_birthday!.month.toString().padLeft(2, '0')}-${_birthday!.day.toString().padLeft(2, '0')}';
+    return "${_birthday!.year}-"
+        "${_birthday!.month.toString().padLeft(2, '0')}-"
+        "${_birthday!.day.toString().padLeft(2, '0')}";
   }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final isRegister = !_isLogin;
-    final isWide = MediaQuery.of(context).size.width > 900;
     final isRTL = Directionality.of(context) == TextDirection.rtl;
 
     return Scaffold(
       body: MwBackground(
         child: Stack(
           children: [
+            // LANGUAGE BUTTON (RTL-aware)
             Positioned(
               top: 32,
               right: isRTL ? null : 32,
               left: isRTL ? 32 : null,
               child: const MwLanguageButton(),
             ),
+
             Center(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(24),
@@ -227,194 +259,151 @@ class _AuthScreenState extends State<AuthScreen> {
                       color: Colors.black.withOpacity(0.6),
                       borderRadius: BorderRadius.circular(22),
                       border: Border.all(color: Colors.white12),
-                      boxShadow: const [
+                      boxShadow: [
                         BoxShadow(
-                          color: Colors.black54,
+                          color: Colors.black.withOpacity(0.6),
                           blurRadius: 20,
-                          offset: Offset(0, 12),
+                          offset: const Offset(0, 12),
                         ),
                       ],
                     ),
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(28, 34, 28, 24),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          AuthHeader(isRegister: isRegister),
-                          const SizedBox(height: 28),
-                          Form(
-                            key: _formKey,
-                            child: Column(
-                              children: [
-                                if (isRegister)
-                                  ValueListenableBuilder<String>(
-                                    valueListenable: _genderNotifier,
-                                    builder: (_, gender, __) =>
-                                        AuthRegisterSection(
-                                          firstNameCtrl: _firstNameCtrl,
-                                          lastNameCtrl: _lastNameCtrl,
-                                          birthdayLabel: _birthdayLabel(l10n),
-                                          gender: gender,
-                                          isSubmitting: _submitting,
-                                          imageBytes: _imageBytes,
-                                          imageFile: _imageFile,
-                                          onPickImage: _pickImage,
-                                          onPickBirthday: _pickBirthday,
-                                          onGenderChanged: (value) =>
-                                          _genderNotifier.value = value,
-                                        ),
-                                  ),
-                                _buildTextField(
-                                  controller: _emailCtrl,
-                                  icon: Icons.email_outlined,
-                                  label: l10n.email,
-                                  validator: (v) {
-                                    if (v == null || v.trim().isEmpty) {
-                                      return l10n.requiredField;
-                                    }
-                                    if (!v.contains('@')) {
-                                      return l10n.invalidEmail;
-                                    }
-                                    return null;
-                                  },
-                                ),
-                                const SizedBox(height: 14),
-                                _buildTextField(
-                                  controller: _passwordCtrl,
-                                  icon: Icons.lock_outline,
-                                  label: l10n.password,
-                                  obscure: true,
-                                  validator: (v) {
-                                    if (v == null || v.isEmpty) {
-                                      return l10n.requiredField;
-                                    }
-                                    if (v.length < 6) {
-                                      return l10n.minPassword;
-                                    }
-                                    return null;
-                                  },
-                                ),
-                                if (_errorText != null) ...[
-                                  const SizedBox(height: 10),
-                                  Text(
-                                    _errorText!,
-                                    style: const TextStyle(
-                                      color: Colors.redAccent,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                ],
-                                const SizedBox(height: 22),
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: ElevatedButton(
-                                    onPressed: _submitting ? null : _submit,
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.white,
-                                      foregroundColor: Colors.black,
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 14,
-                                      ),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      elevation: 4,
-                                    ),
-                                    child: _submitting
-                                        ? const SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.black,
-                                      ),
-                                    )
-                                        : Text(
-                                      isRegister
-                                          ? l10n.register
-                                          : l10n.login,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(height: 14),
-                                Divider(color: Colors.white10),
-                                const SizedBox(height: 10),
-                                TextButton(
-                                  onPressed: _submitting
-                                      ? null
-                                      : () {
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 28,
+                        vertical: 34,
+                      ),
+                      child: Form(
+                        key: _formKey,
+                        child: Column(
+                          children: [
+                            AuthHeader(isRegister: isRegister),
+                            const SizedBox(height: 28),
+
+                            if (isRegister)
+                              ValueListenableBuilder<String>(
+                                valueListenable: _genderNotifier,
+                                builder: (_, g, __) => AuthRegisterSection(
+                                  firstNameCtrl: _firstNameCtrl,
+                                  lastNameCtrl: _lastNameCtrl,
+                                  birthdayLabel: _birthdayLabel(l10n),
+                                  gender: g,
+                                  isSubmitting: _submitting,
+                                  imageBytes: _imageBytes,
+                                  imageFile: _imageFile,
+                                  onPickImage: _pickImage,
+                                  onPickBirthday: _pickBirthday,
+                                  onGenderChanged: (v) =>
+                                  _genderNotifier.value = v,
+
+                                  // ⭐ Terms UI lives in AuthRegisterSection
+                                  agreedToTerms: _agreedToTerms,
+                                  onAgreeChanged: (bool v) {
                                     setState(() {
-                                      _isLogin = !_isLogin;
-                                      _errorText = null;
+                                      _agreedToTerms = v;
+                                      if (v) {
+                                        // Clear terms error as soon as user agrees
+                                        _errorText = null;
+                                      }
                                     });
                                   },
-                                  child: Text(
-                                    isRegister
-                                        ? l10n.alreadyHaveAccount
-                                        : l10n.createNewAccount,
-                                    style: const TextStyle(
-                                      color: Colors.white70,
-                                    ),
-                                  ),
+                                  onViewTerms: _openTerms,
                                 ),
-                              ],
+                              ),
+
+                            const SizedBox(height: 12),
+
+                            // Email
+                            TextFormField(
+                              controller: _emailCtrl,
+                              decoration: InputDecoration(
+                                labelText: l10n.email,
+                                prefixIcon:
+                                const Icon(Icons.email_outlined),
+                              ),
+                              validator: (v) {
+                                if (v == null || v.isEmpty) {
+                                  return l10n.requiredField;
+                                }
+                                if (!v.contains('@')) {
+                                  return l10n.invalidEmail;
+                                }
+                                return null;
+                              },
                             ),
-                          ),
-                        ],
+
+                            const SizedBox(height: 14),
+
+                            // Password
+                            TextFormField(
+                              controller: _passwordCtrl,
+                              obscureText: true,
+                              decoration: InputDecoration(
+                                labelText: l10n.password,
+                                prefixIcon:
+                                const Icon(Icons.lock_outline),
+                              ),
+                              validator: (v) {
+                                if (v == null || v.isEmpty) {
+                                  return l10n.requiredField;
+                                }
+                                if (v.length < 6) {
+                                  return l10n.minPassword;
+                                }
+                                return null;
+                              },
+                            ),
+
+                            if (_errorText != null) ...[
+                              const SizedBox(height: 10),
+                              Text(
+                                _errorText!,
+                                style: const TextStyle(color: Colors.red),
+                              ),
+                            ],
+
+                            const SizedBox(height: 22),
+
+                            // Login / Register button
+                            ElevatedButton(
+                              onPressed: _submitting ? null : _submit,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.white,
+                                foregroundColor: Colors.black,
+                              ),
+                              child: Text(
+                                isRegister ? l10n.register : l10n.login,
+                              ),
+                            ),
+
+                            const SizedBox(height: 14),
+
+                            TextButton(
+                              onPressed: () {
+                                setState(() {
+                                  _isLogin = !_isLogin;
+                                  _errorText = null; // clear any old errors
+                                });
+                              },
+                              child: Text(
+                                isRegister
+                                    ? l10n.alreadyHaveAccount
+                                    : l10n.createNewAccount,
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
             ),
-            if (isWide)
-              Positioned(
-                left: 24,
-                bottom: 20,
-                child: Text(
-                  l10n.appBrandingBeta,
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(color: Colors.white38),
-                ),
-              ),
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required IconData icon,
-    required String label,
-    bool obscure = false,
-    String? Function(String?)? validator,
-  }) {
-    return TextFormField(
-      controller: controller,
-      obscureText: obscure,
-      style: const TextStyle(color: Colors.white),
-      decoration: InputDecoration(
-        prefixIcon: Icon(icon, color: Colors.white70),
-        labelText: label,
-        labelStyle: const TextStyle(color: Colors.white70),
-        filled: true,
-        fillColor: Colors.white.withOpacity(0.1),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
-        ),
-        focusedBorder: const OutlineInputBorder(
-          borderRadius: BorderRadius.all(Radius.circular(12)),
-          borderSide: BorderSide(
-            color: Color(0xFFFFB300),
-            width: 1.3,
-          ),
-        ),
-      ),
-      validator: validator,
     );
   }
 }

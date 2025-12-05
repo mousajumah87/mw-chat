@@ -1,4 +1,5 @@
-// lib/screens/chat_screen.dart
+// lib/screens/chat/chat_screen.dart
+
 import 'dart:async';
 import 'dart:typed_data';
 
@@ -7,6 +8,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:file_picker/file_picker.dart';
+
 import '../../utils/presence_service.dart';
 
 // split-out widgets
@@ -47,9 +49,63 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isOtherTyping = false;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _roomSub;
 
+  // Did *I* block the other user?
+  bool _isBlocked = false;
+  bool _loadingBlockState = true;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _blockSub;
+
+  // Did *they* block *me*?
+  bool _hasBlockedMe = false;
+  bool _loadingOtherBlockState = true;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _otherUserSub;
+
+  // Friendship status between current user and other user:
+  // null        => no friendship doc (not friends yet)
+  // "accepted"  => full friends, can chat normally
+  // "requested" => I sent request, waiting
+  // "incoming"  => they sent request to me
+  String? _friendStatus;
+  bool _loadingFriendship = true;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _friendSub;
+
   // lightweight typing debounce (to avoid hammering Firestore)
   Timer? _typingDebounce;
   bool _isMeTypingFlag = false;
+
+  // Basic banned words list – lightweight filter
+  static const List<String> _bannedWords = [
+    'abuse',
+    'hate',
+    'insult',
+    'threat',
+  ];
+
+  bool get _isAnyBlock => _isBlocked || _hasBlockedMe;
+  bool get _isLoadingBlock => _loadingBlockState || _loadingOtherBlockState;
+
+  /// We now **always** enforce friendship for valid user pairs.
+  /// If either id is missing, we skip enforcement.
+  bool get _isFriendshipEnforced {
+    if (_currentUserId.isEmpty || _otherUserId == null || _otherUserId!.isEmpty) {
+      return false;
+    }
+    return true;
+  }
+
+  bool get _canSendMessages {
+    if (_isAnyBlock) return false;
+
+    if (!_isFriendshipEnforced) {
+      // no valid pair
+      return false;
+    }
+
+    // Only allow sending when status is explicitly accepted.
+    return _friendStatus == 'accepted';
+  }
+
+  bool get _hasIncomingFriendRequest => _friendStatus == 'incoming';
+  bool get _hasOutgoingFriendRequest => _friendStatus == 'requested';
 
   @override
   void initState() {
@@ -58,7 +114,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final user = FirebaseAuth.instance.currentUser;
     _currentUserId = user?.uid ?? '';
 
-    // Make sure *I* am marked online when entering a chat.
+    // Mark myself online when entering a chat.
     PresenceService.instance.markOnline();
 
     // Infer other user from "uidA_uidB"
@@ -79,7 +135,16 @@ class _ChatScreenState extends State<ChatScreen> {
     // When the chat is opened, reset my unread counter for this room.
     _resetMyUnread();
 
-    // listen for typing flags (other user)
+    // Listen to my user doc to know if I blocked the other user.
+    _subscribeToBlockState();
+
+    // Listen to the other user's doc to know if they blocked me.
+    _subscribeToOtherUserBlockState();
+
+    // Listen to friendship between me and the other user.
+    _subscribeToFriendship();
+
+    // Listen for typing flags (other user)
     _roomSub = FirebaseFirestore.instance
         .collection('privateChats')
         .doc(widget.roomId)
@@ -100,6 +165,315 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
+  /// Listen to my `users/{uid}` doc and update `_isBlocked` in real time.
+  void _subscribeToBlockState() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || _otherUserId == null) {
+      if (mounted) {
+        setState(() {
+          _isBlocked = false;
+          _loadingBlockState = false;
+        });
+      }
+      return;
+    }
+
+    _blockSub?.cancel();
+    _blockSub = FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .snapshots()
+        .listen(
+          (snap) {
+        final data = snap.data() ?? {};
+        final blockedListDynamic =
+            (data['blockedUserIds'] as List<dynamic>?) ?? const [];
+        final blockedList =
+        blockedListDynamic.map((e) => e.toString()).toList();
+        final isBlockedNow = blockedList.contains(_otherUserId);
+
+        if (mounted) {
+          setState(() {
+            _isBlocked = isBlockedNow;
+            _loadingBlockState = false;
+          });
+        }
+      },
+      onError: (e, st) {
+        debugPrint('[ChatScreen] _subscribeToBlockState error: $e\n$st');
+        if (mounted) {
+          setState(() {
+            _isBlocked = false;
+            _loadingBlockState = false;
+          });
+        }
+      },
+    );
+  }
+
+  /// Listen to the other user's `users/{otherId}` doc and see if they blocked *me*.
+  void _subscribeToOtherUserBlockState() {
+    final otherId = _otherUserId;
+    if (otherId == null || otherId.isEmpty || _currentUserId.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _hasBlockedMe = false;
+          _loadingOtherBlockState = false;
+        });
+      }
+      return;
+    }
+
+    _otherUserSub?.cancel();
+    _otherUserSub = FirebaseFirestore.instance
+        .collection('users')
+        .doc(otherId)
+        .snapshots()
+        .listen(
+          (snap) {
+        final data = snap.data() ?? {};
+        final blockedListDynamic =
+        data['blockedUserIds'] as List<dynamic>?;
+        final hasBlockedMeNow = blockedListDynamic
+            ?.whereType<String>()
+            .contains(_currentUserId) ??
+            false;
+
+        if (mounted) {
+          setState(() {
+            _hasBlockedMe = hasBlockedMeNow;
+            _loadingOtherBlockState = false;
+          });
+        }
+      },
+      onError: (e, st) {
+        debugPrint(
+            '[ChatScreen] _subscribeToOtherUserBlockState error: $e\n$st');
+        if (mounted) {
+          setState(() {
+            _hasBlockedMe = false;
+            _loadingOtherBlockState = false;
+          });
+        }
+      },
+    );
+  }
+
+  /// Listen to friendship doc: `users/{me}/friends/{other}`.
+  void _subscribeToFriendship() {
+    final me = _currentUserId;
+    final other = _otherUserId;
+
+    if (me.isEmpty || other == null || other.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _friendStatus = null;
+          _loadingFriendship = false;
+        });
+      }
+      return;
+    }
+
+    _friendSub?.cancel();
+    _friendSub = FirebaseFirestore.instance
+        .collection('users')
+        .doc(me)
+        .collection('friends')
+        .doc(other)
+        .snapshots()
+        .listen(
+          (snap) {
+        if (!mounted) return;
+
+        if (!snap.exists) {
+          setState(() {
+            _friendStatus = null;
+            _loadingFriendship = false;
+          });
+          return;
+        }
+
+        final data = snap.data() ?? {};
+        final status = data['status'] as String?;
+        setState(() {
+          _friendStatus = status;
+          _loadingFriendship = false;
+        });
+      },
+      onError: (e, st) {
+        debugPrint('[ChatScreen] _subscribeToFriendship error: $e\n$st');
+        if (mounted) {
+          setState(() {
+            _friendStatus = null;
+            _loadingFriendship = false;
+          });
+        }
+      },
+    );
+  }
+
+  /// Send a new friend request:
+  /// me -> other: status "requested"
+  /// other -> me: status "incoming"
+  Future<void> _sendFriendRequest() async {
+    final me = _currentUserId;
+    final other = _otherUserId;
+    if (me.isEmpty || other == null || other.isEmpty) return;
+
+    // Don’t resend if we already have some relationship.
+    if (_friendStatus == 'accepted' ||
+        _friendStatus == 'requested' ||
+        _friendStatus == 'incoming') {
+      return;
+    }
+
+    final l10n = AppLocalizations.of(context)!;
+
+    try {
+      final batch = FirebaseFirestore.instance.batch();
+
+      final myDoc = FirebaseFirestore.instance
+          .collection('users')
+          .doc(me)
+          .collection('friends')
+          .doc(other);
+
+      final theirDoc = FirebaseFirestore.instance
+          .collection('users')
+          .doc(other)
+          .collection('friends')
+          .doc(me);
+
+      final now = FieldValue.serverTimestamp();
+
+      batch.set(
+        myDoc,
+        {
+          'status': 'requested',
+          'createdAt': now,
+          'updatedAt': now,
+        },
+        SetOptions(merge: true),
+      );
+
+      batch.set(
+        theirDoc,
+        {
+          'status': 'incoming',
+          'createdAt': now,
+          'updatedAt': now,
+        },
+        SetOptions(merge: true),
+      );
+
+      await batch.commit();
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.friendRequestSent)),
+      );
+    } catch (e, st) {
+      debugPrint('[ChatScreen] _sendFriendRequest error: $e\n$st');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.friendRequestSendFailed)),
+      );
+    }
+  }
+
+  /// Accept an incoming friend request:
+  /// - my doc:   status -> "accepted"
+  /// - their doc: status -> "accepted"
+  Future<void> _acceptFriendRequest() async {
+    final me = _currentUserId;
+    final other = _otherUserId;
+    if (me.isEmpty || other == null || other.isEmpty) return;
+
+    final l10n = AppLocalizations.of(context)!;
+
+    try {
+      final batch = FirebaseFirestore.instance.batch();
+      final myDoc = FirebaseFirestore.instance
+          .collection('users')
+          .doc(me)
+          .collection('friends')
+          .doc(other);
+      final theirDoc = FirebaseFirestore.instance
+          .collection('users')
+          .doc(other)
+          .collection('friends')
+          .doc(me);
+
+      final payload = {
+        'status': 'accepted',
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      batch.set(myDoc, payload, SetOptions(merge: true));
+      batch.set(theirDoc, payload, SetOptions(merge: true));
+
+      await batch.commit();
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.friendRequestAccepted),
+        ),
+      );
+    } catch (e, st) {
+      debugPrint('[ChatScreen] _acceptFriendRequest error: $e\n$st');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.friendRequestAcceptFailed),
+        ),
+      );
+    }
+  }
+
+  /// Decline / cancel friend request by removing both docs.
+  Future<void> _declineFriendRequest() async {
+    final me = _currentUserId;
+    final other = _otherUserId;
+    if (me.isEmpty || other == null || other.isEmpty) return;
+
+    final l10n = AppLocalizations.of(context)!;
+
+    try {
+      final batch = FirebaseFirestore.instance.batch();
+      final myDoc = FirebaseFirestore.instance
+          .collection('users')
+          .doc(me)
+          .collection('friends')
+          .doc(other);
+      final theirDoc = FirebaseFirestore.instance
+          .collection('users')
+          .doc(other)
+          .collection('friends')
+          .doc(me);
+
+      batch.delete(myDoc);
+      batch.delete(theirDoc);
+
+      await batch.commit();
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.friendRequestDeclined),
+        ),
+      );
+    } catch (e, st) {
+      debugPrint('[ChatScreen] _declineFriendRequest error: $e\n$st');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.friendRequestDeclineFailed),
+        ),
+      );
+    }
+  }
+
   /// Reset my unread counter for this room to 0.
   Future<void> _resetMyUnread() async {
     if (_currentUserId.isEmpty) return;
@@ -116,29 +490,6 @@ class _ChatScreenState extends State<ChatScreen> {
       );
     } catch (e, st) {
       debugPrint('[ChatScreen] _resetMyUnread error: $e\n$st');
-    }
-  }
-
-  /// Increase unread counter for the *other* user when I send a message.
-  Future<void> _bumpUnreadForOther() async {
-    if (_currentUserId.isEmpty || _otherUserId == null) return;
-
-    final roomRef =
-    FirebaseFirestore.instance.collection('privateChats').doc(widget.roomId);
-
-    try {
-      await roomRef.set(
-        {
-          'participants': [_currentUserId, _otherUserId],
-          'unreadCounts': {
-            _otherUserId!: FieldValue.increment(1),
-            _currentUserId: 0,
-          },
-        },
-        SetOptions(merge: true),
-      );
-    } catch (e, st) {
-      debugPrint('[ChatScreen] _bumpUnreadForOther error: $e\n$st');
     }
   }
 
@@ -200,9 +551,10 @@ class _ChatScreenState extends State<ChatScreen> {
           ],
         );
       },
-    );
+    ) ??
+        false;
 
-    if (shouldDelete != true) return;
+    if (!shouldDelete) return;
 
     try {
       final roomRef = FirebaseFirestore.instance
@@ -244,6 +596,19 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  // ---------- MESSAGE FILTERING ----------
+
+  String? _validateMessageContent(String text) {
+    final lower = text.toLowerCase();
+    for (final w in _bannedWords) {
+      if (w.isNotEmpty && lower.contains(w)) {
+        final l10n = AppLocalizations.of(context)!;
+        return l10n.messageContainsRestrictedContent;
+      }
+    }
+    return null;
+  }
+
   // ---------- TEXT MESSAGE ----------
 
   /// Send a text message and atomically update unread count for the other user.
@@ -251,8 +616,43 @@ class _ChatScreenState extends State<ChatScreen> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
+    final l10n = AppLocalizations.of(context)!;
+
+    // If there is any block relationship, do not send new messages.
+    if (_isAnyBlock) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.userBlockedInfo)),
+      );
+      return;
+    }
+
+    // Friendship enforcement: must be accepted.
+    if (!_canSendMessages) {
+      String info;
+      if (_hasOutgoingFriendRequest) {
+        info = l10n.friendshipInfoOutgoing;
+      } else if (_hasIncomingFriendRequest) {
+        info = l10n.friendshipInfoIncoming;
+      } else {
+        info = l10n.friendshipInfoNotFriends;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(info)),
+      );
+      return;
+    }
+
     final text = _msgController.text.trim();
     if (text.isEmpty) return;
+
+    // Filter for objectionable content
+    final error = _validateMessageContent(text);
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error)),
+      );
+      return;
+    }
 
     setState(() => _sending = true);
 
@@ -386,6 +786,39 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
+    // If blocked in either direction, do not send uploads.
+    if (_isAnyBlock) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.userBlockedInfo)),
+      );
+      return;
+    }
+
+    // Friendship enforcement: must be accepted.
+    if (!_canSendMessages) {
+      String info;
+      if (_hasOutgoingFriendRequest) {
+        info = l10n.friendshipFileInfoOutgoing;
+      } else if (_hasIncomingFriendRequest) {
+        info = l10n.friendshipFileInfoIncoming;
+      } else {
+        info = l10n.friendshipFileInfoNotFriends;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(info)),
+      );
+      return;
+    }
+
+    // Light content filter on file name as well
+    final nameError = _validateMessageContent(file.name);
+    if (nameError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(nameError)),
+      );
+      return;
+    }
+
     final Uint8List? bytes = file.bytes;
     if (bytes == null) {
       debugPrint(
@@ -503,15 +936,127 @@ class _ChatScreenState extends State<ChatScreen> {
   void dispose() {
     _msgController.dispose();
     _roomSub?.cancel();
+    _blockSub?.cancel();
+    _otherUserSub?.cancel();
+    _friendSub?.cancel();
     _typingDebounce?.cancel();
     _updateMyTyping(false); // best-effort
     super.dispose();
+  }
+
+  Widget _buildFriendshipBanner(AppLocalizations l10n) {
+    if (_loadingFriendship || !_isFriendshipEnforced) {
+      return const SizedBox.shrink();
+    }
+
+    // Not friends yet, no doc: show "Send request" banner.
+    if (_friendStatus == null) {
+      return Container(
+        margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.blueGrey.withOpacity(0.18),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.blueGrey.withOpacity(0.35)),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.person_add_alt_1_outlined,
+                color: Colors.white70, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                l10n.friendshipBannerNotFriends(widget.title),
+                style: const TextStyle(fontSize: 13),
+              ),
+            ),
+            const SizedBox(width: 8),
+            TextButton(
+              onPressed: _sendFriendRequest,
+              child: Text(l10n.friendshipBannerSendRequestButton),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_hasIncomingFriendRequest) {
+      // Incoming request: show Accept / Decline
+      return Container(
+        margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.orange.withOpacity(0.15),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.orange.withOpacity(0.4)),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.person_add_alt_1, color: Colors.orange, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                l10n.friendshipBannerIncoming(widget.title),
+                style: const TextStyle(fontSize: 13),
+              ),
+            ),
+            const SizedBox(width: 8),
+            TextButton(
+              onPressed: _acceptFriendRequest,
+              child: Text(l10n.friendAcceptTooltip),
+            ),
+            TextButton(
+              onPressed: _declineFriendRequest,
+              child: Text(l10n.friendDeclineTooltip),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_hasOutgoingFriendRequest) {
+      // Outgoing request: info only
+      return Container(
+        margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.blue.withOpacity(0.15),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.blue.withOpacity(0.4)),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.hourglass_top, color: Colors.blue, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                l10n.friendshipBannerOutgoing(widget.title),
+                style: const TextStyle(fontSize: 13),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Accepted: no banner.
+    return const SizedBox.shrink();
   }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final otherUserId = _otherUserId;
+
+    String _cannotSendText() {
+      if (_hasOutgoingFriendRequest) {
+        return l10n.friendshipCannotSendOutgoing;
+      }
+      if (_hasIncomingFriendRequest) {
+        return l10n.friendshipCannotSendIncoming;
+      }
+      return l10n.friendshipCannotSendNotFriends;
+    }
 
     return Scaffold(
       appBar: ChatAppBar(
@@ -530,28 +1075,61 @@ class _ChatScreenState extends State<ChatScreen> {
       body: MwBackground(
         child: Column(
           children: [
+            // Friend request banner (if any)
+            _buildFriendshipBanner(l10n),
+
             Expanded(
-              child: ChatMessageList(
+              child: _isLoadingBlock
+                  ? const Center(child: CircularProgressIndicator())
+                  : ChatMessageList(
                 roomId: widget.roomId,
                 currentUserId: _currentUserId,
                 otherUserId: otherUserId,
+                // Treat any block (me blocking them OR they blocking me)
+                // as a "blocked" relationship for the list.
+                isBlocked: _isAnyBlock,
               ),
             ),
-
-            TypingIndicator(
-              isVisible: _isOtherTyping,
-              text: l10n.isTyping(widget.title),
-            ),
-
-            // bottom composer – no extra SafeArea (ChatInputBar already has it)
+            if (!_isAnyBlock)
+              TypingIndicator(
+                isVisible: _isOtherTyping,
+                text: l10n.isTyping(widget.title),
+              ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              child: ChatInputBar(
+              padding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: _isAnyBlock
+                  ? Padding(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 8, vertical: 12),
+                child: Text(
+                  l10n.userBlockedInfo,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              )
+                  : _canSendMessages
+                  ? ChatInputBar(
                 controller: _msgController,
                 sending: _sending,
                 onAttach: _pickAndSendFile,
                 onSend: _sendMessage,
                 onTextChanged: _onComposerChanged,
+              )
+                  : Padding(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 8, vertical: 12),
+                child: Text(
+                  _cannotSendText(),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
               ),
             ),
           ],

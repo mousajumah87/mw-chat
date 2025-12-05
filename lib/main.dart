@@ -72,6 +72,8 @@ class MyApp extends StatelessWidget {
 }
 
 /// Redirects user depending on login state + profile completeness + activation.
+/// Terms of Use acceptance is enforced inside HomeScreen via a full-screen
+/// TermsOfUseScreen shown after login, before the user can use chats.
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
 

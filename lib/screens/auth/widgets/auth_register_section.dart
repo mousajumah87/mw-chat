@@ -1,3 +1,5 @@
+// lib/screens/auth/widgets/auth_register_section.dart
+
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
@@ -18,6 +20,11 @@ class AuthRegisterSection extends StatelessWidget {
   final VoidCallback onPickBirthday;
   final ValueChanged<String> onGenderChanged;
 
+  // ⭐ REQUIRED FOR APPLE 1.2
+  final bool agreedToTerms;
+  final ValueChanged<bool> onAgreeChanged;
+  final VoidCallback onViewTerms;
+
   const AuthRegisterSection({
     super.key,
     required this.firstNameCtrl,
@@ -30,6 +37,9 @@ class AuthRegisterSection extends StatelessWidget {
     required this.onPickImage,
     required this.onPickBirthday,
     required this.onGenderChanged,
+    required this.agreedToTerms,
+    required this.onAgreeChanged,
+    required this.onViewTerms,
   });
 
   @override
@@ -41,7 +51,7 @@ class AuthRegisterSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        // === Avatar Picker ===
+        /// Avatar
         AuthAvatarPicker(
           imageBytes: imageBytes,
           imageFile: imageFile,
@@ -50,11 +60,10 @@ class AuthRegisterSection extends StatelessWidget {
         ),
         const SizedBox(height: 12),
 
-        // Choose Picture
         _buildPickImageButton(l10n),
         const SizedBox(height: 20),
 
-        // === Name Fields (in a Row, direction-aware) ===
+        /// First + Last name
         Row(
           textDirection: isRTL ? TextDirection.rtl : TextDirection.ltr,
           children: [
@@ -80,25 +89,29 @@ class AuthRegisterSection extends StatelessWidget {
           ],
         ),
 
-        const SizedBox(height: 18),
+        const SizedBox(height: 20),
 
-        // === Birthday (optional) ===
+        /// Birthday
         _buildLabel(theme, '${l10n.birthday} ${l10n.optional}'),
         const SizedBox(height: 6),
         _buildBirthdayButton(l10n),
 
         const SizedBox(height: 20),
 
-        // === Gender Selection (optional) ===
+        /// Gender
         _buildLabel(theme, '${l10n.gender} ${l10n.optional}'),
         const SizedBox(height: 8),
         _buildGenderChips(l10n, isRTL),
-        const SizedBox(height: 20),
+
+        const SizedBox(height: 24),
+
+        /// ⭐ APPLE REQUIRED – Terms acceptance
+        _buildTermsAcceptance(context, l10n),
       ],
     );
   }
 
-  // ===== UI Helpers =====
+  // UI HELPERS -------------------------------------------------------
 
   Widget _buildPickImageButton(AppLocalizations l10n) {
     return SizedBox(
@@ -108,18 +121,13 @@ class AuthRegisterSection extends StatelessWidget {
         icon: const Icon(Icons.photo_outlined, color: Colors.black),
         label: Text(
           l10n.choosePicture,
-          style: const TextStyle(
-            color: Colors.black,
-            fontWeight: FontWeight.w600,
-          ),
+          style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w600),
         ),
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.white,
           elevation: 2,
-          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 20),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
       ),
     );
@@ -141,8 +149,7 @@ class AuthRegisterSection extends StatelessWidget {
         labelStyle: const TextStyle(color: Colors.white70),
         filled: true,
         fillColor: Colors.white.withOpacity(0.07),
-        contentPadding:
-        const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
           borderSide: BorderSide(color: Colors.white.withOpacity(0.25)),
@@ -152,19 +159,16 @@ class AuthRegisterSection extends StatelessWidget {
           borderSide: BorderSide(color: focusColor, width: 1.3),
         ),
       ),
-      // First/last name can stay required – error text now localized
       validator: (v) => v == null || v.trim().isEmpty ? requiredError : null,
     );
   }
 
   Widget _buildLabel(ThemeData theme, String text) {
     return Align(
-      // Direction-aware: start = left in LTR, right in RTL
       alignment: AlignmentDirectional.centerStart,
       child: Text(
         text,
-        style: theme.textTheme.bodySmall
-            ?.copyWith(color: Colors.white70, fontSize: 13),
+        style: theme.textTheme.bodySmall?.copyWith(color: Colors.white70, fontSize: 13),
       ),
     );
   }
@@ -173,8 +177,8 @@ class AuthRegisterSection extends StatelessWidget {
     return SizedBox(
       width: double.infinity,
       child: InkWell(
-        borderRadius: BorderRadius.circular(10),
         onTap: isSubmitting ? null : onPickBirthday,
+        borderRadius: BorderRadius.circular(10),
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
           decoration: BoxDecoration(
@@ -186,17 +190,8 @@ class AuthRegisterSection extends StatelessWidget {
             children: [
               const Icon(Icons.cake_outlined, color: Colors.white70, size: 18),
               const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  birthdayLabel,
-                  style: const TextStyle(color: Colors.white),
-                ),
-              ),
-              const Icon(
-                Icons.calendar_today_outlined,
-                color: Colors.white54,
-                size: 16,
-              ),
+              Expanded(child: Text(birthdayLabel, style: const TextStyle(color: Colors.white))),
+              const Icon(Icons.calendar_today_outlined, color: Colors.white54, size: 16),
             ],
           ),
         ),
@@ -224,9 +219,8 @@ class AuthRegisterSection extends StatelessWidget {
           icon: Icons.female,
           onTap: () => onGenderChanged('female'),
         ),
-        // Optional choice – maps to 'none' in AuthScreen
         _genderOption(
-          label: l10n.preferNotToSay, // ✅ localized
+          label: l10n.preferNotToSay,
           selected: gender == 'none',
           color: Colors.grey,
           icon: Icons.remove_circle_outline,
@@ -247,38 +241,67 @@ class AuthRegisterSection extends StatelessWidget {
       onTap: isSubmitting ? null : onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOut,
         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 14),
         decoration: BoxDecoration(
           color: selected ? color : Colors.white.withOpacity(0.07),
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color:
-            selected ? Colors.transparent : Colors.white.withOpacity(0.3),
+            color: selected ? Colors.transparent : Colors.white.withOpacity(0.3),
           ),
           boxShadow: selected
               ? [BoxShadow(color: color.withOpacity(0.4), blurRadius: 10)]
               : [],
         ),
         child: Row(
-          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              size: 16,
-              color: selected ? Colors.black : Colors.white70,
-            ),
+            Icon(icon, size: 16, color: selected ? Colors.black : Colors.white70),
             const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                color: selected ? Colors.black : Colors.white70,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
+            Text(label,
+                style: TextStyle(
+                  color: selected ? Colors.black : Colors.white70,
+                  fontWeight: FontWeight.w500,
+                )),
           ],
         ),
       ),
+    );
+  }
+
+  /// ⭐ Apple 1.2 — User must agree to Terms before account creation
+  Widget _buildTermsAcceptance(BuildContext context, AppLocalizations l10n) {
+    return Row(
+      children: [
+        Checkbox(
+          value: agreedToTerms,
+          activeColor: kPrimaryBlue,
+          checkColor: Colors.white,
+          onChanged: isSubmitting
+              ? null
+              : (v) {
+            onAgreeChanged(v ?? false); // FIXED — required non-null
+          },
+        ),
+        Expanded(
+          child: GestureDetector(
+            onTap: onViewTerms,
+            child: Text.rich(
+              TextSpan(
+                text: l10n.iAgreeTo,
+                style: const TextStyle(color: Colors.white70),
+                children: [
+                  TextSpan(
+                    text: " ${l10n.termsOfUse}",
+                    style: const TextStyle(
+                      color: Color(0xFF64B5F6),
+                      decoration: TextDecoration.underline,
+                    ),
+                  )
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

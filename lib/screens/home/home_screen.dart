@@ -1,3 +1,5 @@
+// lib/screens/home/home_screen.dart
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -7,6 +9,7 @@ import '../../widgets/ui/mw_app_header.dart';
 import 'mw_friends_tab.dart';
 import 'invite_friends_tab.dart';
 import '../../../l10n/app_localizations.dart';
+import '../legal/terms_of_use_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -19,13 +22,18 @@ class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
 
-  static const String _appVersion = 'v2.0';
+  static const String _appVersion = 'v1.0';
   static const String _websiteUrl = 'https://www.mwchats.com';
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+
+    // After first frame, verify that user has accepted Terms of Use
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _ensureUserAcceptedTerms();
+    });
   }
 
   @override
@@ -41,6 +49,53 @@ class _HomeScreenState extends State<HomeScreen>
       mode: LaunchMode.externalApplication,
     )) {
       debugPrint('Could not launch $_websiteUrl');
+    }
+  }
+
+  /// Ensure the logged-in user has accepted Terms of Use.
+  /// - If `hasAcceptedTerms != true`, we show the TermsOfUseScreen.
+  /// - If they dismiss without accepting, we sign them out.
+  Future<void> _ensureUserAcceptedTerms() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+
+      final data = snap.data() ?? {};
+      final hasAcceptedTerms = data['hasAcceptedTerms'] == true;
+
+      if (!hasAcceptedTerms && mounted) {
+        final accepted = await Navigator.of(context).push<bool>(
+          MaterialPageRoute(
+            builder: (_) => const TermsOfUseScreen(),
+            fullscreenDialog: true,
+          ),
+        );
+
+        if (accepted == true) {
+          // ⭐ Persist acceptance for existing users
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .set(
+            {
+              'hasAcceptedTerms': true,
+              'termsAcceptedAt': FieldValue.serverTimestamp(),
+            },
+            SetOptions(merge: true),
+          );
+        } else if (mounted) {
+          // If the user did NOT explicitly accept, log them out
+          await FirebaseAuth.instance.signOut();
+        }
+      }
+    } catch (e, st) {
+      debugPrint('[HomeScreen] _ensureUserAcceptedTerms error: $e\n$st');
+      // On error, allow usage but Terms screen itself explains the rules.
     }
   }
 
@@ -126,7 +181,6 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  /// Keeps tabs alive to prevent rebuilding when switching
   TabBar _buildFixedTabBar(AppLocalizations l10n) {
     return TabBar(
       controller: _tabController,
@@ -155,7 +209,6 @@ class _HomeScreenState extends State<HomeScreen>
   }
 }
 
-/// Keeps tabs alive to prevent rebuilding when switching
 class _KeepAlive extends StatefulWidget {
   final Widget child;
   const _KeepAlive({required this.child});

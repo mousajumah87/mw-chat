@@ -1,6 +1,9 @@
+// lib/screens/home/user_profile_screen.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+
 import '../../l10n/app_localizations.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ui/mw_background.dart';
@@ -15,6 +18,9 @@ class UserProfileScreen extends StatefulWidget {
 
 class _UserProfileScreenState extends State<UserProfileScreen> {
   static const int _onlineTtlSeconds = 300;
+
+  bool _isBlocking = false;
+  bool _isReporting = false;
 
   bool _isOnlineWithTtl({
     required bool rawIsOnline,
@@ -39,15 +45,185 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     if (dob == null) return l10n.unknown;
     int years = DateTime.now().year - dob.year;
     final now = DateTime.now();
-    if (now.month < dob.month || (now.month == dob.month && now.day < dob.day)) {
+    if (now.month < dob.month ||
+        (now.month == dob.month && now.day < dob.day)) {
       years--;
     }
     return years.toString();
   }
 
+  Future<bool> _isUserBlocked(String currentUid) async {
+    final snap = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(currentUid)
+        .get();
+
+    final data = snap.data();
+    if (data == null) return false;
+
+    final blocked =
+        (data['blockedUserIds'] as List?)?.cast<String>() ?? const <String>[];
+    return blocked.contains(widget.userId);
+  }
+
+  Future<void> _toggleBlockUser(
+      BuildContext context, {
+        required String currentUid,
+        required bool currentlyBlocked,
+      }) async {
+    final l10n = AppLocalizations.of(context)!;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(currentlyBlocked ? 'Unblock user' : 'Block user'),
+        content: Text(
+          currentlyBlocked
+              ? 'Do you want to unblock this user? You will be able to receive messages from them again.'
+              : 'Do you want to block this user? You will no longer receive messages from them in MW Chat.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(l10n.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(
+              currentlyBlocked ? 'Unblock' : 'Block',
+              style: TextStyle(
+                color: currentlyBlocked ? Colors.blue : Colors.red,
+              ),
+            ),
+          ),
+        ],
+      ),
+    ) ??
+        false;
+
+    if (!confirm) return;
+
+    setState(() => _isBlocking = true);
+    try {
+      final ref =
+      FirebaseFirestore.instance.collection('users').doc(currentUid);
+
+      await ref.update({
+        'blockedUserIds': currentlyBlocked
+            ? FieldValue.arrayRemove([widget.userId])
+            : FieldValue.arrayUnion([widget.userId]),
+      });
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            currentlyBlocked
+                ? 'User unblocked.'
+                : 'User blocked successfully.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Failed to update block status. Please try again.',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isBlocking = false);
+      }
+    }
+  }
+
+  Future<void> _reportUser(
+      BuildContext context, {
+        required String currentUid,
+      }) async {
+    final l10n = AppLocalizations.of(context)!;
+    final reasonCtrl = TextEditingController();
+
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Report user'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Please describe why you are reporting this user. '
+                  'For example: spam, bullying, hate speech, or other abusive content.',
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: reasonCtrl,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                hintText: 'Describe the problem…',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(null),
+            child: Text(l10n.cancel),
+          ),
+          TextButton(
+            onPressed: () =>
+                Navigator.of(ctx).pop(reasonCtrl.text.trim().isEmpty
+                    ? null
+                    : reasonCtrl.text.trim()),
+            child: const Text('Submit'),
+          ),
+        ],
+      ),
+    );
+
+    if (reason == null) return;
+
+    setState(() => _isReporting = true);
+    try {
+      await FirebaseFirestore.instance.collection('contentReports').add({
+        'type': 'user',
+        'reportedUserId': widget.userId,
+        'reporterUserId': currentUid,
+        'reason': reason,
+        'createdAt': FieldValue.serverTimestamp(),
+        'status': 'open',
+      });
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Report submitted. We will review it.'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to submit report. Please try again.'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isReporting = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
+    final currentUser = FirebaseAuth.instance.currentUser;
+    final currentUid = currentUser?.uid;
+    final isSelf = currentUid == widget.userId;
 
     return Scaffold(
       backgroundColor: kBgColor,
@@ -89,18 +265,37 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
               final gender = data['gender'] ?? '';
               final isActive = data['isActive'] != false;
 
+              // --- Block relationship (from their POV) ---
+              final List<dynamic>? theirBlockedRaw =
+              data['blockedUserIds'] as List<dynamic>?;
+              final bool hasBlockedMe = currentUid != null &&
+                  (theirBlockedRaw
+                      ?.whereType<String>()
+                      .contains(currentUid) ??
+                      false);
+
+              // --- Presence (respect blocking + TTL) ---
               final rawIsOnline = data['isOnline'] == true && isActive;
               final lastSeen = data['lastSeen'] is Timestamp
                   ? data['lastSeen'] as Timestamp
                   : null;
+
+              final rawEffectiveOnline = _isOnlineWithTtl(
+                rawIsOnline: rawIsOnline,
+                lastSeen: lastSeen,
+              );
+
+              // If they blocked me, I should never see them as online.
               final effectiveOnline =
-              _isOnlineWithTtl(rawIsOnline: rawIsOnline, lastSeen: lastSeen);
+              hasBlockedMe ? false : rawEffectiveOnline;
+
               final (presenceLabel, presenceColor) = _buildPresenceStatus(
                 l10n,
                 isActive: isActive,
                 effectiveOnline: effectiveOnline,
               );
 
+              // --- DOB / Age ---
               DateTime? dob;
               final rawBirthday = data['birthday'];
               if (rawBirthday is Timestamp) {
@@ -114,27 +309,34 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                   ? DateFormat.yMMMd(l10n.localeName).format(dob)
                   : l10n.unknown;
 
-              // --- Avatar Section ---
+              // --- Avatar (hide real avatar if they blocked me) ---
+              final bool hideRealAvatar = hasBlockedMe;
+              final String avatarKey = hideRealAvatar
+                  ? 'blocked-avatar'
+                  : (profileUrl.isNotEmpty ? profileUrl : avatarType);
+
               Widget avatar = AnimatedSwitcher(
                 duration: const Duration(milliseconds: 300),
-                child: profileUrl.isNotEmpty
+                child: (!hideRealAvatar && profileUrl.isNotEmpty)
                     ? CircleAvatar(
-                  key: ValueKey(profileUrl),
+                  key: ValueKey(avatarKey),
                   radius: 60,
                   backgroundImage: NetworkImage(profileUrl),
                 )
                     : CircleAvatar(
-                  key: ValueKey(avatarType),
+                  key: ValueKey(avatarKey),
                   radius: 60,
                   backgroundColor: kSurfaceAltColor,
                   child: Text(
-                    avatarType == 'smurf' ? '🧜‍♀️' : '🐻',
+                    (!hideRealAvatar && avatarType == 'smurf')
+                        ? '🧜‍♀️'
+                        : '🐻',
                     style: const TextStyle(fontSize: 42),
                   ),
                 ),
               );
 
-              // --- Card Content (no blur, solid layers) ---
+              // --- Card Content ---
               return SingleChildScrollView(
                 padding: const EdgeInsets.all(16),
                 physics: const BouncingScrollPhysics(),
@@ -206,6 +408,22 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                               ],
                             ),
                           ),
+
+                          // Optional: small hint when they blocked you
+                          if (hasBlockedMe) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              'This user has limited what you can see.',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(
+                                color: Colors.white60,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+
                           const SizedBox(height: 28),
                           const Divider(color: Colors.white24, thickness: 0.5),
                           const SizedBox(height: 20),
@@ -226,8 +444,105 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                             label: l10n.genderLabel,
                             value: gender.isEmpty
                                 ? l10n.notSpecified
-                                : gender[0].toUpperCase() + gender.substring(1),
+                                : gender[0].toUpperCase() +
+                                gender.substring(1),
                           ),
+
+                          // ===== Safety actions: Block & Report =====
+                          if (!isSelf && currentUid != null) ...[
+                            const SizedBox(height: 28),
+                            const Divider(
+                                color: Colors.white24, thickness: 0.5),
+                            const SizedBox(height: 12),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                'Safety tools',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodyMedium
+                                    ?.copyWith(
+                                  color: Colors.white70,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            FutureBuilder<bool>(
+                              future: _isUserBlocked(currentUid),
+                              builder: (context, blockSnap) {
+                                final isBlocked = blockSnap.data ?? false;
+
+                                return Column(
+                                  children: [
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: ElevatedButton.icon(
+                                        onPressed: _isBlocking
+                                            ? null
+                                            : () => _toggleBlockUser(
+                                          context,
+                                          currentUid: currentUid,
+                                          currentlyBlocked: isBlocked,
+                                        ),
+                                        icon: Icon(
+                                          isBlocked
+                                              ? Icons.person_remove_alt_1
+                                              : Icons.block,
+                                        ),
+                                        label: Text(
+                                          isBlocked
+                                              ? 'Unblock user'
+                                              : 'Block user',
+                                        ),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: isBlocked
+                                              ? Colors.blueGrey
+                                              : Colors.redAccent,
+                                          foregroundColor: Colors.white,
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 12,
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                            BorderRadius.circular(12),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: OutlinedButton.icon(
+                                        onPressed: _isReporting
+                                            ? null
+                                            : () => _reportUser(
+                                          context,
+                                          currentUid: currentUid,
+                                        ),
+                                        icon:
+                                        const Icon(Icons.flag_outlined),
+                                        label: const Text('Report user'),
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor:
+                                          Colors.orangeAccent,
+                                          side: const BorderSide(
+                                              color: Colors.orangeAccent),
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 12,
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                            BorderRadius.circular(12),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
+                            ),
+                          ],
                         ],
                       ),
                     ),

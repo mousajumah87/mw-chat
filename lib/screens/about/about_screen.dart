@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../l10n/app_localizations.dart';
 import '../../widgets/ui/mw_background.dart';
+import '../legal/terms_of_use_screen.dart';
 
 class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key});
@@ -14,6 +15,7 @@ class AboutScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final isWide = MediaQuery.of(context).size.width > 900;
+    // Keep currentYear if you want it somewhere else; not needed for copyrightText now.
     final currentYear = DateFormat('y').format(DateTime.now());
 
     return Scaffold(
@@ -26,8 +28,10 @@ class AboutScreen extends StatelessWidget {
               top: MediaQuery.of(context).padding.top + 16,
               left: 16,
               child: IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                    color: Colors.white),
+                icon: const Icon(
+                  Icons.arrow_back_ios_new_rounded,
+                  color: Colors.white,
+                ),
                 onPressed: () => Navigator.of(context).pop(),
               ),
             ),
@@ -35,8 +39,10 @@ class AboutScreen extends StatelessWidget {
             // === Main card content ===
             Center(
               child: SingleChildScrollView(
-                padding:
-                const EdgeInsets.symmetric(horizontal: 24, vertical: 60),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 60,
+                ),
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 500),
                   child: ClipRRect(
@@ -57,7 +63,9 @@ class AboutScreen extends StatelessWidget {
                           ),
                           borderRadius: BorderRadius.circular(30),
                           border: Border.all(
-                              color: Colors.white.withOpacity(0.12), width: 1),
+                            color: Colors.white.withOpacity(0.12),
+                            width: 1,
+                          ),
                           boxShadow: [
                             BoxShadow(
                               color: Colors.black.withOpacity(0.5),
@@ -67,7 +75,9 @@ class AboutScreen extends StatelessWidget {
                           ],
                         ),
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 28, vertical: 36),
+                          horizontal: 28,
+                          vertical: 36,
+                        ),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -144,7 +154,9 @@ class AboutScreen extends StatelessWidget {
                                   .textTheme
                                   .bodySmall
                                   ?.copyWith(
-                                  color: Colors.white70, height: 1.4),
+                                color: Colors.white70,
+                                height: 1.4,
+                              ),
                               textAlign: TextAlign.center,
                             ),
 
@@ -157,7 +169,9 @@ class AboutScreen extends StatelessWidget {
                                   .textTheme
                                   .bodyMedium
                                   ?.copyWith(
-                                  color: Colors.white, height: 1.5),
+                                color: Colors.white,
+                                height: 1.5,
+                              ),
                               textAlign: TextAlign.start,
                             ),
 
@@ -179,12 +193,77 @@ class AboutScreen extends StatelessWidget {
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              '© $currentYear Mousa Abu Hilal. ${l10n.allRightsReserved}',
+                              l10n.copyrightText,
                               style: Theme.of(context)
                                   .textTheme
                                   .bodySmall
                                   ?.copyWith(color: Colors.white70),
                               textAlign: TextAlign.center,
+                            ),
+
+                            const SizedBox(height: 18),
+
+                            // === Terms of Use button ===
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                icon: const Icon(Icons.gavel_outlined),
+                                label: Text(l10n.termsTitle),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.white,
+                                  side: BorderSide(
+                                    color: Colors.white.withOpacity(0.6),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 12,
+                                    horizontal: 16,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                ),
+                                onPressed: () {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                      const TermsOfUseScreen(),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+
+                            const SizedBox(height: 16),
+
+                            // === Contact support ===
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    l10n.contactSupport,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    l10n.contactSupportSubtitle,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall
+                                        ?.copyWith(
+                                      color: Colors.white70,
+                                      height: 1.4,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
 
                             const SizedBox(height: 28),
@@ -194,14 +273,17 @@ class AboutScreen extends StatelessWidget {
                               width: double.infinity,
                               child: ElevatedButton.icon(
                                 onPressed: () => Navigator.of(context).pop(),
-                                icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                                    size: 16),
+                                icon: const Icon(
+                                  Icons.arrow_back_ios_new_rounded,
+                                  size: 16,
+                                ),
                                 label: Text(l10n.goBack),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.white,
                                   foregroundColor: Colors.black,
-                                  padding:
-                                  const EdgeInsets.symmetric(vertical: 14),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 14,
+                                  ),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(14),
                                   ),

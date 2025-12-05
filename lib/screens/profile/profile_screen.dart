@@ -11,6 +11,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../l10n/app_localizations.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ui/mw_background.dart';
+import '../legal/terms_of_use_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -191,13 +192,9 @@ class _ProfileScreenState extends State<ProfileScreen>
           SnackBar(content: Text(l10n.profileUpdated)),
         );
 
-        // If this screen was pushed from somewhere (e.g. settings),
-        // go back after successful save.
         if (Navigator.of(context).canPop()) {
           Navigator.of(context).pop();
         }
-        // If shown from AuthGate as the initial screen, AuthGate will
-        // switch to HomeScreen once profile is complete.
       }
     } catch (_) {
       if (mounted) {
@@ -226,9 +223,9 @@ class _ProfileScreenState extends State<ProfileScreen>
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text(
-              'Delete',
-              style: TextStyle(color: Colors.red),
+            child: Text(
+              l10n.delete,
+              style: const TextStyle(color: Colors.red),
             ),
           ),
         ],
@@ -278,7 +275,6 @@ class _ProfileScreenState extends State<ProfileScreen>
 
       if (!mounted) return;
 
-      // Show info before navigating away
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(l10n.accountDeletedSuccessfully),
@@ -625,17 +621,95 @@ class _ProfileScreenState extends State<ProfileScreen>
                         ),
                       ),
 
+                      // === Legal & Support section ===
+                      const SizedBox(height: 32),
+                      const Divider(height: 32),
+                      Align(
+                        alignment:
+                        isRtl ? Alignment.centerRight : Alignment.centerLeft,
+                        child: Text(
+                          l10n.legalTitle,
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodyMedium
+                              ?.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Terms of Use
+                      Container(
+                        decoration: BoxDecoration(
+                          color: kSurfaceColor,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: kBorderColor),
+                        ),
+                        child: ListTile(
+                          leading: const Icon(
+                            Icons.gavel_outlined,
+                            color: Colors.white70,
+                          ),
+                          title: Text(
+                            l10n.termsTitle,
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                          trailing: const Icon(
+                            Icons.chevron_right,
+                            color: Colors.white54,
+                          ),
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const TermsOfUseScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      // Contact support
+                      Container(
+                        decoration: BoxDecoration(
+                          color: kSurfaceColor,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: kBorderColor),
+                        ),
+                        child: ListTile(
+                          leading: const Icon(
+                            Icons.mail_outline,
+                            color: Colors.white70,
+                          ),
+                          title: Text(
+                            l10n.contactSupport,
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                          subtitle: Text(
+                            l10n.contactSupportSubtitle,
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ),
+
                       // === Danger zone / Delete account ===
                       const SizedBox(height: 40),
                       const Divider(height: 32),
                       Align(
-                        alignment: isRtl
-                            ? Alignment.centerRight
-                            : Alignment.centerLeft,
+                        alignment:
+                        isRtl ? Alignment.centerRight : Alignment.centerLeft,
                         child: Text(
                           l10n.dangerZone,
-                          style:
-                          Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodyMedium
+                              ?.copyWith(
                             color: Colors.redAccent,
                             fontWeight: FontWeight.w600,
                           ),
@@ -643,13 +717,14 @@ class _ProfileScreenState extends State<ProfileScreen>
                       ),
                       const SizedBox(height: 8),
                       Align(
-                        alignment: isRtl
-                            ? Alignment.centerRight
-                            : Alignment.centerLeft,
+                        alignment:
+                        isRtl ? Alignment.centerRight : Alignment.centerLeft,
                         child: Text(
                           l10n.deleteAccountDescription,
-                          style:
-                          Theme.of(context).textTheme.bodySmall?.copyWith(
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(
                             color: Colors.white60,
                           ),
                         ),
