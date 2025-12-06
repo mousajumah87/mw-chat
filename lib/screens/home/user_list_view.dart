@@ -49,7 +49,7 @@ class UserListScreen extends StatelessWidget {
                     centerTitle: true,
                     backgroundColor: Colors.black.withOpacity(0.6),
                     title: Text(
-                      'MW Chat',
+                      l10n.mainTitle,
                       style: theme.textTheme.headlineSmall?.copyWith(
                         fontWeight: FontWeight.bold,
                         color: Colors.white,

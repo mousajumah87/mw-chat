@@ -7,7 +7,7 @@ class MessageBubble extends StatelessWidget {
   final bool isSeen;
   final String? fileUrl;
   final String? fileName;
-  final String? fileType;
+  final String? fileType; // can be "image", "video", "audio", "file" or mime-type
   final bool showTimestamp;
 
   const MessageBubble({
@@ -23,7 +23,33 @@ class MessageBubble extends StatelessWidget {
   });
 
   bool get hasAttachment => fileUrl?.isNotEmpty == true;
-  bool get isImage => (fileType ?? '').toLowerCase() == 'image';
+
+  bool get isImage {
+    final type = (fileType ?? '').toLowerCase();
+    if (type == 'image' || type.startsWith('image/')) return true;
+
+    final url = (fileUrl ?? '').toLowerCase();
+    return url.endsWith('.jpg') ||
+        url.endsWith('.jpeg') ||
+        url.endsWith('.png') ||
+        url.endsWith('.gif') ||
+        url.endsWith('.webp') ||
+        url.endsWith('.heic');
+  }
+
+  bool get isVideo {
+    final type = (fileType ?? '').toLowerCase();
+    if (type == 'video' || type.startsWith('video/')) return true;
+
+    final url = (fileUrl ?? '').toLowerCase();
+    return url.endsWith('.mp4') ||
+        url.endsWith('.mov') ||
+        url.endsWith('.mkv') ||
+        url.endsWith('.avi') ||
+        url.endsWith('.webm');
+  }
+
+  bool get isGenericFile => hasAttachment && !isImage && !isVideo;
 
   static const _bubbleRadius = 16.0;
   static const _myBubbleColor = Color(0xFF2563EB); // MW Blue
@@ -75,7 +101,7 @@ class MessageBubble extends StatelessWidget {
                 isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // === Attachment (Lightweight & Cached) ===
+                  // === Image attachment ===
                   if (hasAttachment && isImage)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 6),
@@ -114,6 +140,43 @@ class MessageBubble extends StatelessWidget {
                               color: Colors.white54,
                             ),
                           ),
+                        ),
+                      ),
+                    ),
+
+                  // === Non-image attachment preview (video/file) ===
+                  if (hasAttachment && !isImage)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.18),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              isVideo ? Icons.videocam : Icons.insert_drive_file,
+                              size: 18,
+                              color: Colors.white70,
+                            ),
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                fileName?.isNotEmpty == true
+                                    ? fileName!
+                                    : (isVideo ? 'Video' : 'File'),
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),

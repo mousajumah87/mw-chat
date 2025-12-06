@@ -1,7 +1,9 @@
+// lib/screens/auth/widgets/auth_avatar_picker.dart
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../../../l10n/app_localizations.dart';
+import '../../../theme/app_theme.dart';
 
 class AuthAvatarPicker extends StatefulWidget {
   final Uint8List? imageBytes;
@@ -31,9 +33,9 @@ class _AuthAvatarPickerState extends State<AuthAvatarPicker>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 220),
+      duration: const Duration(milliseconds: 250),
       lowerBound: 0.95,
-      upperBound: 1.08,
+      upperBound: 1.1,
     );
     _scale = CurvedAnimation(
       parent: _controller,
@@ -49,9 +51,17 @@ class _AuthAvatarPickerState extends State<AuthAvatarPicker>
 
   Future<void> _handleTap() async {
     if (widget.isSubmitting) return;
-    await _controller.forward();
-    await _controller.reverse();
-    widget.onPickImage();
+
+    try {
+      await _controller.forward();
+      if (!mounted) return;
+      await _controller.reverse();
+      if (!mounted) return;
+
+      await Future<void>.sync(widget.onPickImage);
+    } catch (e, st) {
+      debugPrint('[AuthAvatarPicker] onPickImage error: $e\n$st');
+    }
   }
 
   @override
@@ -59,29 +69,27 @@ class _AuthAvatarPickerState extends State<AuthAvatarPicker>
     final l10n = AppLocalizations.of(context)!;
     final hasImage = widget.imageBytes != null || widget.imageFile != null;
 
-    final Widget avatarImage = RepaintBoundary(
-      child: ClipOval(
-        child: hasImage
-            ? (widget.imageBytes != null
-            ? Image.memory(
-          widget.imageBytes!,
-          width: 112,
-          height: 112,
-          fit: BoxFit.cover,
-          gaplessPlayback: true,
-        )
-            : Image.file(
-          widget.imageFile!,
-          width: 112,
-          height: 112,
-          fit: BoxFit.cover,
-          gaplessPlayback: true,
-        ))
-            : Icon(
-          Icons.person,
-          size: 60,
-          color: Colors.white.withOpacity(0.85),
-        ),
+    final Widget avatarImage = ClipOval(
+      child: hasImage
+          ? (widget.imageBytes != null
+          ? Image.memory(
+        widget.imageBytes!,
+        width: 112,
+        height: 112,
+        fit: BoxFit.cover,
+        gaplessPlayback: true,
+      )
+          : Image.file(
+        widget.imageFile!,
+        width: 112,
+        height: 112,
+        fit: BoxFit.cover,
+        gaplessPlayback: true,
+      ))
+          : Icon(
+        Icons.person_rounded,
+        size: 60,
+        color: Colors.white.withOpacity(0.85),
       ),
     );
 
@@ -92,103 +100,151 @@ class _AuthAvatarPickerState extends State<AuthAvatarPicker>
         customBorder: const CircleBorder(),
         splashColor: Colors.transparent,
         highlightColor: Colors.transparent,
-        child: RepaintBoundary(
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              // Background subtle glow
-              AnimatedScale(
-                duration: const Duration(milliseconds: 180),
-                scale: widget.isSubmitting ? 1.0 : 1.02,
-                child: Container(
-                  width: 132,
-                  height: 132,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: const RadialGradient(
-                      colors: [
-                        Color(0x4D0057FF), // subtle blue glow
-                        Color(0x33FFB300), // subtle amber
-                        Colors.transparent,
-                      ],
-                      stops: [0.5, 0.85, 1.0],
-                    ),
-                  ),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            // === Dynamic glow halo ===
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 400),
+              curve: Curves.easeOut,
+              width: 140,
+              height: 140,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    kPrimaryBlue.withOpacity(0.45),
+                    kSecondaryAmber.withOpacity(0.35),
+                    Colors.transparent,
+                  ],
+                  stops: const [0.4, 0.8, 1.0],
                 ),
+                boxShadow: [
+                  BoxShadow(
+                    color: kPrimaryBlue.withOpacity(0.25),
+                    blurRadius: 30,
+                    spreadRadius: 2,
+                  ),
+                  BoxShadow(
+                    color: kSecondaryAmber.withOpacity(0.25),
+                    blurRadius: 30,
+                    spreadRadius: 2,
+                  ),
+                ],
               ),
+            ),
 
-              // Main avatar circle
-              Container(
-                padding: const EdgeInsets.all(3),
+            // === Main avatar circle ===
+            AnimatedScale(
+              scale: widget.isSubmitting ? 1.0 : 1.02,
+              duration: const Duration(milliseconds: 180),
+              child: Container(
+                width: 126,
+                height: 126,
+                padding: const EdgeInsets.all(3.5),
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: Colors.white.withOpacity(0.25),
-                    width: 1.6,
+                    width: 2,
+                    color: hasImage
+                        ? Colors.white.withOpacity(0.35)
+                        : Colors.white.withOpacity(0.25),
+                  ),
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.white.withOpacity(0.1),
+                      Colors.white.withOpacity(0.05),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.45),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
+                      color: Colors.black.withOpacity(0.5),
+                      blurRadius: 16,
+                      offset: const Offset(0, 6),
                     ),
                   ],
                 ),
                 child: CircleAvatar(
                   radius: 56,
-                  backgroundColor:
-                  Colors.white.withOpacity(hasImage ? 0.08 : 0.14),
+                  backgroundColor: Colors.white.withOpacity(0.08),
                   child: avatarImage,
                 ),
               ),
+            ),
 
-              // Overlay if no image
-              if (!hasImage)
-                Container(
-                  width: 112,
-                  height: 112,
+            // === Overlay when no image ===
+            if (!hasImage)
+              Container(
+                width: 112,
+                height: 112,
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+              ),
+
+            // === Neon camera icon ===
+            Positioned(
+              bottom: 8,
+              right: 10,
+              child: ScaleTransition(
+                scale: _scale,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 250),
+                  padding: const EdgeInsets.all(6),
                   decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.1),
                     shape: BoxShape.circle,
+                    gradient: const LinearGradient(
+                      colors: [kPrimaryBlue, kSecondaryAmber],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: kPrimaryBlue.withOpacity(0.4),
+                        blurRadius: 8,
+                        spreadRadius: 1,
+                      ),
+                      BoxShadow(
+                        color: kSecondaryAmber.withOpacity(0.3),
+                        blurRadius: 8,
+                        spreadRadius: 1,
+                      ),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.camera_alt_rounded,
+                    size: 17,
+                    color: Colors.white,
                   ),
                 ),
+              ),
+            ),
 
-              // Camera icon — animated scale
-              Positioned(
-                bottom: 6,
-                right: 8,
-                child: ScaleTransition(
-                  scale: _scale,
+            // === Optional shimmer pulse ===
+            Positioned.fill(
+              child: IgnorePointer(
+                child: AnimatedOpacity(
+                  opacity: widget.isSubmitting ? 0.2 : 0.05,
+                  duration: const Duration(milliseconds: 400),
                   child: Container(
-                    padding: const EdgeInsets.all(5),
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      gradient: const LinearGradient(
+                      gradient: SweepGradient(
                         colors: [
-                          Color(0xFF0057FF),
-                          Color(0xFFFFB300),
+                          kPrimaryBlue.withOpacity(0.15),
+                          kSecondaryAmber.withOpacity(0.15),
+                          Colors.transparent,
                         ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
                       ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.35),
-                          blurRadius: 8,
-                          offset: const Offset(0, 3),
-                        ),
-                      ],
-                    ),
-                    child: const Icon(
-                      Icons.camera_alt_rounded,
-                      size: 16,
-                      color: Colors.white,
                     ),
                   ),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

@@ -1,6 +1,7 @@
 // lib/screens/home/home_screen.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -8,7 +9,7 @@ import '../../widgets/ui/mw_background.dart';
 import '../../widgets/ui/mw_app_header.dart';
 import 'mw_friends_tab.dart';
 import 'invite_friends_tab.dart';
-import '../../../l10n/app_localizations.dart';
+import '../../l10n/app_localizations.dart';
 import '../legal/terms_of_use_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -102,105 +103,159 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   Widget build(BuildContext context) {
     final currentUser = FirebaseAuth.instance.currentUser!;
-    final isWide = MediaQuery.of(context).size.width > 900;
+    final media = MediaQuery.of(context);
+    final width = media.size.width;
+    final isWide = width >= 900;
     final l10n = AppLocalizations.of(context)!;
+    final theme = Theme.of(context);
 
     return Scaffold(
       backgroundColor: Colors.black,
       body: MwBackground(
         child: SafeArea(
-          child: Column(
-            children: [
-              /// ======= HEADER + TABS =======
-              MwAppHeader(
-                title: 'MW Chat',
-                showTabs: true,
-                tabBar: _buildFixedTabBar(l10n),
+          child: Center(
+            // Center everything on large screens (web/desktop)
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                maxWidth: 900, // keeps content nicely centered on wide screens
               ),
-
-              const SizedBox(height: 8),
-
-              /// ======= BODY =======
-              Expanded(
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.4),
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: Colors.white.withOpacity(0.08)),
+              child: Column(
+                mainAxisSize: MainAxisSize.max,
+                children: [
+                  /// ======= HEADER + TABS =======
+                  MwAppHeader(
+                    title: l10n.mainTitle,
+                    showTabs: true,
+                    tabBar: _buildFixedTabBar(l10n, theme),
                   ),
-                  child: TabBarView(
-                    controller: _tabController,
-                    physics: const BouncingScrollPhysics(),
-                    children: [
-                      _KeepAlive(child: MwFriendsTab(currentUser: currentUser)),
-                      const _KeepAlive(child: InviteFriendsTab()),
-                    ],
-                  ),
-                ),
-              ),
 
-              /// ======= FOOTER =======
-              if (isWide)
-                Padding(
-                  padding:
-                  const EdgeInsets.only(bottom: 8, left: 16, top: 4),
-                  child: Align(
-                    alignment: Alignment.bottomLeft,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'MW Chat • $_appVersion • ',
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall
-                              ?.copyWith(color: Colors.white38),
+                  const SizedBox(height: 12),
+
+                  /// ======= BODY =======
+                  Expanded(
+                    child: Container(
+                      margin: EdgeInsets.symmetric(
+                        horizontal: isWide ? 16 : 12,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.40),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.08),
                         ),
-                        GestureDetector(
-                          onTap: _openMwWebsite,
-                          child: Text(
-                            'mwchats.com',
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.copyWith(
-                              color: Colors.white60,
-                              decoration: TextDecoration.underline,
-                            ),
+                      ),
+                      child: TabBarView(
+                        controller: _tabController,
+                        physics: const BouncingScrollPhysics(),
+                        children: [
+                          _KeepAlive(
+                            child: MwFriendsTab(currentUser: currentUser),
                           ),
-                        ),
-                      ],
+                          const _KeepAlive(child: InviteFriendsTab()),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-            ],
+
+                  const SizedBox(height: 6),
+
+                  /// ======= FOOTER (CENTERED) =======
+                  _buildFooter(context, l10n, isWide: isWide),
+                ],
+              ),
+            ),
           ),
         ),
       ),
     );
   }
 
-  TabBar _buildFixedTabBar(AppLocalizations l10n) {
+  Widget _buildFooter(
+      BuildContext context,
+      AppLocalizations l10n, {
+        required bool isWide,
+      }) {
+    final theme = Theme.of(context);
+    final textStyle = theme.textTheme.bodySmall?.copyWith(
+      color: Colors.white70,
+      fontSize: 11,
+    );
+    final versionStyle = textStyle?.copyWith(
+      color: Colors.white38,
+    );
+
+    return Padding(
+      padding: EdgeInsets.symmetric(
+        horizontal: isWide ? 16 : 12,
+        vertical: 8,
+      ),
+      // Wrap instead of Row so RTL & small screens still look centered/nice
+      child: Wrap(
+        spacing: 10,
+        runSpacing: 4,
+        alignment: WrapAlignment.center,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Text(
+            l10n.appBrandingBeta,
+            style: textStyle,
+            textAlign: TextAlign.center,
+          ),
+          Text(
+            _appVersion,
+            style: versionStyle,
+            textAlign: TextAlign.center,
+          ),
+          InkWell(
+            onTap: _openMwWebsite,
+            borderRadius: BorderRadius.circular(16),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              child: Text(
+                'mwchats.com',
+                style: textStyle?.copyWith(
+                  decoration: TextDecoration.underline,
+                  fontWeight: FontWeight.w500,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  TabBar _buildFixedTabBar(AppLocalizations l10n, ThemeData theme) {
+    final isDark = theme.brightness == Brightness.dark;
+
     return TabBar(
       controller: _tabController,
-      labelColor: Colors.black,
-      unselectedLabelColor: Colors.white70,
+      isScrollable: false,
+      labelColor: isDark ? Colors.black : Colors.black,
+      unselectedLabelColor: Colors.white.withOpacity(0.78),
       indicator: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        color: Colors.white.withOpacity(0.96),
+        borderRadius: BorderRadius.circular(999),
       ),
       indicatorSize: TabBarIndicatorSize.tab,
       labelStyle: const TextStyle(
         fontWeight: FontWeight.w600,
         fontSize: 14,
       ),
+      unselectedLabelStyle: const TextStyle(
+        fontWeight: FontWeight.w500,
+        fontSize: 13,
+      ),
       tabs: [
         Tab(
+          iconMargin: const EdgeInsets.only(bottom: 2),
           icon: const Icon(Icons.people_alt_outlined, size: 22),
           text: l10n.usersTitle,
         ),
         Tab(
+          iconMargin: const EdgeInsets.only(bottom: 2),
           icon: const Icon(Icons.person_add_alt_1_outlined, size: 22),
           text: l10n.inviteFriendsTitle,
         ),

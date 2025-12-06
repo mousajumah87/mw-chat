@@ -1,5 +1,4 @@
 // lib/screens/auth/widgets/auth_register_section.dart
-
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
@@ -20,7 +19,6 @@ class AuthRegisterSection extends StatelessWidget {
   final VoidCallback onPickBirthday;
   final ValueChanged<String> onGenderChanged;
 
-  // ⭐ REQUIRED FOR APPLE 1.2
   final bool agreedToTerms;
   final ValueChanged<bool> onAgreeChanged;
   final VoidCallback onViewTerms;
@@ -60,10 +58,10 @@ class AuthRegisterSection extends StatelessWidget {
         ),
         const SizedBox(height: 12),
 
-        _buildPickImageButton(l10n),
-        const SizedBox(height: 20),
+        _buildPickImageButton(context, l10n),
+        const SizedBox(height: 24),
 
-        /// First + Last name
+        /// First + Last Name
         Row(
           textDirection: isRTL ? TextDirection.rtl : TextDirection.ltr,
           children: [
@@ -105,29 +103,45 @@ class AuthRegisterSection extends StatelessWidget {
 
         const SizedBox(height: 24),
 
-        /// ⭐ APPLE REQUIRED – Terms acceptance
-        _buildTermsAcceptance(context, l10n),
+        /// Terms of Use
+        _buildTermsAcceptance(l10n),
       ],
     );
   }
 
-  // UI HELPERS -------------------------------------------------------
-
-  Widget _buildPickImageButton(AppLocalizations l10n) {
+  // -----------------------
+  // BUTTONS AND INPUTS
+  // -----------------------
+  Widget _buildPickImageButton(BuildContext context, AppLocalizations l10n) {
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton.icon(
-        onPressed: isSubmitting ? null : onPickImage,
-        icon: const Icon(Icons.photo_outlined, color: Colors.black),
+        onPressed: isSubmitting
+            ? null
+            : () async {
+          try {
+            await Future<void>.sync(onPickImage);
+          } catch (e, st) {
+            debugPrint('[AuthRegisterSection] onPickImage error: $e\n$st');
+          }
+        },
+        icon: const Icon(Icons.photo_outlined, color: Colors.white),
         label: Text(
           l10n.choosePicture,
-          style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w600),
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.3,
+          ),
         ),
         style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.white,
-          elevation: 2,
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          backgroundColor: kPrimaryBlue,
+          elevation: 6,
+          shadowColor: kSecondaryAmber.withOpacity(0.3),
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
         ),
       ),
     );
@@ -146,17 +160,18 @@ class AuthRegisterSection extends StatelessWidget {
       style: const TextStyle(color: Colors.white),
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: const TextStyle(color: Colors.white70),
+        labelStyle: const TextStyle(color: kTextSecondary),
         filled: true,
-        fillColor: Colors.white.withOpacity(0.07),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        fillColor: kSurfaceAltColor.withOpacity(0.7),
+        contentPadding:
+        const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(color: Colors.white.withOpacity(0.25)),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide(color: focusColor, width: 1.3),
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: focusColor, width: 1.4),
         ),
       ),
       validator: (v) => v == null || v.trim().isEmpty ? requiredError : null,
@@ -168,7 +183,10 @@ class AuthRegisterSection extends StatelessWidget {
       alignment: AlignmentDirectional.centerStart,
       child: Text(
         text,
-        style: theme.textTheme.bodySmall?.copyWith(color: Colors.white70, fontSize: 13),
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: kTextSecondary,
+          fontSize: 13,
+        ),
       ),
     );
   }
@@ -177,21 +195,50 @@ class AuthRegisterSection extends StatelessWidget {
     return SizedBox(
       width: double.infinity,
       child: InkWell(
-        onTap: isSubmitting ? null : onPickBirthday,
-        borderRadius: BorderRadius.circular(10),
+        onTap: isSubmitting
+            ? null
+            : () async {
+          try {
+            await Future<void>.sync(onPickBirthday);
+          } catch (e, st) {
+            debugPrint(
+                '[AuthRegisterSection] _pickBirthday error: $e\n$st');
+          }
+        },
+        borderRadius: BorderRadius.circular(12),
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            color: Colors.white.withOpacity(0.07),
-            border: Border.all(color: Colors.white.withOpacity(0.25)),
+            borderRadius: BorderRadius.circular(12),
+            gradient: LinearGradient(
+              colors: [
+                kSurfaceAltColor.withOpacity(0.8),
+                kSurfaceColor.withOpacity(0.8),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            border: Border.all(color: Colors.white.withOpacity(0.15)),
+            boxShadow: [
+              BoxShadow(
+                color: kSecondaryAmber.withOpacity(0.2),
+                blurRadius: 8,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
           child: Row(
             children: [
-              const Icon(Icons.cake_outlined, color: Colors.white70, size: 18),
+              const Icon(Icons.cake_outlined, color: kTextSecondary, size: 18),
               const SizedBox(width: 8),
-              Expanded(child: Text(birthdayLabel, style: const TextStyle(color: Colors.white))),
-              const Icon(Icons.calendar_today_outlined, color: Colors.white54, size: 16),
+              Expanded(
+                child: Text(
+                  birthdayLabel,
+                  style: const TextStyle(color: Colors.white),
+                ),
+              ),
+              const Icon(Icons.calendar_today_outlined,
+                  color: kTextSecondary, size: 16),
             ],
           ),
         ),
@@ -199,6 +246,9 @@ class AuthRegisterSection extends StatelessWidget {
     );
   }
 
+  // -----------------------
+  // GENDER OPTIONS
+  // -----------------------
   Widget _buildGenderChips(AppLocalizations l10n, bool isRTL) {
     return Wrap(
       alignment: isRTL ? WrapAlignment.end : WrapAlignment.start,
@@ -240,46 +290,70 @@ class AuthRegisterSection extends StatelessWidget {
     return GestureDetector(
       onTap: isSubmitting ? null : onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
+        duration: const Duration(milliseconds: 220),
         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 14),
         decoration: BoxDecoration(
-          color: selected ? color : Colors.white.withOpacity(0.07),
-          borderRadius: BorderRadius.circular(10),
+          gradient: selected
+              ? LinearGradient(
+            colors: [
+              color.withOpacity(0.9),
+              kSurfaceAltColor.withOpacity(0.6),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          )
+              : null,
+          color: selected ? null : kSurfaceAltColor.withOpacity(0.6),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: selected ? Colors.transparent : Colors.white.withOpacity(0.3),
+            color: selected
+                ? color.withOpacity(0.5)
+                : Colors.white.withOpacity(0.2),
           ),
           boxShadow: selected
-              ? [BoxShadow(color: color.withOpacity(0.4), blurRadius: 10)]
+              ? [
+            BoxShadow(
+              color: color.withOpacity(0.5),
+              blurRadius: 10,
+              spreadRadius: 1,
+            ),
+          ]
               : [],
         ),
         child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 16, color: selected ? Colors.black : Colors.white70),
+            Icon(
+              icon,
+              size: 16,
+              color: selected ? Colors.white : kTextSecondary,
+            ),
             const SizedBox(width: 6),
-            Text(label,
-                style: TextStyle(
-                  color: selected ? Colors.black : Colors.white70,
-                  fontWeight: FontWeight.w500,
-                )),
+            Text(
+              label,
+              style: TextStyle(
+                color: selected ? Colors.white : kTextSecondary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  /// ⭐ Apple 1.2 — User must agree to Terms before account creation
-  Widget _buildTermsAcceptance(BuildContext context, AppLocalizations l10n) {
+  // -----------------------
+  // TERMS ACCEPTANCE
+  // -----------------------
+  Widget _buildTermsAcceptance(AppLocalizations l10n) {
     return Row(
       children: [
         Checkbox(
           value: agreedToTerms,
           activeColor: kPrimaryBlue,
           checkColor: Colors.white,
-          onChanged: isSubmitting
-              ? null
-              : (v) {
-            onAgreeChanged(v ?? false); // FIXED — required non-null
-          },
+          side: BorderSide(color: Colors.white.withOpacity(0.5)),
+          onChanged: isSubmitting ? null : (v) => onAgreeChanged(v ?? false),
         ),
         Expanded(
           child: GestureDetector(
@@ -287,15 +361,16 @@ class AuthRegisterSection extends StatelessWidget {
             child: Text.rich(
               TextSpan(
                 text: l10n.iAgreeTo,
-                style: const TextStyle(color: Colors.white70),
+                style: const TextStyle(color: kTextSecondary),
                 children: [
                   TextSpan(
                     text: " ${l10n.termsOfUse}",
                     style: const TextStyle(
-                      color: Color(0xFF64B5F6),
+                      color: kSecondaryAmber,
                       decoration: TextDecoration.underline,
+                      fontWeight: FontWeight.w600,
                     ),
-                  )
+                  ),
                 ],
               ),
             ),

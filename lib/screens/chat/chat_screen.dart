@@ -2,12 +2,17 @@
 
 import 'dart:async';
 import 'dart:typed_data';
+import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path/path.dart' as p;
+import 'package:record/record.dart';
 
 import '../../utils/presence_service.dart';
 
@@ -80,13 +85,17 @@ class _ChatScreenState extends State<ChatScreen> {
     'threat',
   ];
 
+  final ImagePicker _imagePicker = ImagePicker();
+
   bool get _isAnyBlock => _isBlocked || _hasBlockedMe;
   bool get _isLoadingBlock => _loadingBlockState || _loadingOtherBlockState;
 
   /// We now **always** enforce friendship for valid user pairs.
   /// If either id is missing, we skip enforcement.
   bool get _isFriendshipEnforced {
-    if (_currentUserId.isEmpty || _otherUserId == null || _otherUserId!.isEmpty) {
+    if (_currentUserId.isEmpty ||
+        _otherUserId == null ||
+        _otherUserId!.isEmpty) {
       return false;
     }
     return true;
@@ -106,6 +115,15 @@ class _ChatScreenState extends State<ChatScreen> {
 
   bool get _hasIncomingFriendRequest => _friendStatus == 'incoming';
   bool get _hasOutgoingFriendRequest => _friendStatus == 'requested';
+
+  // ================= VOICE RECORDING =================
+
+  final Record _audioRecorder = Record();
+  bool _isRecording = false;
+  Duration _recordDuration = Duration.zero;
+  Timer? _recordTimer;
+
+  // ================= INIT / SUBSCRIPTIONS =================
 
   @override
   void initState() {
@@ -312,6 +330,8 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  // =============== FRIEND REQUEST HELPERS =================
+
   /// Send a new friend request:
   /// me -> other: status "requested"
   /// other -> me: status "incoming"
@@ -381,9 +401,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  /// Accept an incoming friend request:
-  /// - my doc:   status -> "accepted"
-  /// - their doc: status -> "accepted"
+  /// Accept an incoming friend request
   Future<void> _acceptFriendRequest() async {
     final me = _currentUserId;
     final other = _otherUserId;
@@ -714,7 +732,335 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  // ---------- FILE UPLOADS ----------
+  // ---------- VOICE NOTE HELPERS (Record plugin) ----------
+
+  Future<void> _startVoiceRecording() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final l10n = AppLocalizations.of(context)!;
+
+    if (_isAnyBlock) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.userBlockedInfo)),
+      );
+      return;
+    }
+
+    if (!_canSendMessages) {
+      String info;
+      if (_hasOutgoingFriendRequest) {
+        info = l10n.friendshipFileInfoOutgoing;
+      } else if (_hasIncomingFriendRequest) {
+        info = l10n.friendshipFileInfoIncoming;
+      } else {
+        info = l10n.friendshipFileInfoNotFriends;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(info)),
+      );
+      return;
+    }
+
+    if (kIsWeb) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.voiceNotSupportedWeb),
+        ),
+      );
+      return;
+    }
+
+    try {
+      final hasPermission = await _audioRecorder.hasPermission();
+      if (!hasPermission) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l10n.microphonePermissionRequired),
+          ),
+        );
+        return;
+      }
+
+      await _audioRecorder.start(
+        encoder: AudioEncoder.aacLc,
+        bitRate: 128000,
+        samplingRate: 44100,
+      );
+
+      setState(() {
+        _isRecording = true;
+        _recordDuration = Duration.zero;
+      });
+
+      _recordTimer?.cancel();
+      _recordTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (!mounted) return;
+        setState(() {
+          _recordDuration =
+              Duration(seconds: _recordDuration.inSeconds + 1);
+        });
+      });
+    } catch (e, st) {
+      debugPrint('[_startVoiceRecording] error: $e\n$st');
+    }
+  }
+
+  Future<void> _stopVoiceRecordingAndSend() async {
+    if (!_isRecording) return;
+
+    final l10n = AppLocalizations.of(context)!;
+
+    _recordTimer?.cancel();
+    setState(() {
+      _isRecording = false;
+    });
+
+    if (kIsWeb) {
+      setState(() {
+        _recordDuration = Duration.zero;
+      });
+      return;
+    }
+
+    try {
+      final path = await _audioRecorder.stop();
+      if (path == null) {
+        setState(() {
+          _recordDuration = Duration.zero;
+        });
+        return;
+      }
+
+      final file = File(path);
+      final bytes = await file.readAsBytes();
+
+      final platformFile = PlatformFile(
+        name: p.basename(path),
+        size: bytes.length,
+        bytes: bytes,
+        path: path,
+      );
+
+      setState(() {
+        _recordDuration = Duration.zero;
+      });
+
+      await _sendFileMessage(platformFile);
+    } catch (e, st) {
+      debugPrint('[_stopVoiceRecordingAndSend] error: $e\n$st');
+      setState(() {
+        _recordDuration = Duration.zero;
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.failedToUploadFile)),
+      );
+    }
+  }
+
+  Future<void> _cancelVoiceRecording() async {
+    if (!_isRecording) return;
+
+    _recordTimer?.cancel();
+
+    if (!kIsWeb) {
+      try {
+        await _audioRecorder.stop();
+      } catch (_) {
+        // ignore
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _isRecording = false;
+        _recordDuration = Duration.zero;
+      });
+    }
+  }
+
+  // ---------- ATTACHMENT UI ----------
+
+  Future<void> _handleAttachPressed() async {
+    final l10n = AppLocalizations.of(context)!;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF101018),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (ctx) {
+        final media = MediaQuery.of(ctx);
+        final maxWidth = media.size.width > 640 ? 520.0 : double.infinity;
+
+        return Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: maxWidth),
+            child: SafeArea(
+              child: Padding(
+                padding:
+                const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        const Icon(Icons.attach_file,
+                            color: Colors.white70, size: 20),
+                        const SizedBox(width: 8),
+                        Text(
+                          l10n.attachFile,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    const Divider(color: Colors.white10, height: 1),
+                    const SizedBox(height: 4),
+                    ListTile(
+                      leading:
+                      const Icon(Icons.photo, color: Colors.white70),
+                      title: Text(l10n.attachPhotoFromGallery),
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        _pickImageFromGallery();
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.videocam,
+                          color: Colors.white70),
+                      title: Text(l10n.attachVideoFromGallery),
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        _pickVideoFromGallery();
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.camera_alt,
+                          color: Colors.white70),
+                      title: Text(l10n.attachTakePhoto),
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        _captureImageWithCamera();
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.videocam_outlined,
+                          color: Colors.white70),
+                      title: Text(l10n.attachRecordVideo),
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        _captureVideoWithCamera();
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.insert_drive_file,
+                          color: Colors.white70),
+                      title: Text(l10n.attachFileFromDevice),
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        _pickAndSendFile();
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ---------- MEDIA PICKERS (ImagePicker) ----------
+
+  Future<void> _pickImageFromGallery() async {
+    final picked = await _imagePicker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+    );
+    if (picked == null) return;
+
+    final bytes = await picked.readAsBytes();
+    final file = PlatformFile(
+      name: p.basename(picked.path),
+      size: bytes.length,
+      bytes: bytes,
+      path: picked.path,
+    );
+
+    await _sendFileMessage(file);
+  }
+
+  Future<void> _pickVideoFromGallery() async {
+    final picked = await _imagePicker.pickVideo(
+      source: ImageSource.gallery,
+    );
+    if (picked == null) return;
+
+    final bytes = await picked.readAsBytes();
+    final file = PlatformFile(
+      name: p.basename(picked.path),
+      size: bytes.length,
+      bytes: bytes,
+      path: picked.path,
+    );
+
+    await _sendFileMessage(file);
+  }
+
+  Future<void> _captureImageWithCamera() async {
+    final picked = await _imagePicker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 85,
+    );
+    if (picked == null) return;
+
+    final bytes = await picked.readAsBytes();
+    final file = PlatformFile(
+      name: p.basename(picked.path),
+      size: bytes.length,
+      bytes: bytes,
+      path: picked.path,
+    );
+
+    await _sendFileMessage(file);
+  }
+
+  Future<void> _captureVideoWithCamera() async {
+    final picked = await _imagePicker.pickVideo(
+      source: ImageSource.camera,
+      maxDuration: const Duration(minutes: 2),
+    );
+    if (picked == null) return;
+
+    final bytes = await picked.readAsBytes();
+    final file = PlatformFile(
+      name: p.basename(picked.path),
+      size: bytes.length,
+      bytes: bytes,
+      path: picked.path,
+    );
+
+    await _sendFileMessage(file);
+  }
+
+  // ---------- FILE UPLOADS (Files app & voice) ----------
 
   Future<void> _pickAndSendFile() async {
     final user = FirebaseAuth.instance.currentUser;
@@ -726,7 +1072,7 @@ class _ChatScreenState extends State<ChatScreen> {
       final result = await FilePicker.platform.pickFiles(
         allowMultiple: false,
         withData: true,
-        type: FileType.any,
+        type: FileType.any, // PDFs/docs/zip etc. from Files app
       );
 
       if (result == null || result.files.isEmpty) return;
@@ -940,6 +1286,8 @@ class _ChatScreenState extends State<ChatScreen> {
     _otherUserSub?.cancel();
     _friendSub?.cancel();
     _typingDebounce?.cancel();
+    _recordTimer?.cancel();
+    _audioRecorder.dispose();
     _updateMyTyping(false); // best-effort
     super.dispose();
   }
@@ -1115,9 +1463,15 @@ class _ChatScreenState extends State<ChatScreen> {
                   ? ChatInputBar(
                 controller: _msgController,
                 sending: _sending,
-                onAttach: _pickAndSendFile,
+                onAttach: _handleAttachPressed,
                 onSend: _sendMessage,
                 onTextChanged: _onComposerChanged,
+                // NEW: voice note hooks
+                isRecording: _isRecording,
+                recordDuration: _recordDuration,
+                onMicLongPressStart: _startVoiceRecording,
+                onMicLongPressEnd: _stopVoiceRecordingAndSend,
+                onMicCancel: _cancelVoiceRecording,
               )
                   : Padding(
                 padding: const EdgeInsets.symmetric(

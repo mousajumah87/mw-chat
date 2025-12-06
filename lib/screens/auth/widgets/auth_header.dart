@@ -1,13 +1,42 @@
+// lib/screens/auth/widgets/auth_header.dart
 import 'package:flutter/material.dart';
 import '../../../l10n/app_localizations.dart';
+import '../../../theme/app_theme.dart';
 
-class AuthHeader extends StatelessWidget {
+class AuthHeader extends StatefulWidget {
   final bool isRegister;
 
   const AuthHeader({
     super.key,
     required this.isRegister,
   });
+
+  @override
+  State<AuthHeader> createState() => _AuthHeaderState();
+}
+
+class _AuthHeaderState extends State<AuthHeader>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _pulse;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 4),
+    )..repeat(reverse: true);
+
+    _pulse = Tween<double>(begin: 0.8, end: 1.1)
+        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -17,54 +46,72 @@ class AuthHeader extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // === MW Logo Halo ===
-          Container(
-            width: 110,
-            height: 110,
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: RadialGradient(
-                colors: [
-                  Color(0x55256EFF), // softer MW blue glow
-                  Color(0x55FFB300), // softer MW amber glow
-                  Colors.transparent,
-                ],
-                stops: [0.4, 0.8, 1.0],
-              ),
-            ),
-            child: Center(
-              child: Container(
-                width: 94,
-                height: 94,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.black,
-                  border: Border.all(color: Colors.white12, width: 1),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.55),
-                      blurRadius: 14,
-                      offset: const Offset(0, 6),
-                    ),
+          // === Animated MW Logo Halo ===
+          ScaleTransition(
+            scale: _pulse,
+            child: Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    kPrimaryBlue.withOpacity(0.45),
+                    kSecondaryAmber.withOpacity(0.4),
+                    Colors.transparent,
                   ],
+                  stops: const [0.4, 0.8, 1.0],
                 ),
-                child: ClipOval(
-                  child: Image.asset(
-                    'assets/logo/mw_mark.png',
-                    fit: BoxFit.cover,
-                    filterQuality: FilterQuality.medium,
+                boxShadow: [
+                  BoxShadow(
+                    color: kPrimaryBlue.withOpacity(0.25),
+                    blurRadius: 25,
+                    spreadRadius: 4,
+                  ),
+                  BoxShadow(
+                    color: kSecondaryAmber.withOpacity(0.25),
+                    blurRadius: 25,
+                    spreadRadius: 4,
+                  ),
+                ],
+              ),
+              child: Center(
+                child: Container(
+                  width: 96,
+                  height: 96,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: kSurfaceColor.withOpacity(0.8),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.2),
+                      width: 1.5,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.55),
+                        blurRadius: 14,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: ClipOval(
+                    child: Image.asset(
+                      'assets/logo/mw_mark.png',
+                      fit: BoxFit.cover,
+                      filterQuality: FilterQuality.high,
+                    ),
                   ),
                 ),
               ),
             ),
           ),
 
-          const SizedBox(height: 18),
+          const SizedBox(height: 20),
 
-          // === App Name ===
+          // === MW App Name (Gradient Glow Text) ===
           ShaderMask(
             shaderCallback: (bounds) => const LinearGradient(
-              colors: [Color(0xFF0057FF), Color(0xFFFFB300)],
+              colors: [kPrimaryBlue, kSecondaryAmber],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ).createShader(bounds),
@@ -73,40 +120,52 @@ class AuthHeader extends StatelessWidget {
               l10n.sidePanelAppName,
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                 fontWeight: FontWeight.bold,
-                letterSpacing: 0.3,
+                letterSpacing: 0.5,
                 color: Colors.white,
+                fontSize: 26,
                 shadows: [
-                  const Shadow(
-                    color: Colors.black54,
-                    offset: Offset(0, 1),
-                    blurRadius: 3,
+                  Shadow(
+                    color: kPrimaryBlue.withOpacity(0.4),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                  Shadow(
+                    color: kSecondaryAmber.withOpacity(0.4),
+                    blurRadius: 8,
+                    offset: const Offset(0, -1),
                   ),
                 ],
               ),
             ),
           ),
-          const SizedBox(height: 6),
+
+          const SizedBox(height: 8),
 
           // === Subtitle (Login/Register) ===
           AnimatedSwitcher(
-            duration: const Duration(milliseconds: 200),
+            duration: const Duration(milliseconds: 400),
             transitionBuilder: (child, anim) => FadeTransition(
               opacity: anim,
               child: SlideTransition(
                 position: Tween<Offset>(
-                    begin: const Offset(0, 0.3), end: Offset.zero)
-                    .animate(anim),
+                  begin: const Offset(0, 0.2),
+                  end: Offset.zero,
+                ).animate(CurvedAnimation(
+                  parent: anim,
+                  curve: Curves.easeOut,
+                )),
                 child: child,
               ),
             ),
             child: Text(
-              key: ValueKey(isRegister),
-              isRegister ? l10n.createAccount : l10n.loginTitle,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: Colors.white70),
+              key: ValueKey(widget.isRegister),
+              widget.isRegister ? l10n.createAccount : l10n.loginTitle,
               textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: kTextSecondary,
+                fontSize: 14.5,
+                letterSpacing: 0.2,
+              ),
             ),
           ),
         ],

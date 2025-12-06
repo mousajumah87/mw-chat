@@ -1,16 +1,17 @@
 // lib/screens/auth/auth_screen.dart
-
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:flutter/foundation.dart' show kIsWeb, compute;
+import 'package:flutter/foundation.dart' show kIsWeb, compute, debugPrint;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../theme/app_theme.dart';
 import '../../widgets/ui/mw_background.dart';
 import '../../widgets/ui/mw_language_button.dart';
 import '../legal/terms_of_use_screen.dart';
@@ -32,7 +33,6 @@ class _AuthScreenState extends State<AuthScreen> {
   final _firstNameCtrl = TextEditingController();
   final _lastNameCtrl = TextEditingController();
 
-  // gender: 'none' | 'male' | 'female'
   final ValueNotifier<String> _genderNotifier = ValueNotifier('none');
 
   DateTime? _birthday;
@@ -41,10 +41,9 @@ class _AuthScreenState extends State<AuthScreen> {
 
   bool _isLogin = true;
   bool _submitting = false;
-  String? _errorText;
-
-  /// ⭐ REQUIRED BY APPLE 1.2 – user must accept Terms before registering
+  bool _pickingImage = false;
   bool _agreedToTerms = false;
+  String? _errorText;
 
   @override
   void dispose() {
@@ -60,30 +59,53 @@ class _AuthScreenState extends State<AuthScreen> {
   // IMAGE PICKING
   // -------------------------
   Future<void> _pickImage() async {
-    if (_submitting) return;
+    if (_submitting || _pickingImage || !mounted) return;
 
-    final picker = ImagePicker();
-    final picked = await picker.pickImage(
-      source: ImageSource.gallery,
-      maxWidth: 800,
-      maxHeight: 800,
-      imageQuality: 75,
-    );
+    final l10n = AppLocalizations.of(context)!;
+    setState(() => _pickingImage = true);
 
-    if (picked == null) return;
+    try {
+      final picker = ImagePicker();
+      final XFile? picked = await picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 800,
+        maxHeight: 800,
+        imageQuality: 75,
+      );
 
-    if (kIsWeb) {
-      final bytes = await picked.readAsBytes();
-      setState(() {
-        _imageBytes = bytes;
-        _imageFile = null;
-      });
-    } else {
-      final compressed = await compute(_compressImage, picked.path);
-      setState(() {
-        _imageFile = File(compressed);
-        _imageBytes = null;
-      });
+      if (picked == null) return;
+
+      if (kIsWeb) {
+        final bytes = await picked.readAsBytes();
+        setState(() {
+          _imageBytes = bytes;
+          _imageFile = null;
+        });
+      } else {
+        final compressed = await compute(_compressImage, picked.path);
+        setState(() {
+          _imageFile = File(compressed);
+          _imageBytes = null;
+        });
+      }
+    } on PlatformException catch (e, st) {
+      debugPrint('[AuthScreen] _pickImage PlatformException: $e\n$st');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.authError)),
+        );
+      }
+    } catch (e, st) {
+      debugPrint('[AuthScreen] _pickImage error: $e\n$st');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.authError)),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _pickingImage = false);
+      }
     }
   }
 
@@ -119,7 +141,7 @@ class _AuthScreenState extends State<AuthScreen> {
     if (accepted == true) {
       setState(() {
         _agreedToTerms = true;
-        _errorText = null; // clear error once user accepts via full screen
+        _errorText = null;
       });
     }
   }
@@ -130,7 +152,6 @@ class _AuthScreenState extends State<AuthScreen> {
   Future<void> _submit() async {
     final l10n = AppLocalizations.of(context)!;
 
-    // Apple 1.2 – must accept Terms before account creation
     if (!_isLogin && !_agreedToTerms) {
       setState(() => _errorText = l10n.mustAcceptTerms);
       return;
@@ -145,7 +166,6 @@ class _AuthScreenState extends State<AuthScreen> {
 
     try {
       if (_isLogin) {
-        // ----- Login -----
         await FirebaseAuth.instance.signInWithEmailAndPassword(
           email: _emailCtrl.text.trim(),
           password: _passwordCtrl.text.trim(),
@@ -153,9 +173,7 @@ class _AuthScreenState extends State<AuthScreen> {
         return;
       }
 
-      // ----- Registration -----
-      final cred = await FirebaseAuth.instance
-          .createUserWithEmailAndPassword(
+      final cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: _emailCtrl.text.trim(),
         password: _passwordCtrl.text.trim(),
       );
@@ -166,7 +184,6 @@ class _AuthScreenState extends State<AuthScreen> {
         return;
       }
 
-      // Upload profile picture if present
       String? profileUrl;
       if (_imageBytes != null || _imageFile != null) {
         final ref =
@@ -195,11 +212,7 @@ class _AuthScreenState extends State<AuthScreen> {
         'isActive': false,
         'lastSeen': FieldValue.serverTimestamp(),
         'createdAt': FieldValue.serverTimestamp(),
-
-        // For block / privacy system
         'blockedUserIds': <String>[],
-
-        // ⭐ Store terms acceptance at registration time
         'hasAcceptedTerms': true,
         'termsAcceptedAt': FieldValue.serverTimestamp(),
       };
@@ -217,10 +230,11 @@ class _AuthScreenState extends State<AuthScreen> {
           .set(userData);
     } on FirebaseAuthException catch (e) {
       setState(() => _errorText = e.message ?? l10n.authError);
+    } catch (e, st) {
+      debugPrint('[AuthScreen] _submit error: $e\n$st');
+      setState(() => _errorText = l10n.authError);
     } finally {
-      if (mounted) {
-        setState(() => _submitting = false);
-      }
+      if (mounted) setState(() => _submitting = false);
     }
   }
 
@@ -231,6 +245,9 @@ class _AuthScreenState extends State<AuthScreen> {
         "${_birthday!.day.toString().padLeft(2, '0')}";
   }
 
+  // -------------------------
+  // UI BUILD
+  // -------------------------
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
@@ -238,10 +255,11 @@ class _AuthScreenState extends State<AuthScreen> {
     final isRTL = Directionality.of(context) == TextDirection.rtl;
 
     return Scaffold(
+      backgroundColor: Colors.black, // fallback behind bg image on web
       body: MwBackground(
         child: Stack(
           children: [
-            // LANGUAGE BUTTON (RTL-aware)
+            // Language switch
             Positioned(
               top: 32,
               right: isRTL ? null : 32,
@@ -249,152 +267,171 @@ class _AuthScreenState extends State<AuthScreen> {
               child: const MwLanguageButton(),
             ),
 
+            // Centered auth card
             Center(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(24),
-                child: ConstrainedBox(
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 400),
+                  curve: Curves.easeInOut,
                   constraints: const BoxConstraints(maxWidth: 420),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.6),
-                      borderRadius: BorderRadius.circular(22),
-                      border: Border.all(color: Colors.white12),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.6),
-                          blurRadius: 20,
-                          offset: const Offset(0, 12),
-                        ),
-                      ],
+                  decoration: BoxDecoration(
+                    color: kSurfaceAltColor.withOpacity(0.6),
+                    borderRadius: BorderRadius.circular(22),
+                    border: Border.all(
+                      color: kBorderColor.withOpacity(0.3),
                     ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 28,
-                        vertical: 34,
+                    boxShadow: [
+                      BoxShadow(
+                        color: kSecondaryAmber.withOpacity(0.15),
+                        blurRadius: 20,
+                        offset: const Offset(0, 12),
                       ),
-                      child: Form(
-                        key: _formKey,
-                        child: Column(
-                          children: [
-                            AuthHeader(isRegister: isRegister),
-                            const SizedBox(height: 28),
+                    ],
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 28,
+                      vertical: 34,
+                    ),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        children: [
+                          AuthHeader(isRegister: isRegister),
+                          const SizedBox(height: 28),
 
-                            if (isRegister)
-                              ValueListenableBuilder<String>(
-                                valueListenable: _genderNotifier,
-                                builder: (_, g, __) => AuthRegisterSection(
-                                  firstNameCtrl: _firstNameCtrl,
-                                  lastNameCtrl: _lastNameCtrl,
-                                  birthdayLabel: _birthdayLabel(l10n),
-                                  gender: g,
-                                  isSubmitting: _submitting,
-                                  imageBytes: _imageBytes,
-                                  imageFile: _imageFile,
-                                  onPickImage: _pickImage,
-                                  onPickBirthday: _pickBirthday,
-                                  onGenderChanged: (v) =>
-                                  _genderNotifier.value = v,
-
-                                  // ⭐ Terms UI lives in AuthRegisterSection
-                                  agreedToTerms: _agreedToTerms,
-                                  onAgreeChanged: (bool v) {
-                                    setState(() {
-                                      _agreedToTerms = v;
-                                      if (v) {
-                                        // Clear terms error as soon as user agrees
-                                        _errorText = null;
-                                      }
-                                    });
-                                  },
-                                  onViewTerms: _openTerms,
-                                ),
-                              ),
-
-                            const SizedBox(height: 12),
-
-                            // Email
-                            TextFormField(
-                              controller: _emailCtrl,
-                              decoration: InputDecoration(
-                                labelText: l10n.email,
-                                prefixIcon:
-                                const Icon(Icons.email_outlined),
-                              ),
-                              validator: (v) {
-                                if (v == null || v.isEmpty) {
-                                  return l10n.requiredField;
-                                }
-                                if (!v.contains('@')) {
-                                  return l10n.invalidEmail;
-                                }
-                                return null;
-                              },
-                            ),
-
-                            const SizedBox(height: 14),
-
-                            // Password
-                            TextFormField(
-                              controller: _passwordCtrl,
-                              obscureText: true,
-                              decoration: InputDecoration(
-                                labelText: l10n.password,
-                                prefixIcon:
-                                const Icon(Icons.lock_outline),
-                              ),
-                              validator: (v) {
-                                if (v == null || v.isEmpty) {
-                                  return l10n.requiredField;
-                                }
-                                if (v.length < 6) {
-                                  return l10n.minPassword;
-                                }
-                                return null;
-                              },
-                            ),
-
-                            if (_errorText != null) ...[
-                              const SizedBox(height: 10),
-                              Text(
-                                _errorText!,
-                                style: const TextStyle(color: Colors.red),
-                              ),
-                            ],
-
-                            const SizedBox(height: 22),
-
-                            // Login / Register button
-                            ElevatedButton(
-                              onPressed: _submitting ? null : _submit,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.white,
-                                foregroundColor: Colors.black,
-                              ),
-                              child: Text(
-                                isRegister ? l10n.register : l10n.login,
+                          if (isRegister)
+                            ValueListenableBuilder<String>(
+                              valueListenable: _genderNotifier,
+                              builder: (_, g, __) => AuthRegisterSection(
+                                firstNameCtrl: _firstNameCtrl,
+                                lastNameCtrl: _lastNameCtrl,
+                                birthdayLabel: _birthdayLabel(l10n),
+                                gender: g,
+                                isSubmitting: _submitting,
+                                imageBytes: _imageBytes,
+                                imageFile: _imageFile,
+                                onPickImage: _pickImage,
+                                onPickBirthday: _pickBirthday,
+                                onGenderChanged: (v) =>
+                                _genderNotifier.value = v,
+                                agreedToTerms: _agreedToTerms,
+                                onAgreeChanged: (bool v) {
+                                  setState(() {
+                                    _agreedToTerms = v;
+                                    if (v) _errorText = null;
+                                  });
+                                },
+                                onViewTerms: _openTerms,
                               ),
                             ),
 
-                            const SizedBox(height: 14),
+                          const SizedBox(height: 12),
 
-                            TextButton(
-                              onPressed: () {
-                                setState(() {
-                                  _isLogin = !_isLogin;
-                                  _errorText = null; // clear any old errors
-                                });
-                              },
-                              child: Text(
-                                isRegister
-                                    ? l10n.alreadyHaveAccount
-                                    : l10n.createNewAccount,
-                                style: const TextStyle(
-                                  color: Colors.white70,
-                                ),
-                              ),
+                          TextFormField(
+                            controller: _emailCtrl,
+                            decoration: InputDecoration(
+                              labelText: l10n.email,
+                              prefixIcon: const Icon(Icons.email_outlined),
+                            ),
+                            validator: (v) {
+                              if (v == null || v.isEmpty) {
+                                return l10n.requiredField;
+                              }
+                              if (!v.contains('@')) {
+                                return l10n.invalidEmail;
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 14),
+
+                          TextFormField(
+                            controller: _passwordCtrl,
+                            obscureText: true,
+                            decoration: InputDecoration(
+                              labelText: l10n.password,
+                              prefixIcon: const Icon(Icons.lock_outline),
+                            ),
+                            validator: (v) {
+                              if (v == null || v.isEmpty) {
+                                return l10n.requiredField;
+                              }
+                              if (v.length < 6) {
+                                return l10n.minPassword;
+                              }
+                              return null;
+                            },
+                          ),
+
+                          if (_errorText != null) ...[
+                            const SizedBox(height: 10),
+                            Text(
+                              _errorText!,
+                              style: const TextStyle(color: kErrorColor),
                             ),
                           ],
-                        ),
+
+                          const SizedBox(height: 24),
+
+                          ElevatedButton(
+                            onPressed: _submitting ? null : _submit,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: kPrimaryBlue,
+                              foregroundColor: Colors.white,
+                              elevation: 4,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 14,
+                                horizontal: 40,
+                              ),
+                            ),
+                            child: AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 250),
+                              child: _submitting
+                                  ? const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                                  : Text(
+                                isRegister
+                                    ? l10n.register
+                                    : l10n.login,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+
+                          const SizedBox(height: 16),
+
+                          TextButton(
+                            onPressed: () {
+                              setState(() {
+                                _isLogin = !_isLogin;
+                                _errorText = null;
+                              });
+                            },
+                            child: Text(
+                              isRegister
+                                  ? l10n.alreadyHaveAccount
+                                  : l10n.createNewAccount,
+                              style: const TextStyle(
+                                color: kTextSecondary,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),

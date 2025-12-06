@@ -1,20 +1,25 @@
+// lib/widgets/ui/mw_app_header.dart
 import 'dart:ui';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+
+import '../../l10n/app_localizations.dart';
 import '../../utils/presence_service.dart';
 import '../../screens/about/about_screen.dart';
 import '../../screens/profile/profile_screen.dart';
 import 'mw_language_button.dart';
 
 class MwAppHeader extends StatelessWidget implements PreferredSizeWidget {
-  final String title;
+  /// If null, we fall back to l10n.mainTitle inside build().
+  final String? title;
   final bool showTabs;
   final TabBar? tabBar;
 
   const MwAppHeader({
     super.key,
-    this.title = 'MW Chat',
+    this.title,
     this.showTabs = false,
     this.tabBar,
   });
@@ -26,68 +31,89 @@ class MwAppHeader extends StatelessWidget implements PreferredSizeWidget {
   Widget build(BuildContext context) {
     final currentUser = FirebaseAuth.instance.currentUser;
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context)!;
+
+    // Use provided title, otherwise localized mainTitle.
+    final effectiveTitle = title ?? l10n.mainTitle;
 
     return SafeArea(
       bottom: false,
       child: Container(
         decoration: BoxDecoration(
           color: Colors.black.withOpacity(0.75),
-          borderRadius: const BorderRadius.vertical(bottom: Radius.circular(18)),
+          borderRadius: const BorderRadius.vertical(
+            bottom: Radius.circular(18),
+          ),
           border: Border.all(color: Colors.white12, width: 0.6),
         ),
         child: ClipRRect(
-          borderRadius: const BorderRadius.vertical(bottom: Radius.circular(18)),
+          borderRadius: const BorderRadius.vertical(
+            bottom: Radius.circular(18),
+          ),
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Header Row
+                // ===== Header row =====
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      // Title
+                      // Centered title + small logo
                       Expanded(
                         child: Center(
-                          child: Text(
-                            title,
-                            style: theme.textTheme.titleLarge?.copyWith(
+                          child: _TitleWithLogoRow(
+                            title: effectiveTitle,
+                            textStyle: theme.textTheme.titleLarge?.copyWith(
                               color: Colors.white,
                               fontWeight: FontWeight.w700,
                               letterSpacing: 0.6,
                             ),
-                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ),
 
-                      // Actions
+                      // ===== Actions (language, profile, about, logout) =====
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           const MwLanguageButton(),
                           if (currentUser != null)
                             Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 6),
-                              child: _UserAvatarButton(currentUser: currentUser),
+                              padding:
+                              const EdgeInsets.symmetric(horizontal: 6),
+                              child:
+                              _UserAvatarButton(currentUser: currentUser),
                             ),
                           IconButton(
-                            icon: const Icon(Icons.info_outline, color: Colors.white),
-                            tooltip: 'About',
-                            onPressed: () => Navigator.of(context).push(
-                              MaterialPageRoute(builder: (_) => const AboutScreen()),
+                            icon: const Icon(
+                              Icons.info_outline,
+                              color: Colors.white,
                             ),
+                            tooltip: 'About',
+                            onPressed: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => const AboutScreen(),
+                                ),
+                              );
+                            },
                           ),
                           IconButton(
-                            icon: const Icon(Icons.logout, color: Colors.white),
+                            icon: const Icon(
+                              Icons.logout,
+                              color: Colors.white,
+                            ),
                             tooltip: 'Logout',
                             onPressed: () async {
                               await PresenceService.instance.markOffline();
                               await FirebaseAuth.instance.signOut();
                               if (context.mounted) {
-                                Navigator.of(context).popUntil((r) => r.isFirst);
+                                Navigator.of(context)
+                                    .popUntil((route) => route.isFirst);
                               }
                             },
                           ),
@@ -97,7 +123,7 @@ class MwAppHeader extends StatelessWidget implements PreferredSizeWidget {
                   ),
                 ),
 
-                // Tabs
+                // ===== Tabs below the header =====
                 if (showTabs && tabBar != null)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(18, 4, 18, 8),
@@ -125,6 +151,55 @@ class MwAppHeader extends StatelessWidget implements PreferredSizeWidget {
   }
 }
 
+/// Compact row: glowing MW circle + title text.
+class _TitleWithLogoRow extends StatelessWidget {
+  final String title;
+  final TextStyle? textStyle;
+
+  const _TitleWithLogoRow({
+    required this.title,
+    this.textStyle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Small glowing logo
+        Container(
+          width: 30,
+          height: 30,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.black,
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFFFFB300).withOpacity(0.7),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(4),
+            child: Image.asset(
+              'assets/logo/mw_mark.png',
+              fit: BoxFit.contain,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: textStyle,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ],
+    );
+  }
+}
+
 class _UserAvatarButton extends StatelessWidget {
   final User currentUser;
   const _UserAvatarButton({required this.currentUser});
@@ -144,9 +219,11 @@ class _UserAvatarButton extends StatelessWidget {
         final isOnline = data?['isOnline'] == true;
 
         return GestureDetector(
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const ProfileScreen()),
-          ),
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const ProfileScreen()),
+            );
+          },
           child: Stack(
             clipBehavior: Clip.none,
             children: [
@@ -157,8 +234,10 @@ class _UserAvatarButton extends StatelessWidget {
                     ? NetworkImage(profileUrl)
                     : null,
                 child: (profileUrl == null || profileUrl.isEmpty)
-                    ? Text(avatarType == 'smurf' ? '🧜‍♀️' : '🐻',
-                    style: const TextStyle(fontSize: 14))
+                    ? Text(
+                  avatarType == 'smurf' ? '🧜‍♀️' : '🐻',
+                  style: const TextStyle(fontSize: 14),
+                )
                     : null,
               ),
               Positioned(

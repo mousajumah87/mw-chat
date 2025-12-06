@@ -1,6 +1,7 @@
 {
     "@@locale": "ar",
 
+    "mainTitle": "MW شات",
     "loginTitle": "مرحباً بعودتك",
     "createAccount": "إنشاء حساب MW",
     "createNewAccount": "إنشاء حساب جديد",
@@ -75,6 +76,15 @@
     "failedToUploadFile": "فشل رفع الملف",
     "uploadFailedStorage": "فشل الرفع (التخزين).",
     "uploadFailedMessageSave": "فشل الرفع (حفظ الرسالة).",
+    "attachPhotoFromGallery": "صورة من المعرض",
+    "attachVideoFromGallery": "فيديو من المعرض",
+    "attachTakePhoto": "التقاط صورة",
+    "attachRecordVideo": "تسجيل فيديو",
+    "attachFileFromDevice": "ملف من الجهاز",
+    "voiceNotSupportedWeb": "الرسائل الصوتية غير مدعومة على الويب بعد.",
+    "microphonePermissionRequired": "يتطلب تسجيل الصوت منح إذن الوصول إلى الميكروفون.",
+    "holdMicToRecord": "اضغط باستمرار على الميكروفون لتسجيل رسالة صوتية",
+
 
     "deleteMessageTitle": "حذف الرسالة",
     "deleteMessageConfirm": "هل أنت متأكد أنك تريد حذف هذه الرسالة؟",
@@ -231,5 +241,26 @@
     "socialInstagram": "إنستغرام",
     "socialX": "إكس / تويتر",
 
-    "appBrandingBeta": "MW شات \u2022 نسخة تجريبية"
+    "appBrandingBeta": "MW شات 2025 نسخة تجريبية",
+
+    "profileSafetyToolsSectionTitle": "أدوات السلامة",
+    "profileBlockedUserHintLimitedVisibility": "قام هذا المستخدم بتقييد ما يمكنك رؤيته.",
+    "profileBlockDialogTitleBlock": "حظر المستخدم",
+    "profileBlockDialogTitleUnblock": "إلغاء حظر المستخدم",
+    "profileBlockDialogBodyBlock": "هل تريد حظر هذا المستخدم؟ لن تتلقى رسائل منه في تطبيق MW Chat بعد الآن.",
+    "profileBlockDialogBodyUnblock": "هل تريد إلغاء حظر هذا المستخدم؟ ستتمكن من استقبال الرسائل منه مرة أخرى.",
+    "profileBlockDialogConfirmBlock": "حظر",
+    "profileBlockDialogConfirmUnblock": "إلغاء الحظر",
+    "profileBlockButtonBlock": "حظر المستخدم",
+    "profileBlockButtonUnblock": "إلغاء حظر المستخدم",
+    "profileBlockSnackbarBlocked": "تم حظر المستخدم بنجاح.",
+    "profileBlockSnackbarUnblocked": "تم إلغاء حظر المستخدم.",
+    "profileBlockSnackbarError": "فشل تحديث حالة الحظر. يرجى المحاولة مرة أخرى.",
+    "profileReportDialogTitle": "الإبلاغ عن مستخدم",
+    "profileReportDialogBody": "يرجى وصف سبب الإبلاغ عن هذا المستخدم، مثل: الرسائل المزعجة، التنمر، خطاب الكراهية، أو أي محتوى مسيء آخر.",
+    "profileReportDialogHint": "صف المشكلة…",
+    "profileReportDialogSubmit": "إرسال البلاغ",
+    "profileReportButtonLabel": "الإبلاغ عن المستخدم",
+    "profileReportSnackbarSuccess": "تم إرسال البلاغ. سنقوم بمراجعته.",
+    "profileReportSnackbarError": "فشل إرسال البلاغ. يرجى المحاولة مرة أخرى."
 }

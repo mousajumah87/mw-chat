@@ -95,6 +95,12 @@ abstract class AppLocalizations {
     Locale('en')
   ];
 
+  /// No description provided for @mainTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'MW Chat'**
+  String get mainTitle;
+
   /// No description provided for @loginTitle.
   ///
   /// In en, this message translates to:
@@ -508,6 +514,48 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Upload failed (message save).'**
   String get uploadFailedMessageSave;
+
+  /// No description provided for @attachPhotoFromGallery.
+  ///
+  /// In en, this message translates to:
+  /// **'Photo from gallery'**
+  String get attachPhotoFromGallery;
+
+  /// No description provided for @attachVideoFromGallery.
+  ///
+  /// In en, this message translates to:
+  /// **'Video from gallery'**
+  String get attachVideoFromGallery;
+
+  /// No description provided for @attachTakePhoto.
+  ///
+  /// In en, this message translates to:
+  /// **'Take a photo'**
+  String get attachTakePhoto;
+
+  /// No description provided for @attachRecordVideo.
+  ///
+  /// In en, this message translates to:
+  /// **'Record a video'**
+  String get attachRecordVideo;
+
+  /// No description provided for @attachFileFromDevice.
+  ///
+  /// In en, this message translates to:
+  /// **'File from device'**
+  String get attachFileFromDevice;
+
+  /// No description provided for @voiceNotSupportedWeb.
+  ///
+  /// In en, this message translates to:
+  /// **'Voice messages are not supported on Web yet.'**
+  String get voiceNotSupportedWeb;
+
+  /// No description provided for @microphonePermissionRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Microphone permission is required to record audio.'**
+  String get microphonePermissionRequired;
 
   /// No description provided for @deleteMessageTitle.
   ///
@@ -1268,8 +1316,128 @@ abstract class AppLocalizations {
   /// No description provided for @appBrandingBeta.
   ///
   /// In en, this message translates to:
-  /// **'MW Chat • beta'**
+  /// **'MW Chat 2022 beta'**
   String get appBrandingBeta;
+
+  /// No description provided for @profileSafetyToolsSectionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Safety tools'**
+  String get profileSafetyToolsSectionTitle;
+
+  /// No description provided for @profileBlockedUserHintLimitedVisibility.
+  ///
+  /// In en, this message translates to:
+  /// **'This user has limited what you can see.'**
+  String get profileBlockedUserHintLimitedVisibility;
+
+  /// No description provided for @profileBlockDialogTitleBlock.
+  ///
+  /// In en, this message translates to:
+  /// **'Block user'**
+  String get profileBlockDialogTitleBlock;
+
+  /// No description provided for @profileBlockDialogTitleUnblock.
+  ///
+  /// In en, this message translates to:
+  /// **'Unblock user'**
+  String get profileBlockDialogTitleUnblock;
+
+  /// No description provided for @profileBlockDialogBodyBlock.
+  ///
+  /// In en, this message translates to:
+  /// **'Do you want to block this user? You will no longer receive messages from them in MW Chat.'**
+  String get profileBlockDialogBodyBlock;
+
+  /// No description provided for @profileBlockDialogBodyUnblock.
+  ///
+  /// In en, this message translates to:
+  /// **'Do you want to unblock this user? You will be able to receive messages from them again.'**
+  String get profileBlockDialogBodyUnblock;
+
+  /// No description provided for @profileBlockDialogConfirmBlock.
+  ///
+  /// In en, this message translates to:
+  /// **'Block'**
+  String get profileBlockDialogConfirmBlock;
+
+  /// No description provided for @profileBlockDialogConfirmUnblock.
+  ///
+  /// In en, this message translates to:
+  /// **'Unblock'**
+  String get profileBlockDialogConfirmUnblock;
+
+  /// No description provided for @profileBlockButtonBlock.
+  ///
+  /// In en, this message translates to:
+  /// **'Block user'**
+  String get profileBlockButtonBlock;
+
+  /// No description provided for @profileBlockButtonUnblock.
+  ///
+  /// In en, this message translates to:
+  /// **'Unblock user'**
+  String get profileBlockButtonUnblock;
+
+  /// No description provided for @profileBlockSnackbarBlocked.
+  ///
+  /// In en, this message translates to:
+  /// **'User blocked successfully.'**
+  String get profileBlockSnackbarBlocked;
+
+  /// No description provided for @profileBlockSnackbarUnblocked.
+  ///
+  /// In en, this message translates to:
+  /// **'User unblocked.'**
+  String get profileBlockSnackbarUnblocked;
+
+  /// No description provided for @profileBlockSnackbarError.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to update block status. Please try again.'**
+  String get profileBlockSnackbarError;
+
+  /// No description provided for @profileReportDialogTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Report user'**
+  String get profileReportDialogTitle;
+
+  /// No description provided for @profileReportDialogBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Please describe why you are reporting this user. For example: spam, bullying, hate speech, or other abusive content.'**
+  String get profileReportDialogBody;
+
+  /// No description provided for @profileReportDialogHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Describe the problem…'**
+  String get profileReportDialogHint;
+
+  /// No description provided for @profileReportDialogSubmit.
+  ///
+  /// In en, this message translates to:
+  /// **'Submit'**
+  String get profileReportDialogSubmit;
+
+  /// No description provided for @profileReportButtonLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Report user'**
+  String get profileReportButtonLabel;
+
+  /// No description provided for @profileReportSnackbarSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Report submitted. We will review it.'**
+  String get profileReportSnackbarSuccess;
+
+  /// No description provided for @profileReportSnackbarError.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to submit report. Please try again.'**
+  String get profileReportSnackbarError;
 }
 
 class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> {

@@ -1,5 +1,9 @@
+// lib/widgets/chat/chat_input_bar.dart
+
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
-import '../../theme/app_theme.dart';
+
 import '../../l10n/app_localizations.dart';
 
 class ChatInputBar extends StatefulWidget {
@@ -7,7 +11,14 @@ class ChatInputBar extends StatefulWidget {
   final bool sending;
   final VoidCallback onAttach;
   final VoidCallback onSend;
-  final ValueChanged<String> onTextChanged;
+  final ValueChanged<String>? onTextChanged;
+
+  // Voice note extras (all optional so old code doesn't break)
+  final bool isRecording;
+  final Duration? recordDuration;
+  final VoidCallback? onMicLongPressStart;
+  final VoidCallback? onMicLongPressEnd;
+  final VoidCallback? onMicCancel;
 
   const ChatInputBar({
     super.key,
@@ -15,208 +26,190 @@ class ChatInputBar extends StatefulWidget {
     required this.sending,
     required this.onAttach,
     required this.onSend,
-    required this.onTextChanged,
+    this.onTextChanged,
+    this.isRecording = false,
+    this.recordDuration,
+    this.onMicLongPressStart,
+    this.onMicLongPressEnd,
+    this.onMicCancel,
   });
 
   @override
   State<ChatInputBar> createState() => _ChatInputBarState();
 }
 
-class _ChatInputBarState extends State<ChatInputBar>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _sendController;
-  late final Animation<double> _scaleAnim;
-
-  // Keep our own focus node so we can control focus if needed
-  final FocusNode _inputFocusNode = FocusNode();
-
-  static const _sendGradient = LinearGradient(
-    colors: [Color(0xFF0057FF), Color(0xFFFFB300)],
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-  );
+class _ChatInputBarState extends State<ChatInputBar> {
+  bool _hasText = false;
 
   @override
   void initState() {
     super.initState();
-    _sendController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 150),
-    );
-    _scaleAnim = Tween<double>(begin: 0.9, end: 1.05).animate(
-      CurvedAnimation(parent: _sendController, curve: Curves.easeOutCubic),
-    );
+    _hasText = widget.controller.text.trim().isNotEmpty;
   }
 
-  @override
-  void dispose() {
-    _sendController.dispose();
-    _inputFocusNode.dispose();
-    super.dispose();
+  String _formatDuration(Duration? d) {
+    final duration = d ?? Duration.zero;
+    final minutes = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
   }
 
-  Future<void> _triggerSend() async {
-    if (widget.sending) return;
-
-    final text = widget.controller.text.trim();
-    if (text.isEmpty) return;
-
-    await _sendController.forward();
-    await _sendController.reverse();
-    widget.onSend();
-
-    // Keep focus so keyboard stays open after sending (WhatsApp-like)
-    _inputFocusNode.requestFocus();
+  void _handleTextChanged(String value) {
+    final hasText = value.trim().isNotEmpty;
+    if (hasText != _hasText) {
+      setState(() {
+        _hasText = hasText;
+      });
+    }
+    widget.onTextChanged?.call(value);
   }
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context)!;
 
-    return SafeArea(
-      minimum: const EdgeInsets.fromLTRB(10, 6, 10, 8),
-      child: RepaintBoundary(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            // === Input bubble ===
-            Expanded(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(
-                  minHeight: 44,
-                  maxHeight: 120, // allow a few lines, similar to WhatsApp
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111119),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Row(
+        children: [
+          // Attach
+          IconButton(
+            icon: const Icon(Icons.attach_file),
+            color: Colors.white70,
+            onPressed:
+            widget.sending || widget.isRecording ? null : widget.onAttach,
+          ),
+
+          // Text field – now full pill, not a small box with its own border
+          Expanded(
+            child: TextField(
+              controller: widget.controller,
+              enabled: !widget.sending && !widget.isRecording,
+              onChanged: _handleTextChanged,
+              minLines: 1,
+              maxLines: 4,
+              textInputAction: TextInputAction.newline,
+              keyboardType: TextInputType.multiline,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                isDense: true,
+                hintText: l10n.typeMessageHint,
+                hintStyle: const TextStyle(color: Colors.white54),
+                filled: true,
+                fillColor: Colors.white.withOpacity(0.04),
+                contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                // One big rounded pill; remove the default blue outline look.
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(24),
+                  borderSide: BorderSide.none,
                 ),
-                child: Container(
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: kSurfaceAltColor.withOpacity(0.9),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(
-                      color: kBorderColor.withOpacity(0.8),
-                      width: 0.7,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(
-                          Icons.attach_file,
-                          size: 20,
-                          color: kTextSecondary,
-                        ),
-                        splashRadius: 22,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(
-                          minWidth: 32,
-                          minHeight: 32,
-                        ),
-                        tooltip: l10n.attachFile,
-                        onPressed: widget.onAttach,
-                      ),
-
-                      const SizedBox(width: 6),
-
-                      // === Text input (WhatsApp-like multiline) ===
-                      Expanded(
-                        child: TextField(
-                          controller: widget.controller,
-                          focusNode: _inputFocusNode,
-                          keyboardType: TextInputType.multiline,
-                          textInputAction: TextInputAction.newline,
-                          minLines: 1,
-                          maxLines: 5, // auto-expand up to 5 lines
-                          onChanged: widget.onTextChanged,
-                          // No onSubmitted -> Enter just creates a new line,
-                          // sending is done via the send button only.
-                          textAlignVertical: TextAlignVertical.center,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: Colors.white,
-                            fontSize: 15,
-                          ),
-                          cursorColor: Colors.white70,
-                          decoration: InputDecoration(
-                            isCollapsed: true,
-                            isDense: true,
-                            hintText: l10n.typeMessageHint,
-                            hintStyle: const TextStyle(
-                              color: kTextSecondary,
-                              fontSize: 14,
-                            ),
-                            border: InputBorder.none,
-                            enabledBorder: InputBorder.none,
-                            focusedBorder: InputBorder.none,
-                            disabledBorder: InputBorder.none,
-                            errorBorder: InputBorder.none,
-                            focusedErrorBorder: InputBorder.none,
-                            filled: false,
-                            contentPadding:
-                            const EdgeInsets.symmetric(vertical: 8),
-                          ),
-                        ),
-                      ),
-                    ],
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(24),
+                  borderSide: BorderSide.none,
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(24),
+                  borderSide: BorderSide(
+                    color: Colors.white.withOpacity(0.25),
+                    width: 1.3,
                   ),
                 ),
               ),
             ),
+          ),
 
-            const SizedBox(width: 8),
+          const SizedBox(width: 4),
 
-            // === Send button ===
-            ScaleTransition(
-              scale: _scaleAnim,
-              child: GestureDetector(
-                onTap: widget.sending ? null : _triggerSend,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  width: 46,
-                  height: 46,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: widget.sending
-                        ? const LinearGradient(
-                      colors: [kSurfaceAltColor, kSurfaceAltColor],
-                    )
-                        : _sendGradient,
-                    boxShadow: widget.sending
-                        ? const []
-                        : [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.25),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Center(
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 180),
-                      transitionBuilder: (child, anim) =>
-                          FadeTransition(opacity: anim, child: child),
-                      child: widget.sending
-                          ? const SizedBox(
-                        key: ValueKey('loading'),
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                          : const Icon(
-                        key: ValueKey('send'),
-                        Icons.send_rounded,
-                        size: 20,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+          // Right side: send / mic / recording pill
+          if (widget.isRecording)
+            _buildRecordingPill(theme)
+          else
+            _buildSendOrMic(theme),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecordingPill(ThemeData theme) {
+    return Container(
+      margin: const EdgeInsets.only(right: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.red.withOpacity(0.18),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.redAccent.withOpacity(0.5)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.mic, color: Colors.redAccent, size: 18),
+          const SizedBox(width: 6),
+          Text(
+            _formatDuration(widget.recordDuration),
+            style: const TextStyle(
+              color: Colors.white,
+              fontFeatures: [FontFeature.tabularFigures()],
             ),
-          ],
+          ),
+          const SizedBox(width: 6),
+          GestureDetector(
+            onTap: widget.onMicCancel,
+            child: const Icon(
+              Icons.close,
+              color: Colors.white70,
+              size: 18,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSendOrMic(ThemeData theme) {
+    // If there is text or we are currently sending, show SEND button.
+    if (_hasText || widget.sending) {
+      return IconButton(
+        icon: widget.sending
+            ? const SizedBox(
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        )
+            : const Icon(Icons.send_rounded),
+        color: theme.colorScheme.primary,
+        onPressed: widget.sending ? null : widget.onSend,
+      );
+    }
+
+    // Otherwise show mic with long-press actions.
+    return GestureDetector(
+      onLongPressStart: (_) => widget.onMicLongPressStart?.call(),
+      onLongPressEnd: (_) => widget.onMicLongPressEnd?.call(),
+      onTap: () {
+        // Simple hint; no localization required, safe default.
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Hold the mic to record a voice message'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.only(right: 6),
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.06),
+          shape: BoxShape.circle,
+        ),
+        child: const Icon(
+          Icons.mic_rounded,
+          color: Colors.white,
         ),
       ),
     );

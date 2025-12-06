@@ -1,6 +1,7 @@
+// lib/theme/app_theme.dart
 import 'package:flutter/material.dart';
 
-// === MW Optimized Theme (Performance-First) ===
+// === MW Chat Enhanced Neon Glass Theme ===
 
 // Core background colors
 const kBgColor = Color(0xFF0B0B0B);
@@ -13,20 +14,37 @@ const kTextPrimary = Colors.white;
 const kTextSecondary = Color(0xFF9CA3AF);
 
 // Brand accents
-const kPrimaryBlue = Color(0xFF0057FF);
-const kSecondaryAmber = Color(0xFFFFB300);
+const kPrimaryBlue = Color(0xFF0066FF);
+const kSecondaryAmber = Color(0xFFFFC107);
 const kAccentColor = Color(0xFF22C55E);
 const kErrorColor = Colors.redAccent;
 
 // Chat bubbles
-const kBubbleMeColor = Colors.white;
+const kBubbleMeColor = Color(0xFFFFC107);
 const kBubbleOtherColor = Color(0xFF1E1E1E);
 
-// Lightweight gradient (used in headers/buttons)
-final LinearGradient mwGradient = const LinearGradient(
+// === Gradient and Glow ===
+final LinearGradient mwGradient = LinearGradient(
   begin: Alignment.topLeft,
   end: Alignment.bottomRight,
-  colors: [kPrimaryBlue, kSecondaryAmber],
+  colors: [
+    kPrimaryBlue.withOpacity(0.9),
+    kSecondaryAmber.withOpacity(0.9),
+  ],
+);
+
+// Reusable glow decoration
+BoxDecoration mwGlowDecoration = BoxDecoration(
+  gradient: mwGradient,
+  boxShadow: [
+    BoxShadow(
+      color: kSecondaryAmber.withOpacity(0.35),
+      blurRadius: 20,
+      spreadRadius: 3,
+      offset: const Offset(0, 4),
+    ),
+  ],
+  borderRadius: BorderRadius.circular(16),
 );
 
 // === THEME DATA ===
@@ -42,13 +60,14 @@ ThemeData buildAppTheme() {
       background: kBgColor,
       error: kErrorColor,
     ),
+    fontFamily: 'Poppins',
   );
 
   final textTheme = base.textTheme.copyWith(
     headlineLarge: const TextStyle(
-      fontSize: 28,
+      fontSize: 30,
       fontWeight: FontWeight.w700,
-      letterSpacing: 0.3,
+      letterSpacing: 0.4,
       color: kTextPrimary,
     ),
     headlineSmall: const TextStyle(
@@ -62,12 +81,14 @@ ThemeData buildAppTheme() {
       color: kTextPrimary,
     ),
     bodyMedium: const TextStyle(
-      fontSize: 14,
+      fontSize: 15,
       color: kTextPrimary,
+      letterSpacing: 0.2,
     ),
     bodySmall: const TextStyle(
-      fontSize: 12,
+      fontSize: 13,
       color: kTextSecondary,
+      letterSpacing: 0.2,
     ),
     labelLarge: const TextStyle(
       fontSize: 15,
@@ -81,7 +102,7 @@ ThemeData buildAppTheme() {
 
     // === APP BAR ===
     appBarTheme: AppBarTheme(
-      backgroundColor: kSurfaceColor,
+      backgroundColor: kSurfaceAltColor.withOpacity(0.6),
       elevation: 0,
       centerTitle: true,
       foregroundColor: kTextPrimary,
@@ -94,15 +115,31 @@ ThemeData buildAppTheme() {
 
     // === BUTTONS ===
     elevatedButtonTheme: ElevatedButtonThemeData(
-      style: ElevatedButton.styleFrom(
-        backgroundColor: kPrimaryBlue,
-        foregroundColor: Colors.white,
-        elevation: 2,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
+      style: ButtonStyle(
+        backgroundColor: MaterialStateProperty.resolveWith<Color>(
+              (states) {
+            if (states.contains(MaterialState.hovered)) {
+              return kPrimaryBlue.withOpacity(0.9);
+            }
+            if (states.contains(MaterialState.pressed)) {
+              return kSecondaryAmber.withOpacity(0.8);
+            }
+            return kPrimaryBlue;
+          },
         ),
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 18),
-        textStyle: textTheme.labelLarge,
+        foregroundColor: MaterialStateProperty.all(Colors.white),
+        shadowColor:
+        MaterialStateProperty.all(kSecondaryAmber.withOpacity(0.3)),
+        elevation: MaterialStateProperty.all(4),
+        shape: MaterialStateProperty.all(
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        ),
+        padding: MaterialStateProperty.all(
+          const EdgeInsets.symmetric(vertical: 14, horizontal: 22),
+        ),
+        textStyle: MaterialStateProperty.all(
+          textTheme.labelLarge?.copyWith(color: Colors.white),
+        ),
       ),
     ),
 
@@ -118,26 +155,26 @@ ThemeData buildAppTheme() {
     // === INPUT FIELDS ===
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: kSurfaceAltColor,
+      fillColor: kSurfaceAltColor.withOpacity(0.8),
       contentPadding:
       const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       hintStyle: const TextStyle(color: kTextSecondary),
       labelStyle: const TextStyle(color: kTextSecondary),
       prefixIconColor: kTextSecondary,
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(color: kBorderColor.withOpacity(0.8)),
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: kBorderColor.withOpacity(0.7)),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(color: kBorderColor.withOpacity(0.8)),
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: kBorderColor.withOpacity(0.6)),
       ),
       focusedBorder: const OutlineInputBorder(
-        borderRadius: BorderRadius.all(Radius.circular(10)),
+        borderRadius: BorderRadius.all(Radius.circular(12)),
         borderSide: BorderSide(color: kPrimaryBlue, width: 1.3),
       ),
       errorBorder: const OutlineInputBorder(
-        borderRadius: BorderRadius.all(Radius.circular(10)),
+        borderRadius: BorderRadius.all(Radius.circular(12)),
         borderSide: BorderSide(color: kErrorColor, width: 1.2),
       ),
     ),
@@ -146,12 +183,13 @@ ThemeData buildAppTheme() {
     floatingActionButtonTheme: const FloatingActionButtonThemeData(
       backgroundColor: kPrimaryBlue,
       foregroundColor: Colors.white,
-      elevation: 4,
+      elevation: 6,
     ),
 
     // === SCROLLBAR ===
     scrollbarTheme: ScrollbarThemeData(
-      thumbColor: MaterialStateProperty.all(kTextSecondary.withOpacity(0.3)),
+      thumbColor:
+      MaterialStateProperty.all(kTextSecondary.withOpacity(0.35)),
       radius: const Radius.circular(10),
       thickness: MaterialStateProperty.all(4),
     ),
@@ -165,6 +203,13 @@ ThemeData buildAppTheme() {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(6),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
     ),
 
@@ -173,7 +218,7 @@ ThemeData buildAppTheme() {
       backgroundColor: kSurfaceAltColor,
       contentTextStyle: textTheme.bodyMedium,
       behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
     ),
   );
 }

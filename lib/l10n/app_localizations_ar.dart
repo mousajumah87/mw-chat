@@ -9,6 +9,9 @@ class AppLocalizationsAr extends AppLocalizations {
   AppLocalizationsAr([String locale = 'ar']) : super(locale);
 
   @override
+  String get mainTitle => 'MW شات';
+
+  @override
   String get loginTitle => 'مرحباً بعودتك';
 
   @override
@@ -232,6 +235,27 @@ class AppLocalizationsAr extends AppLocalizations {
 
   @override
   String get uploadFailedMessageSave => 'فشل الرفع (حفظ الرسالة).';
+
+  @override
+  String get attachPhotoFromGallery => 'صورة من المعرض';
+
+  @override
+  String get attachVideoFromGallery => 'فيديو من المعرض';
+
+  @override
+  String get attachTakePhoto => 'التقاط صورة';
+
+  @override
+  String get attachRecordVideo => 'تسجيل فيديو';
+
+  @override
+  String get attachFileFromDevice => 'ملف من الجهاز';
+
+  @override
+  String get voiceNotSupportedWeb => 'الرسائل الصوتية غير مدعومة على الويب بعد.';
+
+  @override
+  String get microphonePermissionRequired => 'يتطلب تسجيل الصوت منح إذن الوصول إلى الميكروفون.';
 
   @override
   String get deleteMessageTitle => 'حذف الرسالة';
@@ -622,5 +646,65 @@ class AppLocalizationsAr extends AppLocalizations {
   String get socialX => 'إكس / تويتر';
 
   @override
-  String get appBrandingBeta => 'MW شات • نسخة تجريبية';
+  String get appBrandingBeta => 'MW شات 2025 نسخة تجريبية';
+
+  @override
+  String get profileSafetyToolsSectionTitle => 'أدوات السلامة';
+
+  @override
+  String get profileBlockedUserHintLimitedVisibility => 'قام هذا المستخدم بتقييد ما يمكنك رؤيته.';
+
+  @override
+  String get profileBlockDialogTitleBlock => 'حظر المستخدم';
+
+  @override
+  String get profileBlockDialogTitleUnblock => 'إلغاء حظر المستخدم';
+
+  @override
+  String get profileBlockDialogBodyBlock => 'هل تريد حظر هذا المستخدم؟ لن تتلقى رسائل منه في تطبيق MW Chat بعد الآن.';
+
+  @override
+  String get profileBlockDialogBodyUnblock => 'هل تريد إلغاء حظر هذا المستخدم؟ ستتمكن من استقبال الرسائل منه مرة أخرى.';
+
+  @override
+  String get profileBlockDialogConfirmBlock => 'حظر';
+
+  @override
+  String get profileBlockDialogConfirmUnblock => 'إلغاء الحظر';
+
+  @override
+  String get profileBlockButtonBlock => 'حظر المستخدم';
+
+  @override
+  String get profileBlockButtonUnblock => 'إلغاء حظر المستخدم';
+
+  @override
+  String get profileBlockSnackbarBlocked => 'تم حظر المستخدم بنجاح.';
+
+  @override
+  String get profileBlockSnackbarUnblocked => 'تم إلغاء حظر المستخدم.';
+
+  @override
+  String get profileBlockSnackbarError => 'فشل تحديث حالة الحظر. يرجى المحاولة مرة أخرى.';
+
+  @override
+  String get profileReportDialogTitle => 'الإبلاغ عن مستخدم';
+
+  @override
+  String get profileReportDialogBody => 'يرجى وصف سبب الإبلاغ عن هذا المستخدم، مثل: الرسائل المزعجة، التنمر، خطاب الكراهية، أو أي محتوى مسيء آخر.';
+
+  @override
+  String get profileReportDialogHint => 'صف المشكلة…';
+
+  @override
+  String get profileReportDialogSubmit => 'إرسال البلاغ';
+
+  @override
+  String get profileReportButtonLabel => 'الإبلاغ عن المستخدم';
+
+  @override
+  String get profileReportSnackbarSuccess => 'تم إرسال البلاغ. سنقوم بمراجعته.';
+
+  @override
+  String get profileReportSnackbarError => 'فشل إرسال البلاغ. يرجى المحاولة مرة أخرى.';
 }

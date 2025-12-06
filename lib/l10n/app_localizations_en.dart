@@ -9,6 +9,9 @@ class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
 
   @override
+  String get mainTitle => 'MW Chat';
+
+  @override
   String get loginTitle => 'Welcome back';
 
   @override
@@ -232,6 +235,27 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get uploadFailedMessageSave => 'Upload failed (message save).';
+
+  @override
+  String get attachPhotoFromGallery => 'Photo from gallery';
+
+  @override
+  String get attachVideoFromGallery => 'Video from gallery';
+
+  @override
+  String get attachTakePhoto => 'Take a photo';
+
+  @override
+  String get attachRecordVideo => 'Record a video';
+
+  @override
+  String get attachFileFromDevice => 'File from device';
+
+  @override
+  String get voiceNotSupportedWeb => 'Voice messages are not supported on Web yet.';
+
+  @override
+  String get microphonePermissionRequired => 'Microphone permission is required to record audio.';
 
   @override
   String get deleteMessageTitle => 'Delete message';
@@ -622,5 +646,65 @@ class AppLocalizationsEn extends AppLocalizations {
   String get socialX => 'X / Twitter';
 
   @override
-  String get appBrandingBeta => 'MW Chat • beta';
+  String get appBrandingBeta => 'MW Chat 2022 beta';
+
+  @override
+  String get profileSafetyToolsSectionTitle => 'Safety tools';
+
+  @override
+  String get profileBlockedUserHintLimitedVisibility => 'This user has limited what you can see.';
+
+  @override
+  String get profileBlockDialogTitleBlock => 'Block user';
+
+  @override
+  String get profileBlockDialogTitleUnblock => 'Unblock user';
+
+  @override
+  String get profileBlockDialogBodyBlock => 'Do you want to block this user? You will no longer receive messages from them in MW Chat.';
+
+  @override
+  String get profileBlockDialogBodyUnblock => 'Do you want to unblock this user? You will be able to receive messages from them again.';
+
+  @override
+  String get profileBlockDialogConfirmBlock => 'Block';
+
+  @override
+  String get profileBlockDialogConfirmUnblock => 'Unblock';
+
+  @override
+  String get profileBlockButtonBlock => 'Block user';
+
+  @override
+  String get profileBlockButtonUnblock => 'Unblock user';
+
+  @override
+  String get profileBlockSnackbarBlocked => 'User blocked successfully.';
+
+  @override
+  String get profileBlockSnackbarUnblocked => 'User unblocked.';
+
+  @override
+  String get profileBlockSnackbarError => 'Failed to update block status. Please try again.';
+
+  @override
+  String get profileReportDialogTitle => 'Report user';
+
+  @override
+  String get profileReportDialogBody => 'Please describe why you are reporting this user. For example: spam, bullying, hate speech, or other abusive content.';
+
+  @override
+  String get profileReportDialogHint => 'Describe the problem…';
+
+  @override
+  String get profileReportDialogSubmit => 'Submit';
+
+  @override
+  String get profileReportButtonLabel => 'Report user';
+
+  @override
+  String get profileReportSnackbarSuccess => 'Report submitted. We will review it.';
+
+  @override
+  String get profileReportSnackbarError => 'Failed to submit report. Please try again.';
 }
