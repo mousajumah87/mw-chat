@@ -131,16 +131,16 @@ class _MwBackgroundState extends State<MwBackground>
               ),
 
               // === Optional adaptive blur (desktop/tablet only) ===
-              if (isLarge)
-                Positioned.fill(
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(
-                      sigmaX: 1.0 + (0.5 * _glowShift.value),
-                      sigmaY: 1.0 + (0.5 * _glowShift.value),
-                    ),
-                    child: const SizedBox.shrink(),
-                  ),
-                ),
+              // if (isLarge)
+                // Positioned.fill(
+                //   child: BackdropFilter(
+                //     filter: ImageFilter.blur(
+                //       sigmaX: 1.0 + (0.5 * _glowShift.value),
+                //       sigmaY: 1.0 + (0.5 * _glowShift.value),
+                //     ),
+                //     child: const SizedBox.shrink(),
+                //   ),
+                // ),
 
               // === Foreground content (your screen) ===
               Positioned.fill(child: widget.child),

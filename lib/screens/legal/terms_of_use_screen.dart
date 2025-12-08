@@ -41,20 +41,17 @@ class TermsOfUseScreen extends StatelessWidget {
         spacing: 10,
         runSpacing: 4,
         alignment: WrapAlignment.center,
-        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           Text(
             l10n.appBrandingBeta,
             style: textStyle,
-            textAlign: TextAlign.center,
           ),
           Text(
             _appVersion,
             style: versionStyle,
-            textAlign: TextAlign.center,
           ),
           InkWell(
-            onTap: () => _openMwWebsite(),
+            onTap: _openMwWebsite,
             borderRadius: BorderRadius.circular(16),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
@@ -64,7 +61,6 @@ class TermsOfUseScreen extends StatelessWidget {
                   decoration: TextDecoration.underline,
                   fontWeight: FontWeight.w500,
                 ),
-                textAlign: TextAlign.center,
               ),
             ),
           ),
@@ -79,6 +75,7 @@ class TermsOfUseScreen extends StatelessWidget {
     final media = MediaQuery.of(context);
     final width = media.size.width;
     final isWide = width >= 900;
+    final theme = Theme.of(context);
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -103,7 +100,7 @@ class TermsOfUseScreen extends StatelessWidget {
       ),
       body: MwBackground(
         child: SafeArea(
-          top: false, // AppBar already covers the top
+          top: false,
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 900),
@@ -111,57 +108,104 @@ class TermsOfUseScreen extends StatelessWidget {
                 children: [
                   const SizedBox(height: 12),
 
-                  // ==== BODY: same outer layout as Home/Profile ====
+                  // ==== MAIN CARD (MATCHES ABOUT / PROFILE STYLE) ====
                   Expanded(
                     child: Container(
                       margin: EdgeInsets.symmetric(
                         horizontal: isWide ? 16 : 12,
                         vertical: 4,
                       ),
+                      padding: const EdgeInsets.all(24),
                       decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.40),
-                        borderRadius: BorderRadius.circular(18),
+                        color: Colors.black.withOpacity(0.65),
+                        borderRadius: BorderRadius.circular(24),
                         border: Border.all(
                           color: Colors.white.withOpacity(0.08),
                         ),
                       ),
                       child: SingleChildScrollView(
                         physics: const BouncingScrollPhysics(),
-                        padding: const EdgeInsets.all(24),
                         child: Center(
                           child: ConstrainedBox(
                             constraints:
                             const BoxConstraints(maxWidth: 640),
                             child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                Text(
-                                  l10n.termsOfUse,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .headlineSmall
-                                      ?.copyWith(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w700,
+                                // ✅ LOGO (MATCHES ABOUT LOGO STYLE)
+                                Center(
+                                  child: Container(
+                                    width: 96,
+                                    height: 96,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color:
+                                      kSurfaceColor.withOpacity(0.8),
+                                      border: Border.all(
+                                        color: Colors.white.withOpacity(0.2),
+                                        width: 1.5,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withOpacity(0.55),
+                                          blurRadius: 14,
+                                          offset: const Offset(0, 6),
+                                        ),
+                                      ],
+                                    ),
+                                    child: ClipOval(
+                                      child: Padding(
+                                        padding:
+                                        const EdgeInsets.all(10),
+                                        child: Image.asset(
+                                          'assets/logo/mw_mark.png',
+                                          fit: BoxFit.contain,
+                                          filterQuality:
+                                          FilterQuality.high,
+                                        ),
+                                      ),
+                                    ),
                                   ),
                                 ),
-                                const SizedBox(height: 16),
+
+                                const SizedBox(height: 20),
+
+                                // ✅ TITLE
+                                Center(
+                                  child: Text(
+                                    l10n.termsOfUse,
+                                    style: theme.textTheme.headlineSmall
+                                        ?.copyWith(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+
+                                const SizedBox(height: 20),
+
+                                // ✅ BODY (RTL/LTR SAFE)
                                 Text(
                                   l10n.termsBody,
-                                  style: const TextStyle(
+                                  style: theme.textTheme.bodyMedium
+                                      ?.copyWith(
                                     color: Colors.white,
+                                    height: 1.6,
                                     fontSize: 15,
-                                    height: 1.5,
                                   ),
                                   textAlign: TextAlign.start,
                                 ),
+
                                 const SizedBox(height: 32),
+
+                                // ✅ AGREEMENT BUTTON (UNCHANGED LOGIC)
                                 Center(
                                   child: SizedBox(
                                     width: 260,
                                     child: ElevatedButton(
                                       style: ElevatedButton.styleFrom(
-                                        backgroundColor: kSecondaryAmber,
+                                        backgroundColor:
+                                        kSecondaryAmber,
                                         foregroundColor: Colors.black,
                                         padding:
                                         const EdgeInsets.symmetric(
@@ -169,17 +213,20 @@ class TermsOfUseScreen extends StatelessWidget {
                                         ),
                                         shape: RoundedRectangleBorder(
                                           borderRadius:
-                                          BorderRadius.circular(20),
+                                          BorderRadius.circular(
+                                              20),
                                         ),
                                         elevation: 3,
                                       ),
                                       onPressed: () =>
-                                          Navigator.of(context).pop(true),
+                                          Navigator.of(context)
+                                              .pop(true),
                                       child: Text(
                                         l10n.iAgree,
                                         style: const TextStyle(
                                           fontSize: 16,
-                                          fontWeight: FontWeight.w600,
+                                          fontWeight:
+                                          FontWeight.w600,
                                         ),
                                       ),
                                     ),
@@ -195,7 +242,7 @@ class TermsOfUseScreen extends StatelessWidget {
 
                   const SizedBox(height: 6),
 
-                  // ==== FOOTER (same style as Home/Profile) ====
+                  // ==== FOOTER (UNCHANGED BEHAVIOR) ====
                   _buildFooter(context, l10n, isWide: isWide),
                 ],
               ),

@@ -9,7 +9,7 @@ class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
 
   @override
-  String get mainTitle => 'MW Chat';
+  String get mainTitle => 'MW';
 
   @override
   String get loginTitle => 'Welcome back';
@@ -256,6 +256,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get microphonePermissionRequired => 'Microphone permission is required to record audio.';
+
+  @override
+  String get holdMicToRecord => 'Hold the mic to record a voice message';
 
   @override
   String get deleteMessageTitle => 'Delete message';
@@ -646,7 +649,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get socialX => 'X / Twitter';
 
   @override
-  String get appBrandingBeta => 'MW Chat 2022 beta';
+  String get appBrandingBeta => 'MW Chat 2025 beta';
 
   @override
   String get profileSafetyToolsSectionTitle => 'Safety tools';

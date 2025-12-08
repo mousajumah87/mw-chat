@@ -2,12 +2,11 @@
 // MW Chat – Modern private messaging app
 // Copyright © 2025 Mousa Abu Hilal. All rights reserved.
 
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../theme/app_theme.dart';
 import '../../widgets/ui/mw_background.dart';
 import '../legal/terms_of_use_screen.dart';
 
@@ -49,7 +48,6 @@ class AboutScreen extends StatelessWidget {
         spacing: 10,
         runSpacing: 4,
         alignment: WrapAlignment.center,
-        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           Text(l10n.appBrandingBeta, style: base),
           Text(_appVersion, style: versionStyle),
@@ -77,6 +75,7 @@ class AboutScreen extends StatelessWidget {
     final l10n = AppLocalizations.of(context)!;
     final width = MediaQuery.of(context).size.width;
     final isWide = width >= 900;
+    final theme = Theme.of(context);
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -105,230 +104,157 @@ class AboutScreen extends StatelessWidget {
                 children: [
                   const SizedBox(height: 12),
 
-                  // ===== MAIN GLASS CARD =====
+                  // ===== MAIN FLAT CARD (NO BLUR, RTL SAFE) =====
                   Expanded(
                     child: Container(
                       margin: EdgeInsets.symmetric(
                         horizontal: isWide ? 32 : 16,
                         vertical: 8,
                       ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(32),
-                        child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(32),
-                              border: Border.all(
-                                color: Colors.white.withOpacity(0.10),
-                              ),
-                              gradient: LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: [
-                                  Colors.white.withOpacity(0.10),
-                                  Colors.white.withOpacity(0.02),
-                                ],
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.45),
-                                  blurRadius: 28,
-                                  offset: const Offset(0, 18),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: isWide ? 48 : 24,
+                        vertical: 36,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.65),
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.08),
+                        ),
+                      ),
+                      child: SingleChildScrollView(
+                        physics: const BouncingScrollPhysics(),
+                        child: Column(
+                          crossAxisAlignment:
+                          CrossAxisAlignment.stretch, // RTL SAFE
+                          children: [
+                            // === LOGO (CENTERED ONLY) ===
+                            Center(
+                              child: Container(
+                                width: 96,
+                                height: 96,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: kSurfaceColor.withOpacity(0.8),
+                                  border: Border.all(
+                                    color: Colors.white.withOpacity(0.2),
+                                    width: 1.5,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.55),
+                                      blurRadius: 14,
+                                      offset: const Offset(0, 6),
+                                    ),
+                                  ],
                                 ),
-                              ],
-                            ),
-                            child: SingleChildScrollView(
-                              physics: const BouncingScrollPhysics(),
-                              padding: EdgeInsets.symmetric(
-                                horizontal: isWide ? 48 : 24,
-                                vertical: 40,
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  // === LOGO ===
-                                  TweenAnimationBuilder<double>(
-                                    tween: Tween(begin: 0.8, end: 1.0),
-                                    duration:
-                                    const Duration(milliseconds: 1500),
-                                    curve: Curves.easeInOut,
-                                    builder: (context, scale, child) {
-                                      return Transform.scale(
-                                          scale: scale, child: child);
-                                    },
-                                    child: Container(
-                                      width: 110,
-                                      height: 110,
-                                      decoration: const BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        gradient: RadialGradient(
-                                          colors: [
-                                            Color(0x80256EFF),
-                                            Color(0x80FFB300),
-                                            Colors.transparent,
-                                          ],
-                                          stops: [0.3, 0.8, 1.0],
-                                        ),
-                                      ),
-                                      child: Center(
-                                        child: Container(
-                                          width: 88,
-                                          height: 88,
-                                          decoration: BoxDecoration(
-                                            shape: BoxShape.circle,
-                                            color: Colors.black,
-                                            boxShadow: [
-                                              BoxShadow(
-                                                color: Colors.black
-                                                    .withOpacity(0.5),
-                                                blurRadius: 20,
-                                                offset: const Offset(0, 10),
-                                              ),
-                                            ],
-                                          ),
-                                          child: Padding(
-                                            padding: const EdgeInsets.all(10),
-                                            child: ClipOval(
-                                              child: Image.asset(
-                                                'assets/logo/mw_mark.png',
-                                                fit: BoxFit.cover,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
+                                child: ClipOval(
+                                  child: Image.asset(
+                                    'assets/logo/mw_mark.png',
+                                    fit: BoxFit.cover,
+                                    filterQuality: FilterQuality.high,
                                   ),
-
-                                  const SizedBox(height: 24),
-
-                                  Text(
-                                    l10n.mainTitle,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .headlineSmall
-                                        ?.copyWith(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold),
-                                  ),
-
-                                  const SizedBox(height: 8),
-
-                                  Text(
-                                    l10n.aboutDescription.split('\n').first,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodySmall
-                                        ?.copyWith(color: Colors.white70),
-                                    textAlign: TextAlign.center,
-                                  ),
-
-                                  const SizedBox(height: 26),
-
-                                  Text(
-                                    l10n.aboutDescription,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodyMedium
-                                        ?.copyWith(color: Colors.white),
-                                  ),
-
-                                  const SizedBox(height: 30),
-                                  Divider(
-                                      color:
-                                      Colors.white.withOpacity(0.2)),
-                                  const SizedBox(height: 14),
-
-                                  // === LEGAL ===
-                                  Text(
-                                    l10n.legalTitle,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleMedium
-                                        ?.copyWith(
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.white),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    l10n.copyrightText,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodySmall
-                                        ?.copyWith(color: Colors.white70),
-                                    textAlign: TextAlign.center,
-                                  ),
-
-                                  const SizedBox(height: 18),
-
-                                  // ✅ CENTERED + CLICKABLE SUPPORT EMAIL ✅
-                                  Column(
-                                    crossAxisAlignment:
-                                    CrossAxisAlignment.center,
-                                    children: [
-                                      Text(
-                                        l10n.contactSupport,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodyMedium
-                                            ?.copyWith(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 6),
-                                      InkWell(
-                                        onTap: _openSupportEmail,
-                                        borderRadius:
-                                        BorderRadius.circular(8),
-                                        child: Text(
-                                          _supportEmail,
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .bodySmall
-                                              ?.copyWith(
-                                            color: Colors.lightBlueAccent,
-                                            decoration:
-                                            TextDecoration.underline,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-
-                                  const SizedBox(height: 18),
-
-                                  // === TERMS BUTTON ===
-                                  SizedBox(
-                                    width: double.infinity,
-                                    child: OutlinedButton.icon(
-                                      icon: const Icon(
-                                          Icons.gavel_outlined),
-                                      label: Text(l10n.termsTitle),
-                                      style: OutlinedButton.styleFrom(
-                                        foregroundColor: Colors.white,
-                                        side: BorderSide(
-                                          color: Colors.white
-                                              .withOpacity(0.6),
-                                        ),
-                                      ),
-                                      onPressed: () {
-                                        Navigator.of(context).push(
-                                          MaterialPageRoute(
-                                            builder: (_) =>
-                                            const TermsOfUseScreen(),
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  ),
-
-                                  const SizedBox(height: 20),
-                                ],
+                                ),
                               ),
                             ),
-                          ),
+
+                            const SizedBox(height: 20),
+
+                            Center(
+                              child: Text(
+                                l10n.mainTitle,
+                                style:
+                                theme.textTheme.headlineSmall?.copyWith(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+
+                            const SizedBox(height: 14),
+
+                            // ✅ RTL/LTR SAFE DESCRIPTION
+                            Text(
+                              l10n.aboutDescription,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: Colors.white70,
+                                height: 1.6,
+                              ),
+                              textAlign: TextAlign.start,
+                            ),
+
+                            const SizedBox(height: 28),
+                            Divider(color: Colors.white.withOpacity(0.2)),
+                            const SizedBox(height: 14),
+
+                            // === LEGAL ===
+                            Text(
+                              l10n.legalTitle,
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+
+                            const SizedBox(height: 6),
+
+                            Text(
+                              l10n.copyrightText,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: Colors.white70,
+                              ),
+                              textAlign: TextAlign.start,
+                            ),
+
+                            const SizedBox(height: 18),
+
+                            // ✅ SUPPORT EMAIL (RTL SAFE)
+                            Text(
+                              l10n.contactSupport,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+
+                            const SizedBox(height: 4),
+
+                            InkWell(
+                              onTap: _openSupportEmail,
+                              child: Text(
+                                _supportEmail,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: Colors.lightBlueAccent,
+                                  decoration: TextDecoration.underline,
+                                ),
+                              ),
+                            ),
+
+                            const SizedBox(height: 20),
+
+                            // === TERMS BUTTON ===
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                icon: const Icon(Icons.gavel_outlined),
+                                label: Text(l10n.termsTitle),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.white,
+                                  side: BorderSide(
+                                    color: Colors.white.withOpacity(0.6),
+                                  ),
+                                ),
+                                onPressed: () {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                      const TermsOfUseScreen(),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),

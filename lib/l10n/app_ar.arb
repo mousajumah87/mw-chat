@@ -1,7 +1,7 @@
 {
     "@@locale": "ar",
 
-    "mainTitle": "MW شات",
+    "mainTitle": "MW",
     "loginTitle": "مرحباً بعودتك",
     "createAccount": "إنشاء حساب MW",
     "createNewAccount": "إنشاء حساب جديد",
@@ -111,6 +111,7 @@
     "inviteWebNotSupported": "دعوة جهات الاتصال من دفتر العناوين غير مدعومة على نسخة الويب. يرجى استخدام تطبيق الهاتف بدلاً من ذلك.",
     "search": "بحث",
     "retry": "إعادة المحاولة",
+    "previewVoiceMessage": "معاينة الرسالة الصوتية",
 
     "unknownEmail": "غير معروف",
     "addFriendTooltip": "إضافة صديق",

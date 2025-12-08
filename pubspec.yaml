@@ -33,6 +33,8 @@ dependencies:
   transparent_image: ^2.0.1
   url_launcher: ^6.3.0
   record: ^4.4.4
+  audioplayers: ^6.5.1
+  video_player: ^2.8.1
 
 
 
@@ -55,6 +57,7 @@ flutter:
 
   assets:
     - assets/logo/mw_mark.png
+    - assets/logo/mw_mark_transparent.png
     - assets/images/mw_bg.png
     - assets/fonts/
 
@@ -75,12 +78,17 @@ flutter_launcher_icons:
 # SPLASH SCREEN CONFIGURATION
 # =========================
 flutter_native_splash:
-  color: "#000000"
-  image: assets/logo/mw_mark.png
+  color: "#0E0E0E"
+  image: assets/logo/mw_mark_transparent.png
   android: true
   ios: true
   web: true
+  fullscreen: true
+
+  image_dark: assets/logo/mw_mark_transparent.png   # keeps size consistent
 
   android_12:
-    image: assets/logo/mw_mark.png
-    icon_background_color: "#000000"
+    image: assets/logo/mw_mark_transparent.png
+    icon_background_color: "#0E0E0E"
+
+

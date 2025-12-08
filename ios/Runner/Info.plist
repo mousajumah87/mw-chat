@@ -2,12 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 	<dict>
-		<!-- NEW: required by Apple for picking/sending photos -->
-		<key>NSPhotoLibraryUsageDescription</key>
-		<string>MW Chat needs access to your photos so you can choose pictures to send in chat.</string>
-		<!-- NEW: only if you allow taking a photo with the camera; safe to keep if you use image_picker -->
-		<key>NSCameraUsageDescription</key>
-		<string>MW Chat needs access to your camera so you can take photos and send them in chat.</string>
+	    <key>NSMicrophoneUsageDescription</key>
+        <string>MW Chat uses the microphone only when you choose to record and send a voice message to your contacts.</string>
+
+        <key>NSPhotoLibraryUsageDescription</key>
+        <string>MW Chat needs access to your photo library so you can select and send images in chat.</string>
+
+        <key>NSCameraUsageDescription</key>
+        <string>MW Chat needs access to your camera so you can take photos and share them in chat.</string>
+
 		<key>CADisableMinimumFrameDurationOnPhone</key>
 		<true/>
 		<key>CFBundleDevelopmentRegion</key>
@@ -39,7 +42,7 @@
 		<key>UIMainStoryboardFile</key>
 		<string>Main</string>
 		<key>UIStatusBarHidden</key>
-		<false/>
+		<true/>
 		<key>UISupportedInterfaceOrientations</key>
 		<array>
 			<string>UIInterfaceOrientationPortrait</string>
@@ -53,5 +56,7 @@
 			<string>UIInterfaceOrientationLandscapeLeft</string>
 			<string>UIInterfaceOrientationLandscapeRight</string>
 		</array>
+		<key>UIViewControllerBasedStatusBarAppearance</key>
+		<false/>
 	</dict>
 </plist>

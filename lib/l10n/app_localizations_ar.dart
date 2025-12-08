@@ -9,7 +9,7 @@ class AppLocalizationsAr extends AppLocalizations {
   AppLocalizationsAr([String locale = 'ar']) : super(locale);
 
   @override
-  String get mainTitle => 'MW شات';
+  String get mainTitle => 'MW';
 
   @override
   String get loginTitle => 'مرحباً بعودتك';
@@ -256,6 +256,9 @@ class AppLocalizationsAr extends AppLocalizations {
 
   @override
   String get microphonePermissionRequired => 'يتطلب تسجيل الصوت منح إذن الوصول إلى الميكروفون.';
+
+  @override
+  String get holdMicToRecord => 'اضغط باستمرار على الميكروفون لتسجيل رسالة صوتية';
 
   @override
   String get deleteMessageTitle => 'حذف الرسالة';

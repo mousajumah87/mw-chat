@@ -1,6 +1,4 @@
 // lib/widgets/ui/mw_app_header.dart
-import 'dart:ui';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -12,8 +10,7 @@ import '../../screens/profile/profile_screen.dart';
 import 'mw_language_button.dart';
 
 class MwAppHeader extends StatelessWidget implements PreferredSizeWidget {
-  /// If null, we fall back to l10n.mainTitle inside build().
-  final String? title;
+  final String? title; // kept for compatibility (not displayed)
   final bool showTabs;
   final TabBar? tabBar;
 
@@ -25,177 +22,121 @@ class MwAppHeader extends StatelessWidget implements PreferredSizeWidget {
   });
 
   @override
-  Size get preferredSize => Size.fromHeight(showTabs ? 108 : 64);
+  Size get preferredSize => Size.fromHeight(showTabs ? 112 : 76);
 
   @override
   Widget build(BuildContext context) {
     final currentUser = FirebaseAuth.instance.currentUser;
-    final theme = Theme.of(context);
-    final l10n = AppLocalizations.of(context)!;
-
-    // Use provided title, otherwise localized mainTitle.
-    final effectiveTitle = title ?? l10n.mainTitle;
 
     return SafeArea(
       bottom: false,
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.75),
+          color: Colors.black.withOpacity(0.9),
           borderRadius: const BorderRadius.vertical(
             bottom: Radius.circular(18),
           ),
           border: Border.all(color: Colors.white12, width: 0.6),
         ),
-        child: ClipRRect(
-          borderRadius: const BorderRadius.vertical(
-            bottom: Radius.circular(18),
-          ),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // ===== Header row =====
-                Padding(
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // ===== Header Row =====
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  // ===== CENTERED FLOATING LOGO (NO CIRCLE) =====
+                  Expanded(
+                    child: Center(
+                      child: _FloatingBrandLogo(),
+                    ),
+                  ),
+
+                  // ===== Actions =====
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Centered title + small logo
-                      Expanded(
-                        child: Center(
-                          child: _TitleWithLogoRow(
-                            title: effectiveTitle,
-                            textStyle: theme.textTheme.titleLarge?.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.6,
-                            ),
+                      const MwLanguageButton(),
+                      if (currentUser != null)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          child: _UserAvatarButton(
+                            currentUser: currentUser,
                           ),
                         ),
+                      IconButton(
+                        icon: const Icon(
+                          Icons.info_outline,
+                          color: Colors.white,
+                        ),
+                        tooltip: 'About',
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const AboutScreen(),
+                            ),
+                          );
+                        },
                       ),
-
-                      // ===== Actions (language, profile, about, logout) =====
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const MwLanguageButton(),
-                          if (currentUser != null)
-                            Padding(
-                              padding:
-                              const EdgeInsets.symmetric(horizontal: 6),
-                              child:
-                              _UserAvatarButton(currentUser: currentUser),
-                            ),
-                          IconButton(
-                            icon: const Icon(
-                              Icons.info_outline,
-                              color: Colors.white,
-                            ),
-                            tooltip: 'About',
-                            onPressed: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) => const AboutScreen(),
-                                ),
-                              );
-                            },
-                          ),
-                          IconButton(
-                            icon: const Icon(
-                              Icons.logout,
-                              color: Colors.white,
-                            ),
-                            tooltip: 'Logout',
-                            onPressed: () async {
-                              await PresenceService.instance.markOffline();
-                              await FirebaseAuth.instance.signOut();
-                              if (context.mounted) {
-                                Navigator.of(context)
-                                    .popUntil((route) => route.isFirst);
-                              }
-                            },
-                          ),
-                        ],
+                      IconButton(
+                        icon: const Icon(
+                          Icons.logout,
+                          color: Colors.white,
+                        ),
+                        tooltip: 'Logout',
+                        onPressed: () async {
+                          await PresenceService.instance.markOffline();
+                          await FirebaseAuth.instance.signOut();
+                          if (context.mounted) {
+                            Navigator.of(context)
+                                .popUntil((route) => route.isFirst);
+                          }
+                        },
                       ),
                     ],
                   ),
-                ),
+                ],
+              ),
+            ),
 
-                // ===== Tabs below the header =====
-                if (showTabs && tabBar != null)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(18, 4, 18, 8),
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.08),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: Colors.white.withOpacity(0.1),
-                          width: 1,
-                        ),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(14),
-                        child: tabBar,
-                      ),
+            // ===== Tabs Below Header =====
+            if (showTabs && tabBar != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 4, 18, 10),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.1),
+                      width: 1,
                     ),
                   ),
-              ],
-            ),
-          ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: tabBar,
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
   }
 }
 
-/// Compact row: glowing MW circle + title text.
-class _TitleWithLogoRow extends StatelessWidget {
-  final String title;
-  final TextStyle? textStyle;
-
-  const _TitleWithLogoRow({
-    required this.title,
-    this.textStyle,
-  });
-
+/// ✅ Clean floating logo – NO circle, NO borders
+class _FloatingBrandLogo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Small glowing logo
-        Container(
-          width: 30,
-          height: 30,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.black,
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFFFFB300).withOpacity(0.7),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(4),
-            child: Image.asset(
-              'assets/logo/mw_mark.png',
-              fit: BoxFit.contain,
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Text(
-          title,
-          style: textStyle,
-          overflow: TextOverflow.ellipsis,
-        ),
-      ],
+    return Image.asset(
+      'assets/logo/mw_mark_transparent.png',
+      width: 70,  // perfect visual balance
+      height: 70, // not too big, not too small
+      fit: BoxFit.contain,
+      filterQuality: FilterQuality.high,
     );
   }
 }
@@ -228,7 +169,7 @@ class _UserAvatarButton extends StatelessWidget {
             clipBehavior: Clip.none,
             children: [
               CircleAvatar(
-                radius: 17,
+                radius: 18,
                 backgroundColor: Colors.white,
                 backgroundImage: (profileUrl != null && profileUrl.isNotEmpty)
                     ? NetworkImage(profileUrl)
@@ -245,8 +186,8 @@ class _UserAvatarButton extends StatelessWidget {
                 right: -1.5,
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 250),
-                  width: 9,
-                  height: 9,
+                  width: 10,
+                  height: 10,
                   decoration: BoxDecoration(
                     color: isOnline ? Colors.greenAccent : Colors.grey,
                     shape: BoxShape.circle,

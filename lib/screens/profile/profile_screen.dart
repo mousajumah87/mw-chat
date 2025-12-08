@@ -47,6 +47,10 @@ class _ProfileScreenState extends State<ProfileScreen>
   static const String _appVersion = 'v1.0';
   static const String _websiteUrl = 'https://www.mwchats.com';
 
+  // NEW (safe additions)
+  bool _uploadingImage = false;
+  double _uploadProgress = 0.0;
+
   @override
   void initState() {
     super.initState();
@@ -56,14 +60,8 @@ class _ProfileScreenState extends State<ProfileScreen>
       duration: const Duration(milliseconds: 250),
     );
 
-    _scale = Tween<double>(
-      begin: 0.95,
-      end: 1.05,
-    ).animate(
-      CurvedAnimation(
-        parent: _avatarController,
-        curve: Curves.easeOut,
-      ),
+    _scale = _avatarController.drive(
+      Tween<double>(begin: 0.95, end: 1.05),
     );
 
     _loadCurrentProfile();
@@ -76,6 +74,47 @@ class _ProfileScreenState extends State<ProfileScreen>
     _lastNameCtrl.dispose();
     super.dispose();
   }
+
+  // NEW: REMOVE PROFILE IMAGE SAFELY
+  Future<void> _removeImage() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      // 1. Delete from Firebase Storage
+      if (_currentUrl != null && _currentUrl!.isNotEmpty) {
+        try {
+          final ref = FirebaseStorage.instance.refFromURL(_currentUrl!);
+          await ref.delete();
+        } catch (e) {
+          debugPrint('[ProfileScreen] Storage delete failed: $e');
+        }
+      }
+
+      // 2. Remove from Firestore
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .update({
+        'profileUrl': FieldValue.delete(),
+      });
+
+      // 3. Remove from Firebase Auth
+      await user.updatePhotoURL(null);
+
+      // 4. Clear locally
+      if (mounted) {
+        setState(() {
+          _imageFile = null;
+          _imageBytes = null;
+          _currentUrl = '';
+        });
+      }
+    } catch (e, st) {
+      debugPrint('[ProfileScreen] _removeImage error: $e\n$st');
+    }
+  }
+
 
   Future<void> _openMwWebsite() async {
     final uri = Uri.parse(_websiteUrl);
@@ -204,6 +243,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     final l10n = AppLocalizations.of(context)!;
 
     setState(() => _saving = true);
+
     try {
       String? url = _currentUrl;
       final ref =
@@ -211,11 +251,37 @@ class _ProfileScreenState extends State<ProfileScreen>
       final metadata = SettableMetadata(contentType: 'image/jpeg');
 
       if (_imageFile != null || _imageBytes != null) {
+        setState(() {
+          _uploadingImage = true;
+          _uploadProgress = 0.0;
+        });
+
+        UploadTask task;
+
         if (kIsWeb && _imageBytes != null) {
-          await ref.putData(_imageBytes!, metadata);
-        } else if (_imageFile != null) {
-          await ref.putFile(_imageFile!, metadata);
+          task = ref.putData(_imageBytes!, metadata);
+        } else {
+          task = ref.putFile(_imageFile!, metadata);
         }
+
+        task.snapshotEvents.listen((event) {
+          final double progress = event.totalBytes > 0
+              ? (event.bytesTransferred / event.totalBytes)
+              .clamp(0.0, 1.0)
+              .toDouble()
+              : 0.0;
+
+          if (mounted) {
+            setState(() => _uploadProgress = progress);
+          }
+        });
+
+        await task;
+
+        if (mounted) {
+          setState(() => _uploadingImage = false);
+        }
+
         url = await ref.getDownloadURL();
       }
 
@@ -391,26 +457,49 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Widget _buildAvatar() {
-    final imageProvider = _imageBytes != null
-        ? MemoryImage(_imageBytes!)
-        : _imageFile != null
-        ? FileImage(_imageFile!) as ImageProvider
-        : (_currentUrl?.isNotEmpty ?? false)
-        ? NetworkImage(_currentUrl!)
-        : null;
+    final ImageProvider? imageProvider = kIsWeb
+        ? (_imageBytes != null ? MemoryImage(_imageBytes!) : null)
+        : (_imageFile != null ? FileImage(_imageFile!) : null);
+
+    final ImageProvider? finalProvider =
+        imageProvider ??
+            (_currentUrl?.isNotEmpty ?? false
+                ? NetworkImage(_currentUrl!)
+                : null);
 
     return ScaleTransition(
       scale: _scale,
-      child: CircleAvatar(
-        radius: 60,
-        backgroundColor: kSurfaceAltColor,
-        backgroundImage: imageProvider,
-        child: imageProvider == null
-            ? Text(
-          _avatarType == 'smurf' ? '🧜‍♀️' : '🐻',
-          style: const TextStyle(fontSize: 40),
-        )
-            : null,
+      child: Column(
+        children: [
+          CircleAvatar(
+            radius: 60,
+            backgroundColor: kSurfaceAltColor,
+            backgroundImage: finalProvider,
+            child: finalProvider == null
+                ? Text(
+              _avatarType == 'smurf' ? '🧜‍♀️' : '🐻',
+              style: const TextStyle(fontSize: 40),
+            )
+                : null,
+          ),
+
+          if (_uploadingImage) ...[
+            const SizedBox(height: 10),
+            LinearProgressIndicator(value: _uploadProgress),
+          ],
+
+          if (finalProvider != null && !_uploadingImage) ...[
+            const SizedBox(height: 6),
+            TextButton.icon(
+              onPressed: _saving ? null : _removeImage,
+              icon: const Icon(Icons.delete_outline, color: Colors.red),
+              label: const Text(
+                'Remove Photo',
+                style: TextStyle(color: Colors.red),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -525,8 +614,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.40),
-                        borderRadius: BorderRadius.circular(18),
+                        color: Colors.black.withOpacity(0.65),
+                        borderRadius: BorderRadius.circular(24),
                         border: Border.all(
                           color: Colors.white.withOpacity(0.08),
                         ),

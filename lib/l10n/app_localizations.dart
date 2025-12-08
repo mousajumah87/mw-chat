@@ -98,7 +98,7 @@ abstract class AppLocalizations {
   /// No description provided for @mainTitle.
   ///
   /// In en, this message translates to:
-  /// **'MW Chat'**
+  /// **'MW'**
   String get mainTitle;
 
   /// No description provided for @loginTitle.
@@ -556,6 +556,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Microphone permission is required to record audio.'**
   String get microphonePermissionRequired;
+
+  /// No description provided for @holdMicToRecord.
+  ///
+  /// In en, this message translates to:
+  /// **'Hold the mic to record a voice message'**
+  String get holdMicToRecord;
 
   /// No description provided for @deleteMessageTitle.
   ///
@@ -1316,7 +1322,7 @@ abstract class AppLocalizations {
   /// No description provided for @appBrandingBeta.
   ///
   /// In en, this message translates to:
-  /// **'MW Chat 2022 beta'**
+  /// **'MW Chat 2025 beta'**
   String get appBrandingBeta;
 
   /// No description provided for @profileSafetyToolsSectionTitle.

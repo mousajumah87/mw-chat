@@ -413,8 +413,8 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.40),
-                        borderRadius: BorderRadius.circular(18),
+                        color: Colors.black.withOpacity(0.65),
+                        borderRadius: BorderRadius.circular(24),
                         border: Border.all(
                           color: Colors.white.withOpacity(0.08),
                         ),

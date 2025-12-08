@@ -30,6 +30,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
+  bool _showPassword = false;
   final _firstNameCtrl = TextEditingController();
   final _lastNameCtrl = TextEditingController();
 
@@ -38,6 +39,10 @@ class _AuthScreenState extends State<AuthScreen> {
   DateTime? _birthday;
   File? _imageFile;
   Uint8List? _imageBytes;
+
+  // ✅ NEW: Upload state
+  bool _uploadingImage = false;
+  double _uploadProgress = 0.0;
 
   bool _isLogin = true;
   bool _submitting = false;
@@ -56,7 +61,7 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   // -------------------------
-  // IMAGE PICKING
+  // ✅ IMAGE PICKING (UNCHANGED)
   // -------------------------
   Future<void> _pickImage() async {
     if (_submitting || _pickingImage || !mounted) return;
@@ -109,6 +114,14 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
+  // ✅ REMOVE PROFILE IMAGE
+  void _removeImage() {
+    setState(() {
+      _imageBytes = null;
+      _imageFile = null;
+    });
+  }
+
   static String _compressImage(String path) => path;
 
   // -------------------------
@@ -147,7 +160,7 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   // -------------------------
-  // SUBMIT
+  // ✅ SUBMIT (WITH UPLOAD PROGRESS)
   // -------------------------
   Future<void> _submit() async {
     final l10n = AppLocalizations.of(context)!;
@@ -185,15 +198,40 @@ class _AuthScreenState extends State<AuthScreen> {
       }
 
       String? profileUrl;
+
+      // ✅ UPLOAD WITH PROGRESS
       if (_imageBytes != null || _imageFile != null) {
         final ref =
         FirebaseStorage.instance.ref().child('profile_pics/${user.uid}');
         final metadata = SettableMetadata(contentType: 'image/jpeg');
 
+        setState(() {
+          _uploadingImage = true;
+          _uploadProgress = 0.0;
+        });
+
+        UploadTask task;
+
         if (kIsWeb && _imageBytes != null) {
-          await ref.putData(_imageBytes!, metadata);
-        } else if (_imageFile != null) {
-          await ref.putFile(_imageFile!, metadata);
+          task = ref.putData(_imageBytes!, metadata);
+        } else {
+          task = ref.putFile(_imageFile!, metadata);
+        }
+
+        task.snapshotEvents.listen((event) {
+          final double progress = event.totalBytes > 0
+              ? (event.bytesTransferred / event.totalBytes).toDouble()
+              : 0.0;
+
+          if (mounted) {
+            setState(() => _uploadProgress = progress);
+          }
+        });
+
+        await task;
+
+        if (mounted) {
+          setState(() => _uploadingImage = false);
         }
 
         profileUrl = await ref.getDownloadURL();
@@ -255,19 +293,16 @@ class _AuthScreenState extends State<AuthScreen> {
     final isRTL = Directionality.of(context) == TextDirection.rtl;
 
     return Scaffold(
-      backgroundColor: Colors.black, // fallback behind bg image on web
+      backgroundColor: Colors.black,
       body: MwBackground(
         child: Stack(
           children: [
-            // Language switch
             Positioned(
               top: 32,
               right: isRTL ? null : 32,
               left: isRTL ? 32 : null,
               child: const MwLanguageButton(),
             ),
-
-            // Centered auth card
             Center(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(24),
@@ -290,10 +325,8 @@ class _AuthScreenState extends State<AuthScreen> {
                     ],
                   ),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 28,
-                      vertical: 34,
-                    ),
+                    padding:
+                    const EdgeInsets.symmetric(horizontal: 28, vertical: 34),
                     child: Form(
                       key: _formKey,
                       child: Column(
@@ -313,6 +346,12 @@ class _AuthScreenState extends State<AuthScreen> {
                                 imageBytes: _imageBytes,
                                 imageFile: _imageFile,
                                 onPickImage: _pickImage,
+
+                                // ✅ NEW WIRING
+                                isUploading: _uploadingImage,
+                                uploadProgress: _uploadProgress,
+                                onRemoveImage: _removeImage,
+
                                 onPickBirthday: _pickBirthday,
                                 onGenderChanged: (v) =>
                                 _genderNotifier.value = v,
@@ -349,10 +388,23 @@ class _AuthScreenState extends State<AuthScreen> {
 
                           TextFormField(
                             controller: _passwordCtrl,
-                            obscureText: true,
+                            obscureText: !_showPassword,
                             decoration: InputDecoration(
                               labelText: l10n.password,
                               prefixIcon: const Icon(Icons.lock_outline),
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  _showPassword
+                                      ? Icons.visibility
+                                      : Icons.visibility_off,
+                                  color: kTextSecondary,
+                                ),
+                                onPressed: () {
+                                  setState(() {
+                                    _showPassword = !_showPassword;
+                                  });
+                                },
+                              ),
                             ),
                             validator: (v) {
                               if (v == null || v.isEmpty) {

@@ -1,7 +1,7 @@
 {
     "@@locale": "en",
 
-    "mainTitle": "MW Chat",
+    "mainTitle": "MW",
     "loginTitle": "Welcome back",
     "createAccount": "Create your MW account",
     "createNewAccount": "Create new account",
@@ -84,8 +84,7 @@
     "voiceNotSupportedWeb": "Voice messages are not supported on Web yet.",
     "microphonePermissionRequired": "Microphone permission is required to record audio.",
     "holdMicToRecord": "Hold the mic to record a voice message",
-
-
+    "previewVoiceMessage": "Preview voice message",
 
     "deleteMessageTitle": "Delete message",
     "deleteMessageConfirm": "Are you sure you want to delete this message?",

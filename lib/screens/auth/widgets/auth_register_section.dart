@@ -16,6 +16,12 @@ class AuthRegisterSection extends StatelessWidget {
   final Uint8List? imageBytes;
   final File? imageFile;
   final VoidCallback onPickImage;
+
+  // NEW — backward compatible
+  final bool isUploading;
+  final double uploadProgress;
+  final VoidCallback? onRemoveImage;
+
   final VoidCallback onPickBirthday;
   final ValueChanged<String> onGenderChanged;
 
@@ -33,6 +39,12 @@ class AuthRegisterSection extends StatelessWidget {
     required this.imageBytes,
     required this.imageFile,
     required this.onPickImage,
+
+    // Defaults keep old behavior intact
+    this.isUploading = false,
+    this.uploadProgress = 0.0,
+    this.onRemoveImage,
+
     required this.onPickBirthday,
     required this.onGenderChanged,
     required this.agreedToTerms,
@@ -49,12 +61,17 @@ class AuthRegisterSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        /// Avatar
+        /// Avatar (fully wired)
         AuthAvatarPicker(
           imageBytes: imageBytes,
           imageFile: imageFile,
           isSubmitting: isSubmitting,
           onPickImage: onPickImage,
+
+          // NEW wiring (optional)
+          isUploading: isUploading,
+          uploadProgress: uploadProgress,
+          onRemoveImage: onRemoveImage,
         ),
         const SizedBox(height: 12),
 
@@ -122,7 +139,8 @@ class AuthRegisterSection extends StatelessWidget {
           try {
             await Future<void>.sync(onPickImage);
           } catch (e, st) {
-            debugPrint('[AuthRegisterSection] onPickImage error: $e\n$st');
+            debugPrint(
+                '[AuthRegisterSection] onPickImage error: $e\n$st');
           }
         },
         icon: const Icon(Icons.photo_outlined, color: Colors.white),
@@ -229,7 +247,8 @@ class AuthRegisterSection extends StatelessWidget {
           ),
           child: Row(
             children: [
-              const Icon(Icons.cake_outlined, color: kTextSecondary, size: 18),
+              const Icon(Icons.cake_outlined,
+                  color: kTextSecondary, size: 18),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(

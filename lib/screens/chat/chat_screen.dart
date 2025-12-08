@@ -48,6 +48,11 @@ class _ChatScreenState extends State<ChatScreen> {
   final _msgController = TextEditingController();
   bool _sending = false;
 
+  bool _isUploadingVoice = false;
+  double _voiceUploadProgress = 0.0;
+  UploadTask? _voiceUploadTask;
+  PlatformFile? _pendingVoiceFile; // for retry
+
   late final String _currentUserId;
   String? _otherUserId;
 
@@ -120,6 +125,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   final Record _audioRecorder = Record();
   bool _isRecording = false;
+  bool _isSendingVoice = false;
   Duration _recordDuration = Duration.zero;
   Timer? _recordTimer;
 
@@ -733,8 +739,8 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   // ---------- VOICE NOTE HELPERS (Record plugin) ----------
-
   Future<void> _startVoiceRecording() async {
+    if (_isRecording || _isSendingVoice) return;
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
@@ -812,6 +818,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final l10n = AppLocalizations.of(context)!;
 
     _recordTimer?.cancel();
+
     setState(() {
       _isRecording = false;
     });
@@ -824,22 +831,41 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     try {
-      final path = await _audioRecorder.stop();
-      if (path == null) {
+      final rawPath = await _audioRecorder.stop();
+
+      if (rawPath == null || rawPath.isEmpty) {
+        debugPrint('[VOICE] Recorder returned null path');
         setState(() {
           _recordDuration = Duration.zero;
         });
         return;
       }
 
-      final file = File(path);
+      // FIX: Remove "file://" if present (iOS bug)
+      final normalizedPath =
+      rawPath.startsWith('file://') ? rawPath.replaceFirst('file://', '') : rawPath;
+
+      final file = File(normalizedPath);
+
+      // Safety check before reading
+      if (!await file.exists()) {
+        debugPrint('[VOICE] File does NOT exist: $normalizedPath');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.failedToUploadFile)),
+        );
+        setState(() {
+          _recordDuration = Duration.zero;
+        });
+        return;
+      }
+
       final bytes = await file.readAsBytes();
 
       final platformFile = PlatformFile(
-        name: p.basename(path),
+        name: p.basename(normalizedPath),
         size: bytes.length,
         bytes: bytes,
-        path: path,
+        path: normalizedPath,
       );
 
       setState(() {
@@ -847,11 +873,9 @@ class _ChatScreenState extends State<ChatScreen> {
       });
 
       await _sendFileMessage(platformFile);
+
     } catch (e, st) {
       debugPrint('[_stopVoiceRecordingAndSend] error: $e\n$st');
-      setState(() {
-        _recordDuration = Duration.zero;
-      });
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(l10n.failedToUploadFile)),
@@ -875,6 +899,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (mounted) {
       setState(() {
         _isRecording = false;
+        _isSendingVoice = false; // RESET LOCK
         _recordDuration = Duration.zero;
       });
     }
@@ -1407,6 +1432,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     return Scaffold(
+      resizeToAvoidBottomInset: true,
       appBar: ChatAppBar(
         title: widget.title,
         currentUserId: _currentUserId,

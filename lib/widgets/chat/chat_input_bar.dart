@@ -1,9 +1,7 @@
 // lib/widgets/chat/chat_input_bar.dart
 
 import 'dart:ui';
-
 import 'package:flutter/material.dart';
-
 import '../../l10n/app_localizations.dart';
 
 class ChatInputBar extends StatefulWidget {
@@ -13,7 +11,7 @@ class ChatInputBar extends StatefulWidget {
   final VoidCallback onSend;
   final ValueChanged<String>? onTextChanged;
 
-  // Voice note extras (all optional so old code doesn't break)
+  // Voice note extras
   final bool isRecording;
   final Duration? recordDuration;
   final VoidCallback? onMicLongPressStart;
@@ -41,10 +39,38 @@ class ChatInputBar extends StatefulWidget {
 class _ChatInputBarState extends State<ChatInputBar> {
   bool _hasText = false;
 
+  // ✅ KEYBOARD FOCUS FIX
+  final FocusNode _messageFocusNode = FocusNode();
+
   @override
   void initState() {
     super.initState();
-    _hasText = widget.controller.text.trim().isNotEmpty;
+    _syncTextState();
+    widget.controller.addListener(_syncTextState);
+  }
+
+  @override
+  void didUpdateWidget(covariant ChatInputBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_syncTextState);
+      widget.controller.addListener(_syncTextState);
+      _syncTextState();
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_syncTextState);
+    _messageFocusNode.dispose(); // ✅ CLEANUP
+    super.dispose();
+  }
+
+  void _syncTextState() {
+    final hasText = widget.controller.text.trim().isNotEmpty;
+    if (hasText != _hasText && mounted) {
+      setState(() => _hasText = hasText);
+    }
   }
 
   String _formatDuration(Duration? d) {
@@ -55,13 +81,21 @@ class _ChatInputBarState extends State<ChatInputBar> {
   }
 
   void _handleTextChanged(String value) {
-    final hasText = value.trim().isNotEmpty;
-    if (hasText != _hasText) {
-      setState(() {
-        _hasText = hasText;
-      });
-    }
     widget.onTextChanged?.call(value);
+  }
+
+  // ✅ ✅ ✅ SEND HANDLER THAT KEEPS KEYBOARD OPEN
+  void _handleSendPressed() {
+    if (widget.sending) return;
+
+    widget.onSend();
+
+    // ✅ KEEP KEYBOARD OPEN AFTER SEND
+    Future.delayed(const Duration(milliseconds: 50), () {
+      if (mounted) {
+        _messageFocusNode.requestFocus();
+      }
+    });
   }
 
   @override
@@ -85,15 +119,17 @@ class _ChatInputBarState extends State<ChatInputBar> {
             widget.sending || widget.isRecording ? null : widget.onAttach,
           ),
 
-          // Text field – now full pill, not a small box with its own border
+          // ✅ TEXT FIELD WITH FOCUS FIX
           Expanded(
             child: TextField(
               controller: widget.controller,
+              focusNode: _messageFocusNode, // ✅ FIX HERE
               enabled: !widget.sending && !widget.isRecording,
               onChanged: _handleTextChanged,
+              onSubmitted: (_) => _handleSendPressed(), // ✅ SEND FROM KEYBOARD
               minLines: 1,
               maxLines: 4,
-              textInputAction: TextInputAction.newline,
+              textInputAction: TextInputAction.send,
               keyboardType: TextInputType.multiline,
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
@@ -104,7 +140,6 @@ class _ChatInputBarState extends State<ChatInputBar> {
                 fillColor: Colors.white.withOpacity(0.04),
                 contentPadding:
                 const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                // One big rounded pill; remove the default blue outline look.
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(24),
                   borderSide: BorderSide.none,
@@ -126,7 +161,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
 
           const SizedBox(width: 4),
 
-          // Right side: send / mic / recording pill
+          // Right side
           if (widget.isRecording)
             _buildRecordingPill(theme)
           else
@@ -136,10 +171,11 @@ class _ChatInputBarState extends State<ChatInputBar> {
     );
   }
 
+  // NOW HAS SEND + CANCEL
   Widget _buildRecordingPill(ThemeData theme) {
     return Container(
       margin: const EdgeInsets.only(right: 4),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
         color: Colors.red.withOpacity(0.18),
         borderRadius: BorderRadius.circular(24),
@@ -157,7 +193,21 @@ class _ChatInputBarState extends State<ChatInputBar> {
               fontFeatures: [FontFeature.tabularFigures()],
             ),
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: 8),
+
+          // SEND VOICE BUTTON
+          GestureDetector(
+            onTap: widget.onMicLongPressEnd,
+            child: const Icon(
+              Icons.send_rounded,
+              color: Colors.greenAccent,
+              size: 18,
+            ),
+          ),
+
+          const SizedBox(width: 10),
+
+          // CANCEL
           GestureDetector(
             onTap: widget.onMicCancel,
             child: const Icon(
@@ -172,7 +222,6 @@ class _ChatInputBarState extends State<ChatInputBar> {
   }
 
   Widget _buildSendOrMic(ThemeData theme) {
-    // If there is text or we are currently sending, show SEND button.
     if (_hasText || widget.sending) {
       return IconButton(
         icon: widget.sending
@@ -183,16 +232,15 @@ class _ChatInputBarState extends State<ChatInputBar> {
         )
             : const Icon(Icons.send_rounded),
         color: theme.colorScheme.primary,
-        onPressed: widget.sending ? null : widget.onSend,
+        onPressed: widget.sending ? null : _handleSendPressed, // ✅ FIX
       );
     }
 
-    // Otherwise show mic with long-press actions.
+    // ✅ Mic when empty
     return GestureDetector(
       onLongPressStart: (_) => widget.onMicLongPressStart?.call(),
       onLongPressEnd: (_) => widget.onMicLongPressEnd?.call(),
       onTap: () {
-        // Simple hint; no localization required, safe default.
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Hold the mic to record a voice message'),
