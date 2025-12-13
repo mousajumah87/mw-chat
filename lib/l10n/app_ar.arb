@@ -46,6 +46,15 @@
     "genderLabel": "الجنس",
     "notSpecified": "غير محدد",
     "unknown": "غير معروف",
+    "languageLabel": "اللغة",
+    "menuTitle": "القائمة",
+    "profile": "الملف الشخصي",
+    "viewProfile": "عرض الملف الشخصي",
+    "viewFriendProfile": "عرض ملف الصديق",
+    "viewMyProfile": "عرض ملفي الشخصي",
+    "autoUpdateNotice": "سيتم تحديث هذه الشاشة تلقائيًا عند التفعيل.",
+    "checkAgain": "تحقق مرة أخرى",
+
 
     "usersTitle": "الأصدقاء",
     "mwUsersTabTitle": "أصدقاء MW",
@@ -84,7 +93,53 @@
     "voiceNotSupportedWeb": "الرسائل الصوتية غير مدعومة على الويب بعد.",
     "microphonePermissionRequired": "يتطلب تسجيل الصوت منح إذن الوصول إلى الميكروفون.",
     "holdMicToRecord": "اضغط باستمرار على الميكروفون لتسجيل رسالة صوتية",
+    "voiceMessageLabel": "رسالة صوتية",
+    "@voiceMessageLabel": {
+    "description": "النص الظاهر على فقاعة الرسالة الصوتية"
+    },
 
+    "genericFileLabel": "ملف",
+    "@genericFileLabel": {
+    "description": "نص افتراضي لمرفق ملف عند عدم وجود اسم ملف"
+    },
+    "removePhoto": "إزالة الصورة",
+    "@removePhoto": {
+    "description": "زر لإزالة صورة الملف الشخصي الحالية"
+    },
+    "websiteDomain": "mwchats.com",
+    "@websiteDomain": {
+      "description": "النطاق الرسمي لتطبيق MW Chats المعروض في تذييل صفحة الملف الشخصي"
+    },
+
+    "deleteChatForMe": "حذف المحادثة من عندي فقط",
+    "@deleteChatForMe": {
+      "description": "زر لحذف المحادثة من جهاز المستخدم الحالي فقط"
+    },
+
+    "deleteChatForBoth": "حذف المحادثة للطرفين",
+    "@deleteChatForBoth": {
+      "description": "زر لحذف سجل المحادثة لكلا المستخدمين"
+    },
+
+    "deletingChatInProgressTitle": "جارٍ حذف المحادثة...",
+    "@deletingChatInProgressTitle": {
+      "description": "عنوان نافذة التقدم أثناء حذف الرسائل"
+    },
+
+    "deletingChatProgress": "{current} / {total} رسالة",
+    "@deletingChatProgress": {
+      "description": "نص يوضّح تقدم حذف الرسائل من إجمالي الرسائل",
+      "placeholders": {
+        "current": {
+          "type": "int",
+          "description": "عدد الرسائل التي تم حذفها حتى الآن"
+        },
+        "total": {
+          "type": "int",
+          "description": "إجمالي عدد الرسائل المراد حذفها"
+        }
+      }
+    },
 
     "deleteMessageTitle": "حذف الرسالة",
     "deleteMessageConfirm": "هل أنت متأكد أنك تريد حذف هذه الرسالة؟",
@@ -263,5 +318,7 @@
     "profileReportDialogSubmit": "إرسال البلاغ",
     "profileReportButtonLabel": "الإبلاغ عن المستخدم",
     "profileReportSnackbarSuccess": "تم إرسال البلاغ. سنقوم بمراجعته.",
-    "profileReportSnackbarError": "فشل إرسال البلاغ. يرجى المحاولة مرة أخرى."
+    "profileReportSnackbarError": "فشل إرسال البلاغ. يرجى المحاولة مرة أخرى.",
+    "generalErrorMessage": "حدث خطأ ما. يُرجى المحاولة مرة أخرى."
+
 }

@@ -239,6 +239,18 @@ abstract class AppLocalizations {
   /// **'Failed to create user'**
   String get failedToCreateUser;
 
+  /// No description provided for @languageLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Language'**
+  String get languageLabel;
+
+  /// No description provided for @menuTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Menu'**
+  String get menuTitle;
+
   /// No description provided for @settingUpProfile.
   ///
   /// In en, this message translates to:
@@ -413,6 +425,42 @@ abstract class AppLocalizations {
   /// **'No other friends yet'**
   String get noOtherUsers;
 
+  /// No description provided for @profile.
+  ///
+  /// In en, this message translates to:
+  /// **'Profile'**
+  String get profile;
+
+  /// No description provided for @viewProfile.
+  ///
+  /// In en, this message translates to:
+  /// **'View Profile'**
+  String get viewProfile;
+
+  /// No description provided for @viewFriendProfile.
+  ///
+  /// In en, this message translates to:
+  /// **'View Friend Profile'**
+  String get viewFriendProfile;
+
+  /// No description provided for @viewMyProfile.
+  ///
+  /// In en, this message translates to:
+  /// **'View My Profile'**
+  String get viewMyProfile;
+
+  /// No description provided for @autoUpdateNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'This screen will update automatically once activated.'**
+  String get autoUpdateNotice;
+
+  /// No description provided for @checkAgain.
+  ///
+  /// In en, this message translates to:
+  /// **'Check again'**
+  String get checkAgain;
+
   /// No description provided for @typeMessageHint.
   ///
   /// In en, this message translates to:
@@ -562,6 +610,60 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Hold the mic to record a voice message'**
   String get holdMicToRecord;
+
+  /// No description provided for @previewVoiceMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Preview voice message'**
+  String get previewVoiceMessage;
+
+  /// Label shown on audio message bubbles
+  ///
+  /// In en, this message translates to:
+  /// **'Voice message'**
+  String get voiceMessageLabel;
+
+  /// Fallback label for a file attachment when no fileName is provided
+  ///
+  /// In en, this message translates to:
+  /// **'File'**
+  String get genericFileLabel;
+
+  /// Button label for removing the current profile picture
+  ///
+  /// In en, this message translates to:
+  /// **'Remove photo'**
+  String get removePhoto;
+
+  /// The official MW Chats website domain displayed in the footer of the user profile screen
+  ///
+  /// In en, this message translates to:
+  /// **'mwchats.com'**
+  String get websiteDomain;
+
+  /// Button label to delete the chat only for the current user
+  ///
+  /// In en, this message translates to:
+  /// **'Delete for me'**
+  String get deleteChatForMe;
+
+  /// Button label to delete the chat history for both participants
+  ///
+  /// In en, this message translates to:
+  /// **'Delete for both'**
+  String get deleteChatForBoth;
+
+  /// Title of the progress dialog shown while deleting chat messages
+  ///
+  /// In en, this message translates to:
+  /// **'Deleting chat...'**
+  String get deletingChatInProgressTitle;
+
+  /// Progress label for chat deletion, showing number of processed messages out of total
+  ///
+  /// In en, this message translates to:
+  /// **'{current} / {total} messages'**
+  String deletingChatProgress(int current, int total);
 
   /// No description provided for @deleteMessageTitle.
   ///
@@ -1444,6 +1546,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Failed to submit report. Please try again.'**
   String get profileReportSnackbarError;
+
+  /// No description provided for @generalErrorMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Something went wrong. Please try again.'**
+  String get generalErrorMessage;
 }
 
 class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> {

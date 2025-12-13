@@ -31,7 +31,6 @@ class _HomeScreenState extends State<HomeScreen>
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
 
-    // After first frame, verify that user has accepted Terms of Use
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _ensureUserAcceptedTerms();
     });
@@ -45,10 +44,10 @@ class _HomeScreenState extends State<HomeScreen>
 
   Future<void> _openMwWebsite() async {
     final uri = Uri.parse(_websiteUrl);
-    if (!await launchUrl(
-      uri,
-      mode: LaunchMode.externalApplication,
-    )) {
+
+    // ✅ Better cross-platform behavior (Web/iOS/Android)
+    final ok = await launchUrl(uri, mode: LaunchMode.platformDefault);
+    if (!ok) {
       debugPrint('Could not launch $_websiteUrl');
     }
   }
@@ -77,26 +76,24 @@ class _HomeScreenState extends State<HomeScreen>
           ),
         );
 
+        // ✅ If user navigated away while Terms screen was open
+        if (!mounted) return;
+
         if (accepted == true) {
-          // ⭐ Persist acceptance for existing users
-          await FirebaseFirestore.instance
-              .collection('users')
-              .doc(user.uid)
-              .set(
+          await FirebaseFirestore.instance.collection('users').doc(user.uid).set(
             {
               'hasAcceptedTerms': true,
               'termsAcceptedAt': FieldValue.serverTimestamp(),
             },
             SetOptions(merge: true),
           );
-        } else if (mounted) {
+        } else {
           // If the user did NOT explicitly accept, log them out
           await FirebaseAuth.instance.signOut();
         }
       }
     } catch (e, st) {
       debugPrint('[HomeScreen] _ensureUserAcceptedTerms error: $e\n$st');
-      // On error, allow usage but Terms screen itself explains the rules.
     }
   }
 
@@ -114,24 +111,17 @@ class _HomeScreenState extends State<HomeScreen>
       body: MwBackground(
         child: SafeArea(
           child: Center(
-            // Center everything on large screens (web/desktop)
             child: ConstrainedBox(
-              constraints: const BoxConstraints(
-                maxWidth: 900, // keeps content nicely centered on wide screens
-              ),
+              constraints: const BoxConstraints(maxWidth: 900),
               child: Column(
                 mainAxisSize: MainAxisSize.max,
                 children: [
-                  /// ======= HEADER + TABS =======
                   MwAppHeader(
                     title: l10n.mainTitle,
                     showTabs: true,
                     tabBar: _buildFixedTabBar(l10n, theme),
                   ),
-
                   const SizedBox(height: 12),
-
-                  /// ======= BODY =======
                   Expanded(
                     child: Container(
                       margin: EdgeInsets.symmetric(
@@ -157,10 +147,7 @@ class _HomeScreenState extends State<HomeScreen>
                       ),
                     ),
                   ),
-
                   const SizedBox(height: 6),
-
-                  /// ======= FOOTER (CENTERED) =======
                   _buildFooter(context, l10n, isWide: isWide),
                 ],
               ),
@@ -190,7 +177,6 @@ class _HomeScreenState extends State<HomeScreen>
         horizontal: isWide ? 16 : 12,
         vertical: 8,
       ),
-      // Wrap instead of Row so RTL & small screens still look centered/nice
       child: Wrap(
         spacing: 10,
         runSpacing: 4,

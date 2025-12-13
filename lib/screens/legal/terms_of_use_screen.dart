@@ -205,7 +205,7 @@ class TermsOfUseScreen extends StatelessWidget {
                                     child: ElevatedButton(
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor:
-                                        kSecondaryAmber,
+                                        kGoldDeep,
                                         foregroundColor: Colors.black,
                                         padding:
                                         const EdgeInsets.symmetric(

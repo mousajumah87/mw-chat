@@ -2,7 +2,7 @@ name: mw
 description: "MW Chat – modern private messaging app. Copyright ©2025 Mousa Abu Hilal."
 publish_to: 'none'
 
-version: 1.0.0+10
+version: 1.0.0+13
 
 environment:
   sdk: ^3.10.0
@@ -35,8 +35,9 @@ dependencies:
   record: ^4.4.4
   audioplayers: ^6.5.1
   video_player: ^2.8.1
-
-
+  firebase_messaging: ^16.0.4
+  cloud_functions: ^6.0.4
+  image: ^4.2.0
 
 dev_dependencies:
   flutter_test:
@@ -59,7 +60,33 @@ flutter:
     - assets/logo/mw_mark.png
     - assets/logo/mw_mark_transparent.png
     - assets/images/mw_bg.png
-    - assets/fonts/
+    - assets/typing/
+
+  # =========================
+  # FONT FAMILIES
+  # =========================
+  fonts:
+    - family: Poppins
+      fonts:
+        - asset: assets/fonts/Poppins-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Poppins-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Poppins-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Poppins-Bold.ttf
+          weight: 700
+
+    - family: NotoSansArabic
+      fonts:
+        - asset: assets/fonts/NotoSansArabic-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/NotoSansArabic-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/NotoSansArabic-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/NotoSansArabic-Bold.ttf
+          weight: 700
 
 # =========================
 # APP ICON CONFIGURATION
@@ -73,7 +100,6 @@ flutter_launcher_icons:
     generate: true
     image_path: "assets/logo/mw_mark.png"
 
-
 # =========================
 # SPLASH SCREEN CONFIGURATION
 # =========================
@@ -85,10 +111,8 @@ flutter_native_splash:
   web: true
   fullscreen: true
 
-  image_dark: assets/logo/mw_mark_transparent.png   # keeps size consistent
+  image_dark: assets/logo/mw_mark_transparent.png
 
   android_12:
     image: assets/logo/mw_mark_transparent.png
     icon_background_color: "#0E0E0E"
-
-

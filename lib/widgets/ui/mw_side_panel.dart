@@ -6,10 +6,14 @@ class MwSidePanel extends StatelessWidget {
   const MwSidePanel({super.key});
 
   // ===== URLs =====
-  static const String _websiteUrl = 'https://www.mwchats.com';
-  static const String _facebookUrl = 'https://www.facebook.com'; // TODO: your real page
-  static const String _instagramUrl = 'https://www.instagram.com'; // TODO: your real page
-  static const String _xUrl = 'https://x.com'; // TODO: your real page
+
+  // Directly use the official support page as the main website/support entry.
+  static const String _websiteUrl = 'https://mwchats.com';
+
+  // If you create official social pages later, you can re-enable these:
+  // static const String _facebookUrl = 'https://www.facebook.com/your_page';
+  // static const String _instagramUrl = 'https://www.instagram.com/your_page';
+  // static const String _xUrl = 'https://x.com/your_page';
 
   Future<void> _openUrl(String url) async {
     final uri = Uri.parse(url);
@@ -17,7 +21,6 @@ class MwSidePanel extends StatelessWidget {
       uri,
       mode: LaunchMode.externalApplication,
     )) {
-      // Optional: log or show a snackbar instead of failing silently
       debugPrint('Could not launch $url');
     }
   }
@@ -138,7 +141,7 @@ class MwSidePanel extends StatelessWidget {
 
                 const SizedBox(height: 24),
 
-                // ===== Social =====
+                // ===== Social / Support =====
                 _sectionTitle(l10n.sidePanelFollowTitle, isRtl, theme),
                 const SizedBox(height: 10),
 
@@ -151,29 +154,29 @@ class MwSidePanel extends StatelessWidget {
                     alignment:
                     isRtl ? WrapAlignment.end : WrapAlignment.start,
                     children: [
-                      // 🌐 Website (new)
+                      // 🌐 Official support / website
                       _socialChip(
-                        icon: Icons.public,
-                        label: l10n.website,
+                        icon: Icons.support_agent,
+                        label: l10n.website, // or a "Support" string if you add it
                         color: const Color(0xFF6366F1),
                         onTap: () => _openUrl(_websiteUrl),
                       ),
 
-                      // Facebook
+                      // If you later add official social pages, you can re-enable:
+                      /*
                       _socialChip(
                         icon: Icons.facebook,
                         label: l10n.socialFacebook,
                         color: const Color(0xFF1778F2),
                         onTap: () => _openUrl(_facebookUrl),
                       ),
-
-                      // Instagram
                       _socialChip(
                         icon: Icons.camera_alt_outlined,
                         label: l10n.socialInstagram,
                         color: const Color(0xFFE4405F),
                         onTap: () => _openUrl(_instagramUrl),
                       ),
+                      */
                     ],
                   ),
                 ),

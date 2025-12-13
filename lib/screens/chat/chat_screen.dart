@@ -1,23 +1,20 @@
 // lib/screens/chat/chat_screen.dart
 
 import 'dart:async';
-import 'dart:typed_data';
-import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:path/path.dart' as p;
-import 'package:record/record.dart';
-
+import '../../utils/current_chat_tracker.dart';
 import '../../utils/presence_service.dart';
 
 // split-out widgets
 import 'chat_app_bar.dart';
+import 'chat_friendship_service.dart';
+import 'chat_media_service.dart';
 import 'chat_message_list.dart';
 
 // Localization
@@ -29,6 +26,8 @@ import '../../widgets/ui/mw_background.dart';
 // chat widgets
 import '../../widgets/chat/chat_input_bar.dart';
 import '../../widgets/chat/typing_indicator.dart';
+
+import 'chat_screen_deletion.dart';
 
 class ChatScreen extends StatefulWidget {
   final String roomId;
@@ -46,17 +45,23 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final _msgController = TextEditingController();
-  bool _sending = false;
+  final ChatFriendshipService _friendshipService = ChatFriendshipService();
+  late final ChatMediaService _mediaService;
+  double? _uploadProgress;
+  bool get _isUploading =>
+      _uploadProgress != null && _uploadProgress! < 1.0;
 
-  bool _isUploadingVoice = false;
-  double _voiceUploadProgress = 0.0;
-  UploadTask? _voiceUploadTask;
-  PlatformFile? _pendingVoiceFile; // for retry
+
+
+  bool _sending = false;
 
   late final String _currentUserId;
   String? _otherUserId;
 
   bool _isOtherTyping = false;
+  bool _hasAnyMessages = false;
+
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _messagesSub;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _roomSub;
 
   // Did *I* block the other user?
@@ -82,6 +87,9 @@ class _ChatScreenState extends State<ChatScreen> {
   Timer? _typingDebounce;
   bool _isMeTypingFlag = false;
 
+  // Voice recording UI tick timer (ChatMediaService owns the actual state)
+  Timer? _recordTimer;
+
   // Basic banned words list – lightweight filter
   static const List<String> _bannedWords = [
     'abuse',
@@ -89,8 +97,6 @@ class _ChatScreenState extends State<ChatScreen> {
     'insult',
     'threat',
   ];
-
-  final ImagePicker _imagePicker = ImagePicker();
 
   bool get _isAnyBlock => _isBlocked || _hasBlockedMe;
   bool get _isLoadingBlock => _loadingBlockState || _loadingOtherBlockState;
@@ -121,14 +127,6 @@ class _ChatScreenState extends State<ChatScreen> {
   bool get _hasIncomingFriendRequest => _friendStatus == 'incoming';
   bool get _hasOutgoingFriendRequest => _friendStatus == 'requested';
 
-  // ================= VOICE RECORDING =================
-
-  final Record _audioRecorder = Record();
-  bool _isRecording = false;
-  bool _isSendingVoice = false;
-  Duration _recordDuration = Duration.zero;
-  Timer? _recordTimer;
-
   // ================= INIT / SUBSCRIPTIONS =================
 
   @override
@@ -156,6 +154,8 @@ class _ChatScreenState extends State<ChatScreen> {
           'currentUserId=$_currentUserId, otherUserId=$_otherUserId',
     );
 
+    // Tell the tracker: user is now inside this chat room.
+    CurrentChatTracker.instance.enterRoom(widget.roomId);
     // When the chat is opened, reset my unread counter for this room.
     _resetMyUnread();
 
@@ -181,11 +181,49 @@ class _ChatScreenState extends State<ChatScreen> {
       final key = 'typing_${_otherUserId!}';
       final isTyping = data[key] == true;
 
+      // Avoid rebuilding the whole screen if nothing changed
+      if (isTyping == _isOtherTyping) return;
+
       if (mounted) {
         setState(() {
           _isOtherTyping = isTyping;
         });
       }
+    });
+
+
+    _mediaService = ChatMediaService(
+      roomId: widget.roomId,
+      currentUserId: _currentUserId,
+      otherUserId: _otherUserId,
+      isBlocked: () => _isAnyBlock,
+      canSendMessages: () => _canSendMessages,
+      validateMessageContent: _validateMessageContent,
+    );
+
+    // Listen if chat has any messages (used to enable/disable delete)
+    _messagesSub = FirebaseFirestore.instance
+        .collection('privateChats')
+        .doc(widget.roomId)
+        .collection('messages')
+        .snapshots()
+        .listen((snap) {
+      if (!mounted) return;
+
+      final visibleMessages = snap.docs.where((doc) {
+        final data = doc.data();
+        final hiddenFor = (data['hiddenFor'] as List?)?.cast<String>() ?? [];
+        return !hiddenFor.contains(_currentUserId);
+      }).toList();
+
+      final hasAny = visibleMessages.isNotEmpty;
+
+      // Only rebuild if the value actually changes
+      if (hasAny == _hasAnyMessages) return;
+
+      setState(() {
+        _hasAnyMessages = hasAny;
+      });
     });
   }
 
@@ -298,205 +336,38 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
-    _friendSub?.cancel();
-    _friendSub = FirebaseFirestore.instance
-        .collection('users')
-        .doc(me)
-        .collection('friends')
-        .doc(other)
-        .snapshots()
-        .listen(
-          (snap) {
+    _friendshipService.subscribe(
+      me: me,
+      other: other,
+      onUpdate: (status) {
         if (!mounted) return;
-
-        if (!snap.exists) {
-          setState(() {
-            _friendStatus = null;
-            _loadingFriendship = false;
-          });
-          return;
-        }
-
-        final data = snap.data() ?? {};
-        final status = data['status'] as String?;
         setState(() {
           _friendStatus = status;
           _loadingFriendship = false;
         });
-      },
-      onError: (e, st) {
-        debugPrint('[ChatScreen] _subscribeToFriendship error: $e\n$st');
-        if (mounted) {
-          setState(() {
-            _friendStatus = null;
-            _loadingFriendship = false;
-          });
-        }
       },
     );
   }
 
   // =============== FRIEND REQUEST HELPERS =================
 
-  /// Send a new friend request:
-  /// me -> other: status "requested"
-  /// other -> me: status "incoming"
-  Future<void> _sendFriendRequest() async {
-    final me = _currentUserId;
-    final other = _otherUserId;
-    if (me.isEmpty || other == null || other.isEmpty) return;
-
-    // Don’t resend if we already have some relationship.
-    if (_friendStatus == 'accepted' ||
-        _friendStatus == 'requested' ||
-        _friendStatus == 'incoming') {
-      return;
-    }
-
-    final l10n = AppLocalizations.of(context)!;
-
-    try {
-      final batch = FirebaseFirestore.instance.batch();
-
-      final myDoc = FirebaseFirestore.instance
-          .collection('users')
-          .doc(me)
-          .collection('friends')
-          .doc(other);
-
-      final theirDoc = FirebaseFirestore.instance
-          .collection('users')
-          .doc(other)
-          .collection('friends')
-          .doc(me);
-
-      final now = FieldValue.serverTimestamp();
-
-      batch.set(
-        myDoc,
-        {
-          'status': 'requested',
-          'createdAt': now,
-          'updatedAt': now,
-        },
-        SetOptions(merge: true),
+  Future<void> _sendFriendRequest() =>
+      _friendshipService.sendRequest(
+        me: _currentUserId,
+        other: _otherUserId!,
       );
 
-      batch.set(
-        theirDoc,
-        {
-          'status': 'incoming',
-          'createdAt': now,
-          'updatedAt': now,
-        },
-        SetOptions(merge: true),
+  Future<void> _acceptFriendRequest() =>
+      _friendshipService.acceptRequest(
+        me: _currentUserId,
+        other: _otherUserId!,
       );
 
-      await batch.commit();
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.friendRequestSent)),
+  Future<void> _declineFriendRequest() =>
+      _friendshipService.declineRequest(
+        me: _currentUserId,
+        other: _otherUserId!,
       );
-    } catch (e, st) {
-      debugPrint('[ChatScreen] _sendFriendRequest error: $e\n$st');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.friendRequestSendFailed)),
-      );
-    }
-  }
-
-  /// Accept an incoming friend request
-  Future<void> _acceptFriendRequest() async {
-    final me = _currentUserId;
-    final other = _otherUserId;
-    if (me.isEmpty || other == null || other.isEmpty) return;
-
-    final l10n = AppLocalizations.of(context)!;
-
-    try {
-      final batch = FirebaseFirestore.instance.batch();
-      final myDoc = FirebaseFirestore.instance
-          .collection('users')
-          .doc(me)
-          .collection('friends')
-          .doc(other);
-      final theirDoc = FirebaseFirestore.instance
-          .collection('users')
-          .doc(other)
-          .collection('friends')
-          .doc(me);
-
-      final payload = {
-        'status': 'accepted',
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
-
-      batch.set(myDoc, payload, SetOptions(merge: true));
-      batch.set(theirDoc, payload, SetOptions(merge: true));
-
-      await batch.commit();
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(l10n.friendRequestAccepted),
-        ),
-      );
-    } catch (e, st) {
-      debugPrint('[ChatScreen] _acceptFriendRequest error: $e\n$st');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(l10n.friendRequestAcceptFailed),
-        ),
-      );
-    }
-  }
-
-  /// Decline / cancel friend request by removing both docs.
-  Future<void> _declineFriendRequest() async {
-    final me = _currentUserId;
-    final other = _otherUserId;
-    if (me.isEmpty || other == null || other.isEmpty) return;
-
-    final l10n = AppLocalizations.of(context)!;
-
-    try {
-      final batch = FirebaseFirestore.instance.batch();
-      final myDoc = FirebaseFirestore.instance
-          .collection('users')
-          .doc(me)
-          .collection('friends')
-          .doc(other);
-      final theirDoc = FirebaseFirestore.instance
-          .collection('users')
-          .doc(other)
-          .collection('friends')
-          .doc(me);
-
-      batch.delete(myDoc);
-      batch.delete(theirDoc);
-
-      await batch.commit();
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(l10n.friendRequestDeclined),
-        ),
-      );
-    } catch (e, st) {
-      debugPrint('[ChatScreen] _declineFriendRequest error: $e\n$st');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(l10n.friendRequestDeclineFailed),
-        ),
-      );
-    }
-  }
 
   /// Reset my unread counter for this room to 0.
   Future<void> _resetMyUnread() async {
@@ -552,72 +423,12 @@ class _ChatScreenState extends State<ChatScreen> {
   // ---------- CLEAR CHAT / DELETE HISTORY ----------
 
   Future<void> _confirmAndClearChat() async {
-    final l10n = AppLocalizations.of(context)!;
-
-    final shouldDelete = await showDialog<bool>(
+    await ChatScreenDeletion.confirmAndClearChat(
       context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: Text(l10n.deleteChatTitle),
-          content: Text(l10n.deleteChatDescription),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: Text(l10n.cancel),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              style: TextButton.styleFrom(
-                foregroundColor: Colors.redAccent,
-              ),
-              child: Text(l10n.delete),
-            ),
-          ],
-        );
-      },
-    ) ??
-        false;
-
-    if (!shouldDelete) return;
-
-    try {
-      final roomRef = FirebaseFirestore.instance
-          .collection('privateChats')
-          .doc(widget.roomId);
-
-      final msgsSnap = await roomRef.collection('messages').get();
-      final batch = FirebaseFirestore.instance.batch();
-
-      for (final doc in msgsSnap.docs) {
-        batch.delete(doc.reference);
-      }
-
-      // Reset unread counts for both sides (if known)
-      final Map<String, dynamic> unread = {};
-      if (_currentUserId.isNotEmpty) unread[_currentUserId] = 0;
-      if (_otherUserId != null) unread[_otherUserId!] = 0;
-
-      if (unread.isNotEmpty) {
-        batch.set(
-          roomRef,
-          {'unreadCounts': unread},
-          SetOptions(merge: true),
-        );
-      }
-
-      await batch.commit();
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.chatHistoryDeleted)),
-      );
-    } catch (e, st) {
-      debugPrint('[ChatScreen] clearChat error: $e\n$st');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.chatHistoryDeleteFailed)),
-      );
-    }
+      roomId: widget.roomId,
+      currentUserId: _currentUserId,
+      otherUserId: _otherUserId,
+    );
   }
 
   // ---------- MESSAGE FILTERING ----------
@@ -642,7 +453,6 @@ class _ChatScreenState extends State<ChatScreen> {
 
     final l10n = AppLocalizations.of(context)!;
 
-    // If there is any block relationship, do not send new messages.
     if (_isAnyBlock) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(l10n.userBlockedInfo)),
@@ -650,7 +460,6 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
-    // Friendship enforcement: must be accepted.
     if (!_canSendMessages) {
       String info;
       if (_hasOutgoingFriendRequest) {
@@ -669,7 +478,9 @@ class _ChatScreenState extends State<ChatScreen> {
     final text = _msgController.text.trim();
     if (text.isEmpty) return;
 
-    // Filter for objectionable content
+    /// ✅ ✅ ✅ CRITICAL iOS FIX → CLEAR IMMEDIATELY (BEFORE ASYNC)
+    _msgController.clear();
+
     final error = _validateMessageContent(text);
     if (error != null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -685,7 +496,6 @@ class _ChatScreenState extends State<ChatScreen> {
       _isMeTypingFlag = false;
       _typingDebounce?.cancel();
 
-      // Load my profile / avatar info
       final meta = await _getSenderMeta(user);
       final profileUrl = meta['profileUrl'];
       final avatarType = meta['avatarType'];
@@ -701,9 +511,9 @@ class _ChatScreenState extends State<ChatScreen> {
       final roomRef = FirebaseFirestore.instance
           .collection('privateChats')
           .doc(widget.roomId);
+
       final msgRef = roomRef.collection('messages').doc();
 
-      // message
       batch.set(msgRef, {
         'type': 'text',
         'text': text,
@@ -715,7 +525,6 @@ class _ChatScreenState extends State<ChatScreen> {
         'seenBy': <String>[],
       });
 
-      // unread counts
       batch.set(
         roomRef,
         {
@@ -730,7 +539,6 @@ class _ChatScreenState extends State<ChatScreen> {
       );
 
       await batch.commit();
-      _msgController.clear();
     } catch (e, st) {
       debugPrint('[ChatScreen] _sendMessage error: $e\n$st');
     } finally {
@@ -738,176 +546,46 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  // ---------- VOICE NOTE HELPERS (Record plugin) ----------
+
+  // ---------- VOICE NOTE HELPERS (Record via ChatMediaService) ----------
+
   Future<void> _startVoiceRecording() async {
-    if (_isRecording || _isSendingVoice) return;
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    final l10n = AppLocalizations.of(context)!;
-
-    if (_isAnyBlock) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.userBlockedInfo)),
-      );
-      return;
-    }
-
-    if (!_canSendMessages) {
-      String info;
-      if (_hasOutgoingFriendRequest) {
-        info = l10n.friendshipFileInfoOutgoing;
-      } else if (_hasIncomingFriendRequest) {
-        info = l10n.friendshipFileInfoIncoming;
-      } else {
-        info = l10n.friendshipFileInfoNotFriends;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(info)),
-      );
-      return;
-    }
-
-    if (kIsWeb) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(l10n.voiceNotSupportedWeb),
-        ),
-      );
-      return;
-    }
-
-    try {
-      final hasPermission = await _audioRecorder.hasPermission();
-      if (!hasPermission) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(l10n.microphonePermissionRequired),
-          ),
-        );
-        return;
-      }
-
-      await _audioRecorder.start(
-        encoder: AudioEncoder.aacLc,
-        bitRate: 128000,
-        samplingRate: 44100,
-      );
-
-      setState(() {
-        _isRecording = true;
-        _recordDuration = Duration.zero;
-      });
-
+    final ok = await _mediaService.startVoiceRecording();
+    if (ok) {
+      // Tick UI every second so the red pill timer updates
       _recordTimer?.cancel();
       _recordTimer = Timer.periodic(const Duration(seconds: 1), (_) {
         if (!mounted) return;
-        setState(() {
-          _recordDuration =
-              Duration(seconds: _recordDuration.inSeconds + 1);
-        });
+        setState(() {});
       });
-    } catch (e, st) {
-      debugPrint('[_startVoiceRecording] error: $e\n$st');
+      if (mounted) setState(() {});
     }
   }
 
   Future<void> _stopVoiceRecordingAndSend() async {
-    if (!_isRecording) return;
-
-    final l10n = AppLocalizations.of(context)!;
-
     _recordTimer?.cancel();
-
-    setState(() {
-      _isRecording = false;
-    });
-
-    if (kIsWeb) {
-      setState(() {
-        _recordDuration = Duration.zero;
-      });
-      return;
-    }
-
-    try {
-      final rawPath = await _audioRecorder.stop();
-
-      if (rawPath == null || rawPath.isEmpty) {
-        debugPrint('[VOICE] Recorder returned null path');
-        setState(() {
-          _recordDuration = Duration.zero;
-        });
-        return;
-      }
-
-      // FIX: Remove "file://" if present (iOS bug)
-      final normalizedPath =
-      rawPath.startsWith('file://') ? rawPath.replaceFirst('file://', '') : rawPath;
-
-      final file = File(normalizedPath);
-
-      // Safety check before reading
-      if (!await file.exists()) {
-        debugPrint('[VOICE] File does NOT exist: $normalizedPath');
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.failedToUploadFile)),
-        );
-        setState(() {
-          _recordDuration = Duration.zero;
-        });
-        return;
-      }
-
-      final bytes = await file.readAsBytes();
-
-      final platformFile = PlatformFile(
-        name: p.basename(normalizedPath),
-        size: bytes.length,
-        bytes: bytes,
-        path: normalizedPath,
-      );
-
-      setState(() {
-        _recordDuration = Duration.zero;
-      });
-
-      await _sendFileMessage(platformFile);
-
-    } catch (e, st) {
-      debugPrint('[_stopVoiceRecordingAndSend] error: $e\n$st');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.failedToUploadFile)),
+    final file = await _mediaService.stopVoiceRecording();
+    if (file != null) {
+      await _mediaService.sendFileMessage(
+        file,
+        forcedType: 'audio',
+        forcedContentType: 'audio/m4a',
       );
     }
+    if (mounted) setState(() {});
   }
 
   Future<void> _cancelVoiceRecording() async {
-    if (!_isRecording) return;
-
     _recordTimer?.cancel();
-
-    if (!kIsWeb) {
-      try {
-        await _audioRecorder.stop();
-      } catch (_) {
-        // ignore
-      }
-    }
-
-    if (mounted) {
-      setState(() {
-        _isRecording = false;
-        _isSendingVoice = false; // RESET LOCK
-        _recordDuration = Duration.zero;
-      });
-    }
+    _mediaService.cancelVoiceRecording();
+    if (mounted) setState(() {});
   }
 
   // ---------- ATTACHMENT UI ----------
-
   Future<void> _handleAttachPressed() async {
+    // Don’t allow opening the attach sheet while an upload is in progress
+    if (_isUploading) return;
+
     final l10n = AppLocalizations.of(context)!;
 
     await showModalBottomSheet<void>(
@@ -919,6 +597,7 @@ class _ChatScreenState extends State<ChatScreen> {
       builder: (ctx) {
         final media = MediaQuery.of(ctx);
         final maxWidth = media.size.width > 640 ? 520.0 : double.infinity;
+        final bool isWeb = kIsWeb; // we already import flutter/foundation.dart
 
         return Center(
           child: ConstrainedBox(
@@ -957,6 +636,8 @@ class _ChatScreenState extends State<ChatScreen> {
                     const SizedBox(height: 8),
                     const Divider(color: Colors.white10, height: 1),
                     const SizedBox(height: 4),
+
+                    // 📷 From gallery (works on all platforms)
                     ListTile(
                       leading:
                       const Icon(Icons.photo, color: Colors.white70),
@@ -975,24 +656,30 @@ class _ChatScreenState extends State<ChatScreen> {
                         _pickVideoFromGallery();
                       },
                     ),
-                    ListTile(
-                      leading: const Icon(Icons.camera_alt,
-                          color: Colors.white70),
-                      title: Text(l10n.attachTakePhoto),
-                      onTap: () {
-                        Navigator.of(ctx).pop();
-                        _captureImageWithCamera();
-                      },
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.videocam_outlined,
-                          color: Colors.white70),
-                      title: Text(l10n.attachRecordVideo),
-                      onTap: () {
-                        Navigator.of(ctx).pop();
-                        _captureVideoWithCamera();
-                      },
-                    ),
+
+                    // 📸 Camera actions → MOBILE ONLY
+                    if (!isWeb) ...[
+                      ListTile(
+                        leading: const Icon(Icons.camera_alt,
+                            color: Colors.white70),
+                        title: Text(l10n.attachTakePhoto),
+                        onTap: () {
+                          Navigator.of(ctx).pop();
+                          _captureImageWithCamera();
+                        },
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.videocam_outlined,
+                            color: Colors.white70),
+                        title: Text(l10n.attachRecordVideo),
+                        onTap: () {
+                          Navigator.of(ctx).pop();
+                          _captureVideoWithCamera();
+                        },
+                      ),
+                    ],
+
+                    // 📄 Generic file (works on all platforms)
                     ListTile(
                       leading: const Icon(Icons.insert_drive_file,
                           color: Colors.white70),
@@ -1012,279 +699,58 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  // ---------- MEDIA PICKERS (ImagePicker) ----------
+  Future<void> _sendPlatformFile(PlatformFile? file) async {
+    if (file == null) return;
+
+    setState(() {
+      _uploadProgress = 0.0;
+    });
+
+    try {
+      await _mediaService.sendFileMessage(
+        file,
+        onProgress: (p) {
+          if (!mounted) return;
+          setState(() {
+            _uploadProgress = p; // 0.0 .. 1.0
+          });
+        },
+      );
+    } finally {
+      if (!mounted) return;
+      setState(() {
+        _uploadProgress = null; // hide bar when finished / error
+      });
+    }
+  }
+
+  // ---------- MEDIA PICKERS (delegating to ChatMediaService) ----------
 
   Future<void> _pickImageFromGallery() async {
-    final picked = await _imagePicker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 85,
-    );
-    if (picked == null) return;
-
-    final bytes = await picked.readAsBytes();
-    final file = PlatformFile(
-      name: p.basename(picked.path),
-      size: bytes.length,
-      bytes: bytes,
-      path: picked.path,
-    );
-
-    await _sendFileMessage(file);
+    final file = await _mediaService.pickImageFromGallery();
+    await _sendPlatformFile(file);
   }
 
   Future<void> _pickVideoFromGallery() async {
-    final picked = await _imagePicker.pickVideo(
-      source: ImageSource.gallery,
-    );
-    if (picked == null) return;
-
-    final bytes = await picked.readAsBytes();
-    final file = PlatformFile(
-      name: p.basename(picked.path),
-      size: bytes.length,
-      bytes: bytes,
-      path: picked.path,
-    );
-
-    await _sendFileMessage(file);
+    final file = await _mediaService.pickVideoFromGallery();
+    await _sendPlatformFile(file);
   }
 
-  Future<void> _captureImageWithCamera() async {
-    final picked = await _imagePicker.pickImage(
-      source: ImageSource.camera,
-      imageQuality: 85,
-    );
-    if (picked == null) return;
-
-    final bytes = await picked.readAsBytes();
-    final file = PlatformFile(
-      name: p.basename(picked.path),
-      size: bytes.length,
-      bytes: bytes,
-      path: picked.path,
-    );
-
-    await _sendFileMessage(file);
+  Future<void> _captureImageWithCamera({CameraDevice camera = CameraDevice.rear}) async {
+    final file = await _mediaService.captureImageWithCamera(preferredCamera: camera);
+    if (file == null) return; // user canceled
+    await _sendPlatformFile(file);
   }
 
-  Future<void> _captureVideoWithCamera() async {
-    final picked = await _imagePicker.pickVideo(
-      source: ImageSource.camera,
-      maxDuration: const Duration(minutes: 2),
-    );
-    if (picked == null) return;
-
-    final bytes = await picked.readAsBytes();
-    final file = PlatformFile(
-      name: p.basename(picked.path),
-      size: bytes.length,
-      bytes: bytes,
-      path: picked.path,
-    );
-
-    await _sendFileMessage(file);
+  Future<void> _captureVideoWithCamera({CameraDevice camera = CameraDevice.rear}) async {
+    final file = await _mediaService.captureVideoWithCamera(preferredCamera: camera);
+    if (file == null) return; // user canceled
+    await _sendPlatformFile(file);
   }
-
-  // ---------- FILE UPLOADS (Files app & voice) ----------
 
   Future<void> _pickAndSendFile() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    final l10n = AppLocalizations.of(context)!;
-
-    try {
-      final result = await FilePicker.platform.pickFiles(
-        allowMultiple: false,
-        withData: true,
-        type: FileType.any, // PDFs/docs/zip etc. from Files app
-      );
-
-      if (result == null || result.files.isEmpty) return;
-
-      final PlatformFile file = result.files.first;
-      await _sendFileMessage(file);
-    } catch (e, st) {
-      debugPrint('Error picking/sending file: $e\n$st');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.failedToUploadFile)),
-      );
-    }
-  }
-
-  (String type, String? contentType) _classifyFile(PlatformFile file) {
-    final ext = (file.extension ?? '').toLowerCase();
-
-    String type = 'file';
-    String? contentType;
-
-    if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic'].contains(ext)) {
-      type = 'image';
-      if (ext == 'png') {
-        contentType = 'image/png';
-      } else if (ext == 'gif') {
-        contentType = 'image/gif';
-      } else {
-        contentType = 'image/jpeg';
-      }
-    } else if (['mp4', 'mov', 'mkv', 'avi', 'webm'].contains(ext)) {
-      type = 'video';
-      contentType = 'video/mp4';
-    } else if (['mp3', 'wav', 'm4a', 'aac', 'ogg'].contains(ext)) {
-      type = 'audio';
-      if (ext == 'wav') {
-        contentType = 'audio/wav';
-      } else if (ext == 'ogg') {
-        contentType = 'audio/ogg';
-      } else {
-        contentType = 'audio/mpeg';
-      }
-    } else if (ext == 'pdf') {
-      type = 'file';
-      contentType = 'application/pdf';
-    }
-
-    return (type, contentType);
-  }
-
-  Future<void> _sendFileMessage(PlatformFile file) async {
-    final user = FirebaseAuth.instance.currentUser;
-    final l10n = AppLocalizations.of(context)!;
-
-    if (user == null) {
-      debugPrint('[_sendFileMessage] No user, aborting upload');
-      return;
-    }
-
-    // If blocked in either direction, do not send uploads.
-    if (_isAnyBlock) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.userBlockedInfo)),
-      );
-      return;
-    }
-
-    // Friendship enforcement: must be accepted.
-    if (!_canSendMessages) {
-      String info;
-      if (_hasOutgoingFriendRequest) {
-        info = l10n.friendshipFileInfoOutgoing;
-      } else if (_hasIncomingFriendRequest) {
-        info = l10n.friendshipFileInfoIncoming;
-      } else {
-        info = l10n.friendshipFileInfoNotFriends;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(info)),
-      );
-      return;
-    }
-
-    // Light content filter on file name as well
-    final nameError = _validateMessageContent(file.name);
-    if (nameError != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(nameError)),
-      );
-      return;
-    }
-
-    final Uint8List? bytes = file.bytes;
-    if (bytes == null) {
-      debugPrint(
-          '[_sendFileMessage] File bytes are null – ensure withData: true');
-      return;
-    }
-
-    final (msgType, rawContentType) = _classifyFile(file);
-    final contentType = rawContentType ?? 'application/octet-stream';
-
-    final storageRef = FirebaseStorage.instance
-        .ref()
-        .child('chat_uploads')
-        .child(widget.roomId)
-        .child('${DateTime.now().millisecondsSinceEpoch}_${file.name}');
-
-    String? downloadUrl;
-
-    try {
-      final metadata = SettableMetadata(contentType: contentType);
-      await storageRef.putData(bytes, metadata);
-      downloadUrl = await storageRef.getDownloadURL();
-    } on FirebaseException catch (e, st) {
-      debugPrint(
-          '[_sendFileMessage] STORAGE error [${e.code}]: ${e.message}\n$st');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.uploadFailedStorage)),
-      );
-      return;
-    } catch (e, st) {
-      debugPrint('[_sendFileMessage] Unknown STORAGE error: $e\n$st');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.uploadFailedStorage)),
-      );
-      return;
-    }
-
-    try {
-      final userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
-      final userData = userDoc.data();
-      final profileUrl = userData?['profileUrl'];
-      final avatarType = userData?['avatarType'];
-
-      if (_otherUserId == null) {
-        debugPrint('[ChatScreen] _otherUserId is null, cannot bump unread');
-        return;
-      }
-
-      final batch = FirebaseFirestore.instance.batch();
-      final roomRef = FirebaseFirestore.instance
-          .collection('privateChats')
-          .doc(widget.roomId);
-      final msgRef = roomRef.collection('messages').doc();
-
-      batch.set(msgRef, {
-        'type': msgType,
-        'text': '',
-        'fileName': file.name,
-        'fileUrl': downloadUrl,
-        'fileSize': file.size,
-        'mimeType': contentType,
-        'senderId': user.uid,
-        'senderEmail': user.email,
-        'profileUrl': profileUrl,
-        'avatarType': avatarType,
-        'createdAt': FieldValue.serverTimestamp(),
-        'seenBy': <String>[],
-      });
-
-      batch.set(
-        roomRef,
-        {
-          'participants': [user.uid, _otherUserId],
-          'unreadCounts': {
-            _otherUserId!: FieldValue.increment(1),
-            user.uid: 0,
-          },
-          'updatedAt': FieldValue.serverTimestamp(),
-        },
-        SetOptions(merge: true),
-      );
-
-      await batch.commit();
-    } catch (e, st) {
-      debugPrint('[_sendFileMessage] FIRESTORE error: $e\n$st');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.uploadFailedMessageSave)),
-      );
-    }
+    final file = await _mediaService.pickFileFromDevice();
+    await _sendPlatformFile(file);
   }
 
   Future<Map<String, dynamic>> _getSenderMeta(User user) async {
@@ -1310,10 +776,13 @@ class _ChatScreenState extends State<ChatScreen> {
     _blockSub?.cancel();
     _otherUserSub?.cancel();
     _friendSub?.cancel();
+    _messagesSub?.cancel();
+    _friendshipService.dispose();
     _typingDebounce?.cancel();
     _recordTimer?.cancel();
-    _audioRecorder.dispose();
+    _mediaService.dispose();
     _updateMyTyping(false); // best-effort
+    CurrentChatTracker.instance.leaveRoom();
     super.dispose();
   }
 
@@ -1421,7 +890,21 @@ class _ChatScreenState extends State<ChatScreen> {
     final l10n = AppLocalizations.of(context)!;
     final otherUserId = _otherUserId;
 
-    String _cannotSendText() {
+    const TextStyle overlayInfoTextStyle = TextStyle(
+      color: Colors.white,
+      fontSize: 14,
+      fontStyle: FontStyle.italic,
+      fontWeight: FontWeight.w500,
+      shadows: [
+        Shadow(
+          color: Colors.black54,
+          offset: Offset(0, 1),
+          blurRadius: 4,
+        ),
+      ],
+    );
+
+    String cannotSendText() {
       if (_hasOutgoingFriendRequest) {
         return l10n.friendshipCannotSendOutgoing;
       }
@@ -1429,6 +912,46 @@ class _ChatScreenState extends State<ChatScreen> {
         return l10n.friendshipCannotSendIncoming;
       }
       return l10n.friendshipCannotSendNotFriends;
+    }
+
+    // Build the bottom area in a single, consistent way (prevents iOS padding/keyboard glitches)
+    Widget bottomArea;
+    if (_isAnyBlock) {
+      bottomArea = Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        child: Text(
+          l10n.userBlockedInfo,
+          textAlign: TextAlign.center,
+          style: overlayInfoTextStyle,
+        ),
+      );
+    } else if (_canSendMessages) {
+      // IMPORTANT: do NOT wrap ChatInputBar in extra padding (ChatInputBar already uses SafeArea + internal padding)
+      bottomArea = ChatInputBar(
+        key: ValueKey('chat_input_${widget.roomId}'), // ✅ stable identity
+        controller: _msgController,
+        sending: _sending || _isUploading,
+        uploadProgress: _uploadProgress,
+        onAttach: _handleAttachPressed,
+        onSend: _sendMessage,
+        onTextChanged: _onComposerChanged,
+
+        // Voice note hooks (state from ChatMediaService)
+        isRecording: _mediaService.isRecording,
+        recordDuration: _mediaService.recordDuration,
+        onMicLongPressStart: _startVoiceRecording,
+        onMicLongPressEnd: _stopVoiceRecordingAndSend,
+        onMicCancel: _cancelVoiceRecording,
+      );
+    } else {
+      bottomArea = Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        child: Text(
+          cannotSendText(),
+          textAlign: TextAlign.center,
+          style: overlayInfoTextStyle,
+        ),
+      );
     }
 
     return Scaffold(
@@ -1444,7 +967,7 @@ class _ChatScreenState extends State<ChatScreen> {
             Navigator.of(context).popUntil((route) => route.isFirst);
           }
         },
-        onClearChat: _confirmAndClearChat,
+        onClearChat: _hasAnyMessages ? _confirmAndClearChat : null,
       ),
       body: MwBackground(
         child: Column(
@@ -1459,59 +982,22 @@ class _ChatScreenState extends State<ChatScreen> {
                 roomId: widget.roomId,
                 currentUserId: _currentUserId,
                 otherUserId: otherUserId,
-                // Treat any block (me blocking them OR they blocking me)
-                // as a "blocked" relationship for the list.
                 isBlocked: _isAnyBlock,
               ),
             ),
+
+            // Typing indicator (only when not blocked)
             if (!_isAnyBlock)
-              TypingIndicator(
-                isVisible: _isOtherTyping,
-                text: l10n.isTyping(widget.title),
-              ),
-            Padding(
-              padding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              child: _isAnyBlock
-                  ? Padding(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 8, vertical: 12),
-                child: Text(
-                  l10n.userBlockedInfo,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-              )
-                  : _canSendMessages
-                  ? ChatInputBar(
-                controller: _msgController,
-                sending: _sending,
-                onAttach: _handleAttachPressed,
-                onSend: _sendMessage,
-                onTextChanged: _onComposerChanged,
-                // NEW: voice note hooks
-                isRecording: _isRecording,
-                recordDuration: _recordDuration,
-                onMicLongPressStart: _startVoiceRecording,
-                onMicLongPressEnd: _stopVoiceRecordingAndSend,
-                onMicCancel: _cancelVoiceRecording,
-              )
-                  : Padding(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 8, vertical: 12),
-                child: Text(
-                  _cannotSendText(),
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontStyle: FontStyle.italic,
-                  ),
+              SizedBox(
+                height: 26,
+                child: TypingIndicator(
+                  isVisible: _isOtherTyping,
+                  text: l10n.isTyping(widget.title),
                 ),
               ),
-            ),
+
+            // Bottom area (input / blocked / cannot-send)
+            bottomArea,
           ],
         ),
       ),

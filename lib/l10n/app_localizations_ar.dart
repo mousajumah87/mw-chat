@@ -81,6 +81,12 @@ class AppLocalizationsAr extends AppLocalizations {
   String get failedToCreateUser => 'فشل إنشاء المستخدم';
 
   @override
+  String get languageLabel => 'اللغة';
+
+  @override
+  String get menuTitle => 'القائمة';
+
+  @override
   String get settingUpProfile => 'جارٍ إعداد ملفك الشخصي...';
 
   @override
@@ -176,6 +182,24 @@ class AppLocalizationsAr extends AppLocalizations {
   String get noOtherUsers => 'لا يوجد أصدقاء آخرون';
 
   @override
+  String get profile => 'الملف الشخصي';
+
+  @override
+  String get viewProfile => 'عرض الملف الشخصي';
+
+  @override
+  String get viewFriendProfile => 'عرض ملف الصديق';
+
+  @override
+  String get viewMyProfile => 'عرض ملفي الشخصي';
+
+  @override
+  String get autoUpdateNotice => 'سيتم تحديث هذه الشاشة تلقائيًا عند التفعيل.';
+
+  @override
+  String get checkAgain => 'تحقق مرة أخرى';
+
+  @override
   String get typeMessageHint => 'اكتب رسالة...';
 
   @override
@@ -259,6 +283,35 @@ class AppLocalizationsAr extends AppLocalizations {
 
   @override
   String get holdMicToRecord => 'اضغط باستمرار على الميكروفون لتسجيل رسالة صوتية';
+
+  @override
+  String get previewVoiceMessage => 'معاينة الرسالة الصوتية';
+
+  @override
+  String get voiceMessageLabel => 'رسالة صوتية';
+
+  @override
+  String get genericFileLabel => 'ملف';
+
+  @override
+  String get removePhoto => 'إزالة الصورة';
+
+  @override
+  String get websiteDomain => 'mwchats.com';
+
+  @override
+  String get deleteChatForMe => 'حذف المحادثة من عندي فقط';
+
+  @override
+  String get deleteChatForBoth => 'حذف المحادثة للطرفين';
+
+  @override
+  String get deletingChatInProgressTitle => 'جارٍ حذف المحادثة...';
+
+  @override
+  String deletingChatProgress(int current, int total) {
+    return '$current / $total رسالة';
+  }
 
   @override
   String get deleteMessageTitle => 'حذف الرسالة';
@@ -710,4 +763,7 @@ class AppLocalizationsAr extends AppLocalizations {
 
   @override
   String get profileReportSnackbarError => 'فشل إرسال البلاغ. يرجى المحاولة مرة أخرى.';
+
+  @override
+  String get generalErrorMessage => 'حدث خطأ ما. يُرجى المحاولة مرة أخرى.';
 }

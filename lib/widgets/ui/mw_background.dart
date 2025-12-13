@@ -75,12 +75,16 @@ class _MwBackgroundState extends State<MwBackground>
                         end: Alignment.bottomRight,
                         stops: const [0.0, 0.5, 1.0],
                         colors: [
-                          kPrimaryBlue.withOpacity(
-                            0.15 + 0.05 * (1 - _glowShift.value),
+                          // Soft warm gold glow (top-left)
+                          kPrimaryGold.withOpacity(
+                            0.12 + 0.06 * (1 - _glowShift.value),
                           ),
+
                           Colors.transparent,
-                          kSecondaryAmber.withOpacity(
-                            0.15 + 0.05 * _glowShift.value,
+
+                          // Deeper amber glow (bottom-right)
+                          kGoldDeep.withOpacity(
+                            0.12 + 0.06 * _glowShift.value,
                           ),
                         ],
                       ),

@@ -25,6 +25,8 @@
     "minPassword": "Minimum 6 characters",
     "authError": "Authentication error",
     "failedToCreateUser": "Failed to create user",
+    "languageLabel": "Language",
+    "menuTitle": "Menu",
 
     "settingUpProfile": "Setting up your profile...",
     "accountNotActive": "Your account is not active yet.",
@@ -57,6 +59,13 @@
     "lastSeenHours": "Last seen {hours} h ago",
     "lastSeenDays": "Last seen {days} d ago",
     "noOtherUsers": "No other friends yet",
+    "profile": "Profile",
+    "viewProfile": "View Profile",
+    "viewFriendProfile": "View Friend Profile",
+    "viewMyProfile": "View My Profile",
+    "autoUpdateNotice": "This screen will update automatically once activated.",
+    "checkAgain": "Check again",
+
 
     "typeMessageHint": "Type a message...",
     "isTyping": "{name} is typing...",
@@ -85,6 +94,55 @@
     "microphonePermissionRequired": "Microphone permission is required to record audio.",
     "holdMicToRecord": "Hold the mic to record a voice message",
     "previewVoiceMessage": "Preview voice message",
+
+    "voiceMessageLabel": "Voice message",
+    "@voiceMessageLabel": {
+    "description": "Label shown on audio message bubbles"
+    },
+
+    "genericFileLabel": "File",
+    "@genericFileLabel": {
+    "description": "Fallback label for a file attachment when no fileName is provided"
+    },
+
+    "removePhoto": "Remove photo",
+    "@removePhoto": {
+    "description": "Button label for removing the current profile picture"
+    },
+    "websiteDomain": "mwchats.com",
+    "@websiteDomain": {
+      "description": "The official MW Chats website domain displayed in the footer of the user profile screen"
+    },
+
+    "deleteChatForMe": "Delete for me",
+    "@deleteChatForMe": {
+      "description": "Button label to delete the chat only for the current user"
+    },
+
+    "deleteChatForBoth": "Delete for both",
+    "@deleteChatForBoth": {
+      "description": "Button label to delete the chat history for both participants"
+    },
+
+    "deletingChatInProgressTitle": "Deleting chat...",
+    "@deletingChatInProgressTitle": {
+      "description": "Title of the progress dialog shown while deleting chat messages"
+    },
+
+    "deletingChatProgress": "{current} / {total} messages",
+    "@deletingChatProgress": {
+      "description": "Progress label for chat deletion, showing number of processed messages out of total",
+      "placeholders": {
+        "current": {
+          "type": "int",
+          "description": "Number of messages processed so far"
+        },
+        "total": {
+          "type": "int",
+          "description": "Total number of messages to delete"
+        }
+      }
+    },
 
     "deleteMessageTitle": "Delete message",
     "deleteMessageConfirm": "Are you sure you want to delete this message?",
@@ -262,5 +320,7 @@
     "profileReportDialogSubmit": "Submit",
     "profileReportButtonLabel": "Report user",
     "profileReportSnackbarSuccess": "Report submitted. We will review it.",
-    "profileReportSnackbarError": "Failed to submit report. Please try again."
+    "profileReportSnackbarError": "Failed to submit report. Please try again.",
+    "generalErrorMessage": "Something went wrong. Please try again."
+
 }

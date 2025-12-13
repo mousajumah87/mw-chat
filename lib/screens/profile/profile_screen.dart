@@ -457,6 +457,8 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Widget _buildAvatar() {
+    final l10n = AppLocalizations.of(context)!;
+
     final ImageProvider? imageProvider = kIsWeb
         ? (_imageBytes != null ? MemoryImage(_imageBytes!) : null)
         : (_imageFile != null ? FileImage(_imageFile!) : null);
@@ -493,9 +495,9 @@ class _ProfileScreenState extends State<ProfileScreen>
             TextButton.icon(
               onPressed: _saving ? null : _removeImage,
               icon: const Icon(Icons.delete_outline, color: Colors.red),
-              label: const Text(
-                'Remove Photo',
-                style: TextStyle(color: Colors.red),
+              label: Text(
+                l10n.removePhoto,
+                style: const TextStyle(color: Colors.red),
               ),
             ),
           ],
@@ -503,6 +505,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       ),
     );
   }
+
 
   String _birthdayLabel(AppLocalizations l10n) {
     if (_birthday == null) return l10n.selectBirthday;
@@ -651,12 +654,11 @@ class _ProfileScreenState extends State<ProfileScreen>
                                   ),
                                   label: Text(l10n.choosePicture),
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: kPrimaryBlue,
-                                    foregroundColor: Colors.white,
+                                    backgroundColor: kPrimaryGold,
+                                    foregroundColor: Colors.black,
                                     elevation: 1,
                                     shape: RoundedRectangleBorder(
-                                      borderRadius:
-                                      BorderRadius.circular(12),
+                                      borderRadius: BorderRadius.circular(12),
                                     ),
                                   ),
                                 ),
@@ -765,59 +767,49 @@ class _ProfileScreenState extends State<ProfileScreen>
 
                                 Builder(
                                   builder: (_) {
+                                    // Make sure these exist in your outer scope:
+                                    // final isRtl = Directionality.of(context) == TextDirection.rtl;
+                                    // final textDirection = isRtl ? TextDirection.rtl : TextDirection.ltr;
+
                                     final maleChip = ChoiceChip(
                                       label: Text('${l10n.male} 🐻'),
                                       selected: _gender == 'male',
-                                      selectedColor: kPrimaryBlue,
+                                      selectedColor: kPrimaryGold,
                                       backgroundColor: kSurfaceColor,
                                       labelStyle: TextStyle(
-                                        color: _gender == 'male'
-                                            ? Colors.white
-                                            : Colors.white70,
+                                        fontWeight: FontWeight.w600,
+                                        color: _gender == 'male' ? Colors.black : Colors.white70,
                                       ),
-                                      onSelected: (_) => setState(
-                                              () => _gender = 'male'),
+                                      onSelected: (_) => setState(() => _gender = 'male'),
                                     );
 
                                     final femaleChip = ChoiceChip(
                                       label: Text('${l10n.female} 💃'),
                                       selected: _gender == 'female',
-                                      selectedColor: kSecondaryAmber,
+                                      selectedColor: kGoldDeep,
                                       backgroundColor: kSurfaceColor,
                                       labelStyle: TextStyle(
-                                        color: _gender == 'female'
-                                            ? Colors.black
-                                            : Colors.white70,
+                                        fontWeight: FontWeight.w600,
+                                        color: _gender == 'female' ? Colors.black : Colors.white70,
                                       ),
-                                      onSelected: (_) => setState(
-                                              () => _gender = 'female'),
+                                      onSelected: (_) => setState(() => _gender = 'female'),
                                     );
 
                                     final preferNotChip = ChoiceChip(
                                       label: Text(l10n.preferNotToSay),
                                       selected: _gender == 'none',
-                                      selectedColor: Colors.grey,
+                                      selectedColor: kSurfaceAltColor, // neutral but consistent with theme
                                       backgroundColor: kSurfaceColor,
                                       labelStyle: TextStyle(
-                                        color: _gender == 'none'
-                                            ? Colors.black
-                                            : Colors.white70,
+                                        fontWeight: FontWeight.w500,
+                                        color: _gender == 'none' ? Colors.white : Colors.white70,
                                       ),
-                                      onSelected: (_) => setState(
-                                              () => _gender = 'none'),
+                                      onSelected: (_) => setState(() => _gender = 'none'),
                                     );
 
                                     final chips = isRtl
-                                        ? <Widget>[
-                                      femaleChip,
-                                      maleChip,
-                                      preferNotChip
-                                    ]
-                                        : <Widget>[
-                                      maleChip,
-                                      femaleChip,
-                                      preferNotChip
-                                    ];
+                                        ? <Widget>[femaleChip, maleChip, preferNotChip]
+                                        : <Widget>[maleChip, femaleChip, preferNotChip];
 
                                     return Wrap(
                                       spacing: 10,
@@ -827,7 +819,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                                     );
                                   },
                                 ),
-
                                 const SizedBox(height: 30),
 
                                 // === Save profile ===
@@ -850,12 +841,11 @@ class _ProfileScreenState extends State<ProfileScreen>
                                         : l10n.save.toUpperCase(),
                                   ),
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: kSecondaryAmber,
+                                    backgroundColor: kGoldDeep,
                                     foregroundColor: Colors.black,
                                     elevation: 2,
                                     shape: RoundedRectangleBorder(
-                                      borderRadius:
-                                      BorderRadius.circular(12),
+                                      borderRadius: BorderRadius.circular(12),
                                     ),
                                     padding: const EdgeInsets.symmetric(
                                       vertical: 14,

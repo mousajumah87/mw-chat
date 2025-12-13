@@ -1,49 +1,258 @@
 // MW Chat – Modern private messaging app
-// Copyright © 2025 Mousa Abu Hilal. All rights reserved.
+// Copyright © 2025 Mousa Abu Hilal.
 // lib/main.dart
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint, kDebugMode;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:provider/provider.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:provider/provider.dart';
 
 import 'firebase_options.dart';
 import 'screens/auth/auth_screen.dart';
 import 'screens/home/home_screen.dart';
-import 'screens/profile/profile_screen.dart';
 import 'theme/app_theme.dart';
 import 'utils/presence_service.dart';
 import 'l10n/app_localizations.dart';
 import 'utils/locale_provider.dart';
+import 'utils/current_chat_tracker.dart';
 
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+/// GLOBAL SNACKBAR KEY (FOR FOREGROUND NOTIFICATIONS)
+final GlobalKey<ScaffoldMessengerState> rootScaffoldMessengerKey =
+GlobalKey<ScaffoldMessengerState>();
+
+/// Global instance of CurrentChatTracker used both by Provider and FCM logic.
+final CurrentChatTracker currentChatTracker = CurrentChatTracker.instance;
+
+/// REQUIRED for background notifications (mobile only)
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
+  debugPrint('🔔 BACKGROUND MESSAGE: ${message.messageId}');
+  debugPrint('🔔 DATA: ${message.data}');
+}
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Firebase
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
+  // Register background handler (NOT on web)
   if (!kIsWeb) {
-    await FirebaseAppCheck.instance.activate(
-      androidProvider: AndroidProvider.playIntegrity,
-      appleProvider: AppleProvider.debug,
-      // Later you can switch to:
-      // appleProvider: AppleProvider.appAttest,
-      // webProvider: ReCaptchaV3Provider('your-site-key'),
+    FirebaseMessaging.onBackgroundMessage(
+      _firebaseMessagingBackgroundHandler,
     );
   }
 
-  // Start presence tracking once Firebase is ready.
+  // App Check (NOT on web)
+  if (!kIsWeb) {
+    try {
+      await FirebaseAppCheck.instance.activate(
+        androidProvider: AndroidProvider.playIntegrity,
+        appleProvider: kDebugMode ? AppleProvider.debug : AppleProvider.appAttest,
+      );
+    } catch (e) {
+      debugPrint('⚠️ App Check init skipped: $e');
+    }
+  }
+
+  // Initialize Push Notifications (NOT on web)
+  if (!kIsWeb) {
+    await _initPushNotifications();
+  }
+
+  // Presence tracking (safe for web)
   PresenceService.instance.init();
 
   runApp(
-    ChangeNotifierProvider(
-      create: (_) => LocaleProvider(),
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider<LocaleProvider>(
+          create: (_) => LocaleProvider(),
+        ),
+        // Provide currentChatTracker instance to the widget tree
+        ChangeNotifierProvider<CurrentChatTracker>.value(
+          value: currentChatTracker,
+        ),
+      ],
       child: const MyApp(),
     ),
   );
+}
+
+/// FULL SAFE FCM INITIALIZATION (MOBILE ONLY)
+Future<void> _initPushNotifications() async {
+  if (kIsWeb) {
+    // Extra safety guard
+    debugPrint('🌐 Web build → skipping _initPushNotifications');
+    return;
+  }
+
+  final messaging = FirebaseMessaging.instance;
+
+  // Auto Init
+  await messaging.setAutoInitEnabled(true);
+
+  // Permission
+  final settings = await messaging.requestPermission(
+    alert: true,
+    badge: true,
+    sound: true,
+  );
+
+  debugPrint('🔔 Notification permission: ${settings.authorizationStatus}');
+
+  // ❌ Do NOT show OS notification UI when app is in foreground.
+  // We'll handle foreground behavior ourselves.
+  await messaging.setForegroundNotificationPresentationOptions(
+    alert: false,
+    badge: false,
+    sound: false,
+  );
+
+  // Token Refresh
+  FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
+    debugPrint('🔁 TOKEN REFRESHED: $newToken');
+    await _storeTokenSafely(newToken);
+  });
+
+  // Try to get initial token
+  try {
+    final token = await messaging.getToken();
+    debugPrint('🔑 Initial FCM TOKEN: $token');
+    if (token != null) {
+      await _storeTokenSafely(token);
+    }
+  } on FirebaseException catch (e) {
+    if (e.code == 'apns-token-not-set') {
+      debugPrint(
+        '⏳ APNs token not ready yet, will wait for onTokenRefresh callback.',
+      );
+    } else {
+      rethrow;
+    }
+  }
+
+  // ✅ FOREGROUND MESSAGE → conditional SnackBar
+  FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+    final activeRoomId = currentChatTracker.activeRoomId;
+    final roomIdFromPush = message.data['roomId'];
+
+    debugPrint(
+      '🔔 FOREGROUND MESSAGE | activeRoom=$activeRoomId, pushRoom=$roomIdFromPush',
+    );
+
+    // 1) If push is for the chat the user is currently viewing → suppress UI
+    if (roomIdFromPush != null &&
+        roomIdFromPush.isNotEmpty &&
+        roomIdFromPush == activeRoomId) {
+      debugPrint('ℹ️ User is already in this chat room → no banner shown.');
+      return;
+    }
+
+    //final body = message.notification?.body ?? '';
+    //content: Text('$title\n$body'),
+
+    // 2) Otherwise, show a small in-app banner (SnackBar)
+    final title = message.notification?.title?.trim();
+    final safeTitle = (title == null || title.isEmpty) ? 'MW Chat' : title;
+
+    rootScaffoldMessengerKey.currentState?.showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.notifications_active_rounded, size: 18),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                safeTitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+
+  });
+
+  // BACKGROUND → APP OPENED
+  FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+    debugPrint('🔔 OPENED FROM NOTIFICATION');
+    // (Optional) you can navigate to message.data['roomId'] here
+  });
+
+  // TERMINATED LAUNCH
+  final initial = await FirebaseMessaging.instance.getInitialMessage();
+  if (initial != null) {
+    debugPrint('🔔 APP OPENED FROM TERMINATED PUSH');
+    // (Optional) navigate based on initial.data['roomId']
+  }
+}
+
+/// SAFELY STORE TOKEN EVEN IF USER LOGS IN LATER
+Future<void> _storeTokenSafely(String token) async {
+  if (kIsWeb) {
+    debugPrint('🌐 Web build → skipping _storeTokenSafely');
+    return;
+  }
+
+  final auth = FirebaseAuth.instance;
+  final user = auth.currentUser;
+
+  if (user != null) {
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .set({'fcmToken': token}, SetOptions(merge: true));
+    debugPrint('✅ Stored FCM token for user ${user.uid}');
+  } else {
+    debugPrint('ℹ️ User not logged in, token cached only in memory.');
+  }
+}
+
+/// Ensure the current logged-in user has a token stored in Firestore
+Future<void> syncFcmTokenForCurrentUser() async {
+  if (kIsWeb) {
+    // ❗ No FCM token / service worker on web for now.
+    debugPrint('🌐 Web build → skipping syncFcmTokenForCurrentUser');
+    return;
+  }
+
+  final user = FirebaseAuth.instance.currentUser;
+  if (user == null) return;
+
+  try {
+    final token = await FirebaseMessaging.instance.getToken();
+    if (token == null) return;
+
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .set({'fcmToken': token}, SetOptions(merge: true));
+
+    debugPrint('✅ Synced FCM token for user ${user.uid}');
+  } on FirebaseException catch (e) {
+    if (e.code == 'apns-token-not-set') {
+      debugPrint(
+        '⏳ syncFcmTokenForCurrentUser: APNs token not ready yet, will rely on onTokenRefresh.',
+      );
+    } else {
+      rethrow;
+    }
+  }
 }
 
 class MyApp extends StatelessWidget {
@@ -51,54 +260,27 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Listen to locale changes from your provider
-    final localeProvider = context.watch<LocaleProvider>();
+  final localeProvider = context.watch<LocaleProvider>();
+  final locale = localeProvider.locale;
+  final bool isArabic = locale.languageCode == 'ar';
 
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      theme: buildAppTheme(),
-
-      // Use the locale from your provider
-      locale: localeProvider.locale,
-
-      // Localization setup
-      localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
-
-      // Safely get the localized app title AFTER MaterialApp creates
-      // a proper localization context.
-      onGenerateTitle: (ctx) =>
-      AppLocalizations.of(ctx)?.mainTitle ?? 'MW Chat',
-
-      // Decide which screen to show based on auth + profile state
-      home: const AuthGate(),
-    );
+  return MaterialApp(
+  scaffoldMessengerKey: rootScaffoldMessengerKey,
+  debugShowCheckedModeBanner: false,
+  theme: buildAppTheme(isArabic: isArabic),
+  locale: localeProvider.locale,
+  localizationsDelegates: AppLocalizations.localizationsDelegates,
+  supportedLocales: AppLocalizations.supportedLocales,
+  onGenerateTitle: (ctx) =>
+  AppLocalizations.of(ctx)?.mainTitle ?? 'MW Chat',
+  home: const AuthGate(),
+  );
   }
 }
 
-/// Redirects user depending on login state + profile completeness + activation.
-/// Terms of Use acceptance is enforced inside HomeScreen via a full-screen
-/// TermsOfUseScreen shown after login, before the user can use chats.
+/// AUTH GATE — FIXED (prevents "not active" flash for active users)
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
-
-  /// Profile is considered complete with ONLY:
-  /// - firstName
-  /// - lastName
-  ///
-  /// Birthday and gender are BOTH optional and are **not required**
-  /// for the app to function, to comply with App Store guideline 5.1.1.
-  bool _isProfileComplete(Map<String, dynamic>? data) {
-    if (data == null) return false;
-
-    final firstName = (data['firstName'] ?? '').toString().trim();
-    final lastName = (data['lastName'] ?? '').toString().trim();
-
-    final hasFirstName = firstName.isNotEmpty;
-    final hasLastName = lastName.isNotEmpty;
-
-    return hasFirstName && hasLastName;
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -114,86 +296,243 @@ class AuthGate extends StatelessWidget {
         }
 
         final user = authSnap.data;
-        if (user == null) {
-          // Not logged in → go to auth screen
-          return const AuthScreen();
-        }
+        if (user == null) return const AuthScreen();
 
-        // Logged in → watch user doc (profile + isActive)
-        return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-          stream: FirebaseFirestore.instance
+        // ✅ 1) Confirm activation from SERVER once
+        // This prevents showing the inactive screen for active users due to cache/old snapshot.
+        return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+          future: FirebaseFirestore.instance
               .collection('users')
               .doc(user.uid)
-              .snapshots(),
-          builder: (context, userSnap) {
-            if (userSnap.connectionState == ConnectionState.waiting) {
-              return const Scaffold(
-                body: Center(child: CircularProgressIndicator()),
-              );
-            }
-
-            if (!userSnap.hasData || !userSnap.data!.exists) {
-              // User doc not yet created (small window after registration)
+              .get(const GetOptions(source: Source.server)),
+          builder: (context, serverSnap) {
+            if (serverSnap.connectionState == ConnectionState.waiting) {
               return Scaffold(
                 body: Center(
-                  child: Text(l10n.settingUpProfile),
-                ),
-              );
-            }
-
-            final data = userSnap.data!.data() ?? {};
-
-            // 1) If profile is missing REQUIRED fields (name only) → ProfileScreen
-            // if (!_isProfileComplete(data)) {
-            //   // User can fill first/last name here.
-            //   // Birthday and gender are OPTIONAL and not required.
-            //   return const ProfileScreen();
-            // }
-
-            // 2) Profile is complete; check activation flag
-            final isActive = data['isActive'] == true;
-            if (!isActive) {
-              // Account created but not activated yet
-              return Scaffold(
-                body: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24.0),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          l10n.accountNotActive,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          l10n.waitForActivation,
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 24),
-                        ElevatedButton.icon(
-                          onPressed: () async {
-                            await FirebaseAuth.instance.signOut();
-                          },
-                          icon: const Icon(Icons.logout),
-                          label: Text(l10n.logout),
-                        ),
-                      ],
-                    ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(
+                        width: 44,
+                        height: 44,
+                        child: CircularProgressIndicator(),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        l10n.settingUpProfile,
+                        style: const TextStyle(color: kTextSecondary),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
                   ),
                 ),
               );
             }
 
-            // 3) Active + profile complete → go to main user list
-            return const HomeScreen();
+            // If server fetch fails (offline), fall back to stream behavior safely.
+            if (serverSnap.hasError) {
+              return _UserDocStreamGate(userId: user.uid);
+            }
+
+            final serverDoc = serverSnap.data;
+
+            if (serverDoc == null || !serverDoc.exists) {
+              return Scaffold(
+                body: Center(child: Text(l10n.settingUpProfile)),
+              );
+            }
+
+            final serverData = serverDoc.data() ?? {};
+            final serverIsActive = serverData['isActive'] == true;
+
+            // ✅ If server says ACTIVE → go directly Home (no inactive flash)
+            if (serverIsActive) {
+              if (!kIsWeb) {
+                syncFcmTokenForCurrentUser();
+              }
+              return const HomeScreen();
+            }
+
+            // ✅ If server says NOT active → show pending screen + keep listening for activation
+            return _UserDocStreamGate(userId: user.uid);
           },
         );
       },
+    );
+  }
+}
+
+/// After initial server confirmation, listen for live changes (auto-updates when admin activates).
+class _UserDocStreamGate extends StatelessWidget {
+  final String userId;
+  const _UserDocStreamGate({required this.userId});
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .snapshots(includeMetadataChanges: true),
+      builder: (context, userSnap) {
+        if (!userSnap.hasData || !userSnap.data!.exists) {
+          return Scaffold(
+            body: Center(child: Text(l10n.settingUpProfile)),
+          );
+        }
+
+        final snap = userSnap.data!;
+        final data = snap.data() ?? {};
+
+        // ✅ If snapshot is from cache, don't show "not active"
+        // (prevents rare edge-cases flicker). Show a small loader instead.
+        if (snap.metadata.isFromCache) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final isActive = data['isActive'] == true;
+
+        if (!isActive) {
+          return _PendingActivationScreen(
+            userId: userId,
+            onCheckAgain: () async {
+              await FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(userId)
+                  .get(const GetOptions(source: Source.server));
+            },
+            onLogout: () async {
+              await FirebaseAuth.instance.signOut();
+            },
+          );
+        }
+
+        // ✅ Active
+        if (!kIsWeb) {
+          syncFcmTokenForCurrentUser();
+        }
+        return const HomeScreen();
+      },
+    );
+  }
+}
+
+/// Modern inactive UI (no infinite spinner) + manual check + logout
+class _PendingActivationScreen extends StatelessWidget {
+  final String userId;
+  final Future<void> Function() onCheckAgain;
+  final Future<void> Function() onLogout;
+
+  const _PendingActivationScreen({
+    required this.userId,
+    required this.onCheckAgain,
+    required this.onLogout,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+
+    return Scaffold(
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 72,
+                height: 72,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    colors: [kPrimaryGold, kGoldDeep],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                ),
+                child: const Icon(
+                  Icons.lock_clock_rounded,
+                  color: Colors.black,
+                  size: 34,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                l10n.accountNotActive,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 10),
+              Text(
+                l10n.waitForActivation,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: kTextSecondary),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                l10n.autoUpdateNotice,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.65),
+                  fontSize: 12.5,
+                ),
+              ),
+              const SizedBox(height: 22),
+
+              ElevatedButton.icon(
+                onPressed: () => onCheckAgain(),
+                icon: const Icon(Icons.refresh_rounded, color: Colors.black),
+                label: Text(
+                  l10n.checkAgain,
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: kPrimaryGold,
+                  foregroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 12,
+                    horizontal: 18,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              OutlinedButton.icon(
+                onPressed: () => onLogout(),
+                icon: const Icon(Icons.logout, color: kTextSecondary),
+                label: Text(
+                  l10n.logout,
+                  style: const TextStyle(color: kTextSecondary),
+                ),
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: Colors.white.withOpacity(0.18)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 12,
+                    horizontal: 18,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

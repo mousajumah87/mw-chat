@@ -1,6 +1,7 @@
 // lib/screens/home/user_profile_screen.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -28,6 +29,9 @@ class _UserProfileScreenState extends State<UserProfileScreen>
 
   late final AnimationController _glowController;
 
+  // ✅ Cache ScaffoldMessenger safely (prevents deactivated ancestor lookup)
+  ScaffoldMessengerState? _messenger;
+
   @override
   void initState() {
     super.initState();
@@ -38,14 +42,35 @@ class _UserProfileScreenState extends State<UserProfileScreen>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // ✅ Safe: capture messenger while widget is active
+    _messenger = ScaffoldMessenger.maybeOf(context);
+  }
+
+  @override
   void dispose() {
     _glowController.dispose();
     super.dispose();
   }
 
+  void _showSnack(String message) {
+    final m = _messenger;
+    if (m == null) return;
+    m.showSnackBar(SnackBar(content: Text(message)));
+  }
+
   Future<void> _openMwWebsite() async {
     final uri = Uri.parse(_websiteUrl);
-    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+
+    // LaunchMode.externalApplication can be problematic on web.
+    // PlatformDefault works across iOS/Android/Web.
+    final ok = await launchUrl(
+      uri,
+      mode: LaunchMode.platformDefault,
+    );
+
+    if (!ok) {
       debugPrint('Could not launch $_websiteUrl');
     }
   }
@@ -73,8 +98,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     if (dob == null) return l10n.unknown;
     int years = DateTime.now().year - dob.year;
     final now = DateTime.now();
-    if (now.month < dob.month ||
-        (now.month == dob.month && now.day < dob.day)) {
+    if (now.month < dob.month || (now.month == dob.month && now.day < dob.day)) {
       years--;
     }
     return years.toString();
@@ -103,8 +127,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: kSurfaceAltColor,
-        shape:
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
           currentlyBlocked
               ? l10n.profileBlockDialogTitleUnblock
@@ -132,7 +155,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                   ? l10n.profileBlockDialogConfirmUnblock
                   : l10n.profileBlockDialogConfirmBlock,
               style: TextStyle(
-                color: currentlyBlocked ? kPrimaryBlue : Colors.redAccent,
+                color: currentlyBlocked ? kPrimaryGold : Colors.redAccent,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -146,8 +169,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
 
     setState(() => _isBlocking = true);
     try {
-      final ref =
-      FirebaseFirestore.instance.collection('users').doc(currentUid);
+      final ref = FirebaseFirestore.instance.collection('users').doc(currentUid);
       await ref.update({
         'blockedUserIds': currentlyBlocked
             ? FieldValue.arrayRemove([widget.userId])
@@ -155,14 +177,12 @@ class _UserProfileScreenState extends State<UserProfileScreen>
       });
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            currentlyBlocked
-                ? l10n.profileBlockSnackbarUnblocked
-                : l10n.profileBlockSnackbarBlocked,
-          ),
-        ),
+
+      // ✅ Use cached messenger instead of ScaffoldMessenger.of(context)
+      _showSnack(
+        currentlyBlocked
+            ? l10n.profileBlockSnackbarUnblocked
+            : l10n.profileBlockSnackbarBlocked,
       );
     } finally {
       if (mounted) setState(() => _isBlocking = false);
@@ -184,130 +204,133 @@ class _UserProfileScreenState extends State<UserProfileScreen>
       l10n.reasonOther,
     ];
 
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) {
-        String? selectedCategory;
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) {
+          String? selectedCategory;
 
-        return StatefulBuilder(
-          builder: (context, setState) {
-            final bool canSave = selectedCategory != null;
+          return StatefulBuilder(
+            builder: (innerContext, dialogSetState) {
+              final bool canSave = selectedCategory != null;
 
-            return AlertDialog(
-              backgroundColor: kSurfaceAltColor,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              title: Text(
-                l10n.reportUserTitle,
-                style: const TextStyle(color: Colors.white),
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  DropdownButtonFormField<String>(
-                    value: selectedCategory,
-                    isExpanded: true,
-                    decoration: InputDecoration(
-                      labelText: l10n.reportUserReasonLabel,
-                      border: const OutlineInputBorder(),
-                      filled: true,
-                      fillColor: kSurfaceColor.withOpacity(0.4),
-                    ),
-                    items: reasonCategories
-                        .map(
-                          (r) => DropdownMenuItem<String>(
-                        value: r,
-                        child: Text(r),
+              return AlertDialog(
+                backgroundColor: kSurfaceAltColor,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                title: Text(
+                  l10n.reportUserTitle,
+                  style: const TextStyle(color: Colors.white),
+                ),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    DropdownButtonFormField<String>(
+                      value: selectedCategory,
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        labelText: l10n.reportUserReasonLabel,
+                        border: const OutlineInputBorder(),
+                        filled: true,
+                        fillColor: kSurfaceColor.withOpacity(0.4),
                       ),
-                    )
-                        .toList(),
-                    onChanged: (val) {
-                      setState(() {
-                        selectedCategory = val;
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: reasonController,
-                    maxLines: 4,
-                    decoration: InputDecoration(
-                      hintText: l10n.reportUserHint,
-                      filled: true,
-                      fillColor: kSurfaceColor.withOpacity(0.4),
-                      border: const OutlineInputBorder(),
+                      items: reasonCategories
+                          .map(
+                            (r) => DropdownMenuItem<String>(
+                          value: r,
+                          child: Text(r),
+                        ),
+                      )
+                          .toList(),
+                      onChanged: (val) {
+                        dialogSetState(() {
+                          selectedCategory = val;
+                        });
+                      },
                     ),
-                    style: const TextStyle(color: Colors.white),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: reasonController,
+                      maxLines: 4,
+                      decoration: InputDecoration(
+                        hintText: l10n.reportUserHint,
+                        filled: true,
+                        fillColor: kSurfaceColor.withOpacity(0.4),
+                        border: const OutlineInputBorder(),
+                      ),
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    child: Text(
+                      l10n.cancel,
+                      style: const TextStyle(color: Colors.white70),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: !canSave
+                        ? null
+                        : () async {
+                      // Mark as reporting at the screen level
+                      if (mounted) {
+                        setState(() => _isReporting = true);
+                      }
+
+                      final details = reasonController.text.trim().isEmpty
+                          ? null
+                          : reasonController.text.trim();
+
+                      try {
+                        await FirebaseFirestore.instance
+                            .collection('userReports')
+                            .add({
+                          'reporterId': currentUid,
+                          'reportedUserId': widget.userId,
+                          'reasonCategory': selectedCategory,
+                          'reasonDetails': details,
+                          'createdAt': FieldValue.serverTimestamp(),
+                          'status': 'open',
+                        });
+                      } catch (e, st) {
+                        debugPrint('[UserProfile] report error: $e\n$st');
+                      } finally {
+                        if (mounted) {
+                          setState(() => _isReporting = false);
+                        }
+                      }
+
+                      if (dialogContext.mounted) {
+                        Navigator.of(dialogContext).pop();
+                      }
+
+                      // ✅ IMPORTANT FIX:
+                      // Do NOT use dialog builder context for ScaffoldMessenger.
+                      // Use cached messenger on the screen.
+                      if (mounted) {
+                        _showSnack(l10n.reportSubmitted);
+                      }
+                    },
+                    child: Text(
+                      l10n.save,
+                      style: TextStyle(
+                        color: canSave ? kGoldDeep : kGoldDeep.withOpacity(0.4),
+                      ),
+                    ),
                   ),
                 ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: Text(
-                    l10n.cancel,
-                    style: const TextStyle(color: Colors.white70),
-                  ),
-                ),
-                TextButton(
-                  onPressed: !canSave
-                      ? null
-                      : () async {
-                    setState(() => _isReporting = true);
-
-                    final details =
-                    reasonController.text.trim().isEmpty
-                        ? null
-                        : reasonController.text.trim();
-
-                    try {
-                      await FirebaseFirestore.instance
-                          .collection('userReports')
-                          .add({
-                        'reporterId': currentUid,
-                        'reportedUserId': widget.userId,
-                        'reasonCategory': selectedCategory,
-                        'reasonDetails': details,
-                        'createdAt': FieldValue.serverTimestamp(),
-                        'status': 'open',
-                      });
-                    } catch (e, st) {
-                      debugPrint(
-                          '[UserProfile] report error: $e\n$st');
-                    } finally {
-                      if (mounted) {
-                        setState(() => _isReporting = false);
-                      }
-                    }
-
-                    if (dialogContext.mounted) {
-                      Navigator.of(dialogContext).pop();
-                    }
-
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(l10n.reportSubmitted),
-                        ),
-                      );
-                    }
-                  },
-                  child: Text(
-                    l10n.save,
-                    style: TextStyle(
-                      color: canSave
-                          ? kSecondaryAmber
-                          : kSecondaryAmber.withOpacity(0.4),
-                    ),
-                  ),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
+              );
+            },
+          );
+        },
+      );
+    } finally {
+      // ✅ Prevent controller leaks
+      reasonController.dispose();
+    }
   }
 
   Widget _buildFooter(
@@ -351,7 +374,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
               child: Text(
-                'mwchats.com',
+                l10n.websiteDomain,
                 style: textStyle?.copyWith(
                   decoration: TextDecoration.underline,
                   fontWeight: FontWeight.w500,
@@ -419,19 +442,16 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                           color: Colors.white.withOpacity(0.08),
                         ),
                       ),
-                      child: StreamBuilder<
-                          DocumentSnapshot<Map<String, dynamic>>>(
+                      child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
                         stream: FirebaseFirestore.instance
                             .collection('users')
                             .doc(widget.userId)
                             .snapshots(),
                         builder: (context, snapshot) {
-                          if (snapshot.connectionState ==
-                              ConnectionState.waiting) {
+                          if (snapshot.connectionState == ConnectionState.waiting) {
                             return const _ShimmerLoader();
                           }
-                          if (!snapshot.hasData ||
-                              !snapshot.data!.exists) {
+                          if (!snapshot.hasData || !snapshot.data!.exists) {
                             return Center(
                               child: Text(
                                 l10n.userNotFound,
@@ -452,14 +472,10 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                           final isActive = data['isActive'] != false;
 
                           final theirBlocked =
-                              (data['blockedUserIds'] as List?)
-                                  ?.cast<String>() ??
-                                  [];
-                          final hasBlockedMe = currentUid != null &&
-                              theirBlocked.contains(currentUid);
+                              (data['blockedUserIds'] as List?)?.cast<String>() ?? [];
+                          final hasBlockedMe = currentUid != null && theirBlocked.contains(currentUid);
 
-                          final rawIsOnline =
-                              data['isOnline'] == true && isActive;
+                          final rawIsOnline = data['isOnline'] == true && isActive;
                           final lastSeen = data['lastSeen'] is Timestamp
                               ? data['lastSeen'] as Timestamp
                               : null;
@@ -469,8 +485,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                                 lastSeen: lastSeen,
                               );
 
-                          final (presenceLabel, presenceColor) =
-                          _buildPresenceStatus(
+                          final (presenceLabel, presenceColor) = _buildPresenceStatus(
                             l10n,
                             isActive: isActive,
                             effectiveOnline: effectiveOnline,
@@ -483,11 +498,9 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                           }
                           final ageLabel = _ageLabel(dob, l10n);
                           final birthdayLabel = dob != null
-                              ? DateFormat.yMMMd(l10n.localeName)
-                              .format(dob)
+                              ? DateFormat.yMMMd(l10n.localeName).format(dob)
                               : l10n.unknown;
 
-                          // Avatar with glow
                           final avatar = Stack(
                             alignment: Alignment.center,
                             children: [
@@ -502,10 +515,8 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                                       shape: BoxShape.circle,
                                       gradient: RadialGradient(
                                         colors: [
-                                          kPrimaryBlue.withOpacity(
-                                              0.3 + glow * 0.2),
-                                          kSecondaryAmber.withOpacity(
-                                              0.2 + glow * 0.2),
+                                          kPrimaryGold.withOpacity(0.3 + glow * 0.2),
+                                          kGoldDeep.withOpacity(0.2 + glow * 0.2),
                                           Colors.transparent,
                                         ],
                                         stops: const [0.4, 0.8, 1],
@@ -517,14 +528,11 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                               CircleAvatar(
                                 radius: 58,
                                 backgroundColor: kSurfaceAltColor,
-                                backgroundImage: profileUrl.isNotEmpty
-                                    ? NetworkImage(profileUrl)
-                                    : null,
+                                backgroundImage:
+                                profileUrl.isNotEmpty ? NetworkImage(profileUrl) : null,
                                 child: profileUrl.isEmpty
                                     ? Text(
-                                  avatarType == 'smurf'
-                                      ? '🧜‍♀️'
-                                      : '🐻',
+                                  avatarType == 'smurf' ? '🧜‍♀️' : '🐻',
                                   style: const TextStyle(fontSize: 42),
                                 )
                                     : null,
@@ -538,17 +546,14 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                             child: Align(
                               alignment: Alignment.topCenter,
                               child: ConstrainedBox(
-                                constraints:
-                                const BoxConstraints(maxWidth: 540),
+                                constraints: const BoxConstraints(maxWidth: 540),
                                 child: Column(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     avatar,
                                     const SizedBox(height: 16),
                                     Text(
-                                      fullName.isNotEmpty
-                                          ? fullName
-                                          : l10n.unknown,
+                                      fullName.isNotEmpty ? fullName : l10n.unknown,
                                       style: const TextStyle(
                                         color: Colors.white,
                                         fontSize: 24,
@@ -558,26 +563,20 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                                     ),
                                     const SizedBox(height: 12),
                                     AnimatedContainer(
-                                      duration: const Duration(
-                                          milliseconds: 400),
-                                      padding:
-                                      const EdgeInsets.symmetric(
+                                      duration: const Duration(milliseconds: 400),
+                                      padding: const EdgeInsets.symmetric(
                                         horizontal: 14,
                                         vertical: 6,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: presenceColor
-                                            .withOpacity(0.20),
-                                        borderRadius:
-                                        BorderRadius.circular(20),
+                                        color: presenceColor.withOpacity(0.20),
+                                        borderRadius: BorderRadius.circular(20),
                                         border: Border.all(
-                                          color: presenceColor
-                                              .withOpacity(0.8),
+                                          color: presenceColor.withOpacity(0.8),
                                         ),
                                         boxShadow: [
                                           BoxShadow(
-                                            color: presenceColor
-                                                .withOpacity(0.35),
+                                            color: presenceColor.withOpacity(0.35),
                                             blurRadius: 10,
                                             spreadRadius: 1,
                                           ),
@@ -596,8 +595,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                                             presenceLabel,
                                             style: TextStyle(
                                               color: presenceColor,
-                                              fontWeight:
-                                              FontWeight.w600,
+                                              fontWeight: FontWeight.w600,
                                             ),
                                           ),
                                         ],
@@ -606,20 +604,15 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                                     if (hasBlockedMe) ...[
                                       const SizedBox(height: 10),
                                       Text(
-                                        l10n
-                                            .profileBlockedUserHintLimitedVisibility,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodySmall
-                                            ?.copyWith(
+                                        l10n.profileBlockedUserHintLimitedVisibility,
+                                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                           color: Colors.white60,
                                         ),
                                         textAlign: TextAlign.center,
                                       ),
                                     ],
                                     const SizedBox(height: 24),
-                                    const Divider(
-                                        color: Colors.white24),
+                                    const Divider(color: Colors.white24),
                                     const SizedBox(height: 16),
                                     _InfoRow(
                                       icon: Icons.cake_outlined,
@@ -628,8 +621,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                                     ),
                                     const SizedBox(height: 10),
                                     _InfoRow(
-                                      icon: Icons
-                                          .calendar_today_outlined,
+                                      icon: Icons.calendar_today_outlined,
                                       label: l10n.birthdayLabel,
                                       value: birthdayLabel,
                                     ),
@@ -639,89 +631,58 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                                       label: l10n.genderLabel,
                                       value: gender.isEmpty
                                           ? l10n.notSpecified
-                                          : gender[0].toUpperCase() +
-                                          gender.substring(1),
+                                          : gender[0].toUpperCase() + gender.substring(1),
                                     ),
-                                    if (!isSelf &&
-                                        currentUid != null) ...[
+                                    if (!isSelf && currentUid != null) ...[
                                       const SizedBox(height: 28),
-                                      const Divider(
-                                          color: Colors.white24),
+                                      const Divider(color: Colors.white24),
                                       const SizedBox(height: 12),
                                       Align(
                                         alignment: Alignment.centerLeft,
                                         child: Text(
-                                          l10n
-                                              .profileSafetyToolsSectionTitle,
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .bodyMedium
-                                              ?.copyWith(
+                                          l10n.profileSafetyToolsSectionTitle,
+                                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                                             color: Colors.white70,
-                                            fontWeight:
-                                            FontWeight.w600,
+                                            fontWeight: FontWeight.w600,
                                           ),
                                         ),
                                       ),
                                       const SizedBox(height: 10),
                                       FutureBuilder<bool>(
-                                        future:
-                                        _isUserBlocked(currentUid),
-                                        builder:
-                                            (context, blockSnap) {
-                                          final isBlocked =
-                                              blockSnap.data ?? false;
+                                        future: _isUserBlocked(currentUid),
+                                        builder: (context, blockSnap) {
+                                          final isBlocked = blockSnap.data ?? false;
                                           return Column(
                                             children: [
                                               SizedBox(
                                                 width: double.infinity,
-                                                child:
-                                                ElevatedButton.icon(
+                                                child: ElevatedButton.icon(
                                                   onPressed: _isBlocking
                                                       ? null
-                                                      : () =>
-                                                      _toggleBlockUser(
-                                                        context,
-                                                        currentUid:
-                                                        currentUid,
-                                                        currentlyBlocked:
-                                                        isBlocked,
-                                                      ),
+                                                      : () => _toggleBlockUser(
+                                                    context,
+                                                    currentUid: currentUid,
+                                                    currentlyBlocked: isBlocked,
+                                                  ),
                                                   icon: Icon(
                                                     isBlocked
-                                                        ? Icons
-                                                        .person_remove
+                                                        ? Icons.person_remove
                                                         : Icons.block,
                                                     size: 18,
                                                   ),
                                                   label: Text(
                                                     isBlocked
-                                                        ? l10n
-                                                        .profileBlockButtonUnblock
-                                                        : l10n
-                                                        .profileBlockButtonBlock,
+                                                        ? l10n.profileBlockButtonUnblock
+                                                        : l10n.profileBlockButtonBlock,
                                                   ),
-                                                  style: ElevatedButton
-                                                      .styleFrom(
-                                                    backgroundColor:
-                                                    isBlocked
-                                                        ? Colors.red
-                                                        .withOpacity(
-                                                        0.45)
-                                                        : Colors
-                                                        .redAccent,
-                                                    foregroundColor:
-                                                    Colors.white,
-                                                    padding: const EdgeInsets
-                                                        .symmetric(
-                                                      vertical: 12,
-                                                    ),
-                                                    shape:
-                                                    RoundedRectangleBorder(
-                                                      borderRadius:
-                                                      BorderRadius
-                                                          .circular(
-                                                          24),
+                                                  style: ElevatedButton.styleFrom(
+                                                    backgroundColor: isBlocked
+                                                        ? Colors.red.withOpacity(0.45)
+                                                        : Colors.redAccent,
+                                                    foregroundColor: Colors.white,
+                                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                                    shape: RoundedRectangleBorder(
+                                                      borderRadius: BorderRadius.circular(24),
                                                     ),
                                                     elevation: 6,
                                                   ),
@@ -730,50 +691,29 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                                               const SizedBox(height: 10),
                                               SizedBox(
                                                 width: double.infinity,
-                                                child:
-                                                OutlinedButton.icon(
+                                                child: OutlinedButton.icon(
                                                   onPressed: _isReporting
                                                       ? null
-                                                      : () =>
-                                                      _reportUser(
-                                                        context,
-                                                        currentUid:
-                                                        currentUid,
-                                                      ),
+                                                      : () => _reportUser(
+                                                    context,
+                                                    currentUid: currentUid,
+                                                  ),
                                                   icon: const Icon(
                                                     Icons.flag_outlined,
                                                     size: 18,
                                                   ),
-                                                  label: Text(
-                                                    l10n
-                                                        .profileReportButtonLabel,
-                                                  ),
-                                                  style:
-                                                  OutlinedButton
-                                                      .styleFrom(
-                                                    foregroundColor:
-                                                    kSecondaryAmber,
-                                                    side:
-                                                    const BorderSide(
-                                                      color:
-                                                      kSecondaryAmber,
+                                                  label: Text(l10n.profileReportButtonLabel),
+                                                  style: OutlinedButton.styleFrom(
+                                                    foregroundColor: kGoldDeep,
+                                                    side: const BorderSide(
+                                                      color: kGoldDeep,
                                                       width: 1.4,
                                                     ),
-                                                    padding: const EdgeInsets
-                                                        .symmetric(
-                                                      vertical: 12,
+                                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                                    shape: RoundedRectangleBorder(
+                                                      borderRadius: BorderRadius.circular(24),
                                                     ),
-                                                    shape:
-                                                    RoundedRectangleBorder(
-                                                      borderRadius:
-                                                      BorderRadius
-                                                          .circular(
-                                                          24),
-                                                    ),
-                                                    backgroundColor:
-                                                    Colors.black
-                                                        .withOpacity(
-                                                        0.35),
+                                                    backgroundColor: Colors.black.withOpacity(0.35),
                                                   ),
                                                 ),
                                               ),

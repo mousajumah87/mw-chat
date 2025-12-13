@@ -36,6 +36,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
   Timer? _debounceTimer;
   final Set<String> _seenMessagesCache = {};
 
+
   // Friend status for this chat:
   // null, "accepted", "requested", "request_received", ...
   String? _friendStatus;
@@ -298,8 +299,17 @@ class _ChatMessageListState extends State<ChatMessageList> {
         required String reasonCategory,
         String? reasonDetails,
       }) async {
+    final l10n = AppLocalizations.of(context)!;
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+
+    // If somehow user is not logged in, show an error instead of doing nothing.
+    if (user == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.generalErrorMessage)),
+      );
+      return;
+    }
 
     final data = messageDoc.data() ?? {};
     final type = data['type'] ?? 'text';
@@ -315,13 +325,14 @@ class _ChatMessageListState extends State<ChatMessageList> {
 
         // New structured fields
         'reasonCategory': reasonCategory,
-        'reasonDetails':
-        (reasonDetails == null || reasonDetails.trim().isEmpty)
+        'reasonDetails': (reasonDetails == null ||
+            reasonDetails.trim().isEmpty)
             ? null
             : reasonDetails.trim(),
 
         // Backward-compatible combined reason string
-        'reason': (reasonDetails == null || reasonDetails.trim().isEmpty)
+        'reason': (reasonDetails == null ||
+            reasonDetails.trim().isEmpty)
             ? reasonCategory
             : '$reasonCategory – ${reasonDetails.trim()}',
 
@@ -332,16 +343,19 @@ class _ChatMessageListState extends State<ChatMessageList> {
         'status': 'open',
       });
 
-      if (context.mounted) {
-        final l10n = AppLocalizations.of(context)!;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.reportSubmitted)),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.reportSubmitted)),
+      );
     } catch (e, st) {
       debugPrint('[ChatMessageList] _reportMessage error: $e\n$st');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.generalErrorMessage)),
+      );
     }
   }
+
 
   Future<void> _showReportDialog(
       BuildContext context,
@@ -364,7 +378,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
         String? selectedCategory;
 
         return StatefulBuilder(
-          builder: (context, setState) {
+          builder: (context, dialogSetState) {
             final bool canSave = selectedCategory != null;
 
             return AlertDialog(
@@ -388,7 +402,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
                     )
                         .toList(),
                     onChanged: (val) {
-                      setState(() {
+                      dialogSetState(() {
                         selectedCategory = val;
                       });
                     },
@@ -445,6 +459,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
     );
   }
 
+
   // ================= DELETE / REPORT MENU =================
 
   Future<void> _onMessageLongPress(
@@ -453,12 +468,6 @@ class _ChatMessageListState extends State<ChatMessageList> {
       bool isMe,
       ) async {
     final l10n = AppLocalizations.of(context)!;
-
-    // Build options: always "Report", and "Delete" only if it's my message.
-    final options = <_MessageAction>[
-      if (isMe) _MessageAction.delete,
-      _MessageAction.report,
-    ];
 
     final selected = await showModalBottomSheet<_MessageAction>(
       context: context,
@@ -481,17 +490,27 @@ class _ChatMessageListState extends State<ChatMessageList> {
                 ),
               ),
               const SizedBox(height: 8),
-              if (isMe)
+              if (isMe) ...[
                 ListTile(
-                  leading:
-                  const Icon(Icons.delete_outline, color: Colors.red),
+                  leading: const Icon(Icons.visibility_off_outlined,
+                      color: Colors.white70),
                   title: Text(
-                    l10n.deleteMessageTitle,
+                    l10n.deleteChatForMe,
                     style: const TextStyle(color: Colors.white),
                   ),
                   onTap: () => Navigator.of(sheetContext)
-                      .pop(_MessageAction.delete),
+                      .pop(_MessageAction.deleteForMe),
                 ),
+                ListTile(
+                  leading: const Icon(Icons.delete_outline, color: Colors.red),
+                  title: Text(
+                    l10n.deleteMessageTitle, // same title text
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                  onTap: () => Navigator.of(sheetContext)
+                      .pop(_MessageAction.deleteForBoth),
+                ),
+              ],
               ListTile(
                 leading:
                 const Icon(Icons.flag_outlined, color: Colors.orange),
@@ -511,8 +530,16 @@ class _ChatMessageListState extends State<ChatMessageList> {
 
     if (selected == null) return;
 
-    if (selected == _MessageAction.delete && isMe) {
-      // Confirm delete
+    // ✅ "Delete for me" → hide only for current user using hiddenFor[]
+    if (selected == _MessageAction.deleteForMe && isMe) {
+      await messageDoc.reference.update({
+        'hiddenFor': FieldValue.arrayUnion([widget.currentUserId]),
+      });
+      return;
+    }
+
+    // ✅ "Delete for both" → keep your old hard-delete behavior
+    if (selected == _MessageAction.deleteForBoth && isMe) {
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -540,7 +567,10 @@ class _ChatMessageListState extends State<ChatMessageList> {
       final msgRef = messageDoc.reference;
       await _decrementUnreadIfNeeded(messageDoc);
       await msgRef.delete();
-    } else if (selected == _MessageAction.report) {
+      return;
+    }
+
+    if (selected == _MessageAction.report) {
       await _showReportDialog(context, messageDoc);
     }
   }
@@ -625,8 +655,21 @@ class _ChatMessageListState extends State<ChatMessageList> {
     final maxWidth = MediaQuery.of(context).size.width * 0.7;
     final l10n = AppLocalizations.of(context)!;
 
-    // If this chat is blocked from either side, do NOT stream messages.
-    // We show only the blocked info, and do not mark new messages as seen.
+    // NEW: high-contrast style for overlay/empty states
+    const TextStyle emptyStateStyle = TextStyle(
+      color: Colors.white,
+      fontSize: 14,
+      fontWeight: FontWeight.w500,
+      shadows: [
+        Shadow(
+          color: Colors.black54,
+          offset: Offset(0, 1),
+          blurRadius: 4,
+        ),
+      ],
+    );
+
+    // 🔒 Blocked state overlay (center of screen)
     if (widget.isBlocked) {
       return Center(
         child: Padding(
@@ -634,10 +677,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
           child: Text(
             l10n.userBlockedInfo,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: kTextSecondary,
-              fontSize: 14,
-            ),
+            style: emptyStateStyle,
           ),
         ),
       );
@@ -653,8 +693,21 @@ class _ChatMessageListState extends State<ChatMessageList> {
           .limit(200)
           .snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          // If no messages but there is a pending friend request, still show the banner.
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        // ✅ Apply "delete for me" filtering using hiddenFor
+        final allDocs = snapshot.data!.docs;
+        final docs = allDocs.where((doc) {
+          final data = doc.data();
+          final hiddenFor =
+              (data['hiddenFor'] as List?)?.cast<String>() ?? const <String>[];
+          return !hiddenFor.contains(widget.currentUserId);
+        }).toList();
+
+        // If no visible messages after filtering
+        if (docs.isEmpty) {
           if (_friendStatus == 'request_received' ||
               _friendStatus == 'requested') {
             return ListView(
@@ -668,7 +721,8 @@ class _ChatMessageListState extends State<ChatMessageList> {
                     padding: const EdgeInsets.only(top: 12),
                     child: Text(
                       l10n.noMessagesYet,
-                      style: const TextStyle(color: kTextSecondary),
+                      textAlign: TextAlign.center,
+                      style: emptyStateStyle,
                     ),
                   ),
                 ),
@@ -679,14 +733,13 @@ class _ChatMessageListState extends State<ChatMessageList> {
           return Center(
             child: Text(
               l10n.noMessagesYet,
-              style: const TextStyle(color: kTextSecondary),
+              textAlign: TextAlign.center,
+              style: emptyStateStyle,
             ),
           );
         }
 
-        final docs = snapshot.data!.docs;
-
-        // Schedule seen updates (debounced).
+        // Schedule seen updates (debounced) using visible docs
         _scheduleMarkMessagesAsSeen(docs);
 
         final bool showBanner =
@@ -721,6 +774,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
                   child: ConstrainedBox(
                     constraints: BoxConstraints(maxWidth: maxWidth),
                     child: MessageBubble(
+                      key: ValueKey(doc.id),
                       text: data['text'] ?? '',
                       timeLabel: formatTimestamp(data['createdAt']),
                       isMe: isMe,
@@ -743,6 +797,8 @@ class _ChatMessageListState extends State<ChatMessageList> {
 }
 
 enum _MessageAction {
-  delete,
+  deleteForMe,
+  deleteForBoth,
   report,
 }
+

@@ -1,7 +1,10 @@
 // lib/screens/auth/widgets/auth_register_section.dart
 import 'dart:io';
 import 'dart:typed_data';
+
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart';
+
 import '../../../l10n/app_localizations.dart';
 import '../../../theme/app_theme.dart';
 import 'auth_avatar_picker.dart';
@@ -17,7 +20,7 @@ class AuthRegisterSection extends StatelessWidget {
   final File? imageFile;
   final VoidCallback onPickImage;
 
-  // NEW — backward compatible
+  // Upload (optional)
   final bool isUploading;
   final double uploadProgress;
   final VoidCallback? onRemoveImage;
@@ -39,12 +42,9 @@ class AuthRegisterSection extends StatelessWidget {
     required this.imageBytes,
     required this.imageFile,
     required this.onPickImage,
-
-    // Defaults keep old behavior intact
     this.isUploading = false,
     this.uploadProgress = 0.0,
     this.onRemoveImage,
-
     required this.onPickBirthday,
     required this.onGenderChanged,
     required this.agreedToTerms,
@@ -61,14 +61,11 @@ class AuthRegisterSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        /// Avatar (fully wired)
         AuthAvatarPicker(
           imageBytes: imageBytes,
           imageFile: imageFile,
           isSubmitting: isSubmitting,
           onPickImage: onPickImage,
-
-          // NEW wiring (optional)
           isUploading: isUploading,
           uploadProgress: uploadProgress,
           onRemoveImage: onRemoveImage,
@@ -78,7 +75,6 @@ class AuthRegisterSection extends StatelessWidget {
         _buildPickImageButton(context, l10n),
         const SizedBox(height: 24),
 
-        /// First + Last Name
         Row(
           textDirection: isRTL ? TextDirection.rtl : TextDirection.ltr,
           children: [
@@ -86,7 +82,7 @@ class AuthRegisterSection extends StatelessWidget {
               child: _buildTextField(
                 controller: firstNameCtrl,
                 label: l10n.firstName,
-                focusColor: kSecondaryAmber,
+                focusColor: kGoldDeep,
                 isRTL: isRTL,
                 requiredError: l10n.requiredField,
               ),
@@ -96,7 +92,7 @@ class AuthRegisterSection extends StatelessWidget {
               child: _buildTextField(
                 controller: lastNameCtrl,
                 label: l10n.lastName,
-                focusColor: kPrimaryBlue,
+                focusColor: kPrimaryGold,
                 isRTL: isRTL,
                 requiredError: l10n.requiredField,
               ),
@@ -106,28 +102,25 @@ class AuthRegisterSection extends StatelessWidget {
 
         const SizedBox(height: 20),
 
-        /// Birthday
         _buildLabel(theme, '${l10n.birthday} ${l10n.optional}'),
         const SizedBox(height: 6),
         _buildBirthdayButton(l10n),
 
         const SizedBox(height: 20),
 
-        /// Gender
         _buildLabel(theme, '${l10n.gender} ${l10n.optional}'),
         const SizedBox(height: 8),
         _buildGenderChips(l10n, isRTL),
 
         const SizedBox(height: 24),
 
-        /// Terms of Use
         _buildTermsAcceptance(l10n),
       ],
     );
   }
 
   // -----------------------
-  // BUTTONS AND INPUTS
+  // PICK IMAGE BUTTON (GOLD + BLACK TEXT)
   // -----------------------
   Widget _buildPickImageButton(BuildContext context, AppLocalizations l10n) {
     return SizedBox(
@@ -139,23 +132,23 @@ class AuthRegisterSection extends StatelessWidget {
           try {
             await Future<void>.sync(onPickImage);
           } catch (e, st) {
-            debugPrint(
-                '[AuthRegisterSection] onPickImage error: $e\n$st');
+            debugPrint('[AuthRegisterSection] onPickImage error: $e\n$st');
           }
         },
-        icon: const Icon(Icons.photo_outlined, color: Colors.white),
+        icon: const Icon(Icons.photo_outlined, color: Colors.black), // ✅ BLACK
         label: Text(
           l10n.choosePicture,
           style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w600,
+            color: Colors.black, // ✅ BLACK
+            fontWeight: FontWeight.w700,
             letterSpacing: 0.3,
           ),
         ),
         style: ElevatedButton.styleFrom(
-          backgroundColor: kPrimaryBlue,
+          backgroundColor: kPrimaryGold,
+          foregroundColor: Colors.black, // ✅ ensures icon/text default black too
           elevation: 6,
-          shadowColor: kSecondaryAmber.withOpacity(0.3),
+          shadowColor: kGoldDeep.withOpacity(0.3),
           padding: const EdgeInsets.symmetric(vertical: 12),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
@@ -181,8 +174,7 @@ class AuthRegisterSection extends StatelessWidget {
         labelStyle: const TextStyle(color: kTextSecondary),
         filled: true,
         fillColor: kSurfaceAltColor.withOpacity(0.7),
-        contentPadding:
-        const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(color: Colors.white.withOpacity(0.25)),
@@ -219,8 +211,7 @@ class AuthRegisterSection extends StatelessWidget {
           try {
             await Future<void>.sync(onPickBirthday);
           } catch (e, st) {
-            debugPrint(
-                '[AuthRegisterSection] _pickBirthday error: $e\n$st');
+            debugPrint('[AuthRegisterSection] _pickBirthday error: $e\n$st');
           }
         },
         borderRadius: BorderRadius.circular(12),
@@ -239,7 +230,7 @@ class AuthRegisterSection extends StatelessWidget {
             border: Border.all(color: Colors.white.withOpacity(0.15)),
             boxShadow: [
               BoxShadow(
-                color: kSecondaryAmber.withOpacity(0.2),
+                color: kGoldDeep.withOpacity(0.2),
                 blurRadius: 8,
                 offset: const Offset(0, 4),
               ),
@@ -247,8 +238,7 @@ class AuthRegisterSection extends StatelessWidget {
           ),
           child: Row(
             children: [
-              const Icon(Icons.cake_outlined,
-                  color: kTextSecondary, size: 18),
+              const Icon(Icons.cake_outlined, color: kTextSecondary, size: 18),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -266,7 +256,7 @@ class AuthRegisterSection extends StatelessWidget {
   }
 
   // -----------------------
-  // GENDER OPTIONS
+  // GENDER CHIPS (SELECTED GOLD => BLACK TEXT)
   // -----------------------
   Widget _buildGenderChips(AppLocalizations l10n, bool isRTL) {
     return Wrap(
@@ -277,14 +267,14 @@ class AuthRegisterSection extends StatelessWidget {
         _genderOption(
           label: l10n.male,
           selected: gender == 'male',
-          color: kPrimaryBlue,
+          color: kPrimaryGold,
           icon: Icons.male,
           onTap: () => onGenderChanged('male'),
         ),
         _genderOption(
           label: l10n.female,
           selected: gender == 'female',
-          color: kSecondaryAmber,
+          color: kGoldDeep,
           icon: Icons.female,
           onTap: () => onGenderChanged('female'),
         ),
@@ -306,6 +296,13 @@ class AuthRegisterSection extends StatelessWidget {
     required IconData icon,
     required VoidCallback onTap,
   }) {
+    // Gold chips look best with black when selected; grey chip can stay white.
+    final bool wantsBlackOnSelected =
+        selected && (color == kPrimaryGold || color == kGoldDeep);
+
+    final Color selectedTextColor =
+    wantsBlackOnSelected ? Colors.black : Colors.white;
+
     return GestureDetector(
       onTap: isSubmitting ? null : onTap,
       child: AnimatedContainer(
@@ -315,8 +312,8 @@ class AuthRegisterSection extends StatelessWidget {
           gradient: selected
               ? LinearGradient(
             colors: [
-              color.withOpacity(0.9),
-              kSurfaceAltColor.withOpacity(0.6),
+              color.withOpacity(0.98),
+              color.withOpacity(0.82),
             ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -326,18 +323,18 @@ class AuthRegisterSection extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: selected
-                ? color.withOpacity(0.5)
+                ? color.withOpacity(0.55)
                 : Colors.white.withOpacity(0.2),
           ),
           boxShadow: selected
               ? [
             BoxShadow(
-              color: color.withOpacity(0.5),
+              color: color.withOpacity(0.35),
               blurRadius: 10,
               spreadRadius: 1,
             ),
           ]
-              : [],
+              : const [],
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -345,14 +342,14 @@ class AuthRegisterSection extends StatelessWidget {
             Icon(
               icon,
               size: 16,
-              color: selected ? Colors.white : kTextSecondary,
+              color: selected ? selectedTextColor : kTextSecondary, // ✅
             ),
             const SizedBox(width: 6),
             Text(
               label,
               style: TextStyle(
-                color: selected ? Colors.white : kTextSecondary,
-                fontWeight: FontWeight.w500,
+                color: selected ? selectedTextColor : kTextSecondary, // ✅
+                fontWeight: FontWeight.w600,
               ),
             ),
           ],
@@ -362,15 +359,15 @@ class AuthRegisterSection extends StatelessWidget {
   }
 
   // -----------------------
-  // TERMS ACCEPTANCE
+  // TERMS (GOLD CHECK + BLACK CHECKMARK)
   // -----------------------
   Widget _buildTermsAcceptance(AppLocalizations l10n) {
     return Row(
       children: [
         Checkbox(
           value: agreedToTerms,
-          activeColor: kPrimaryBlue,
-          checkColor: Colors.white,
+          activeColor: kPrimaryGold,
+          checkColor: Colors.black, // ✅ BLACK check mark
           side: BorderSide(color: Colors.white.withOpacity(0.5)),
           onChanged: isSubmitting ? null : (v) => onAgreeChanged(v ?? false),
         ),
@@ -385,9 +382,9 @@ class AuthRegisterSection extends StatelessWidget {
                   TextSpan(
                     text: " ${l10n.termsOfUse}",
                     style: const TextStyle(
-                      color: kSecondaryAmber,
+                      color: kGoldDeep,
                       decoration: TextDecoration.underline,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ],

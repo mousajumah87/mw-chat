@@ -1,9 +1,11 @@
 // lib/screens/auth/widgets/auth_avatar_picker.dart
 import 'dart:io';
 import 'dart:typed_data';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; //
+import 'package:flutter/services.dart';
+
 import '../../../l10n/app_localizations.dart';
 import '../../../theme/app_theme.dart';
 
@@ -24,8 +26,6 @@ class AuthAvatarPicker extends StatefulWidget {
     required this.imageFile,
     required this.isSubmitting,
     required this.onPickImage,
-
-    // DEFAULTS KEEP OLD FLOW WORKING
     this.isUploading = false,
     this.uploadProgress = 0.0,
     this.onRemoveImage,
@@ -40,8 +40,8 @@ class _AuthAvatarPickerState extends State<AuthAvatarPicker>
   late final AnimationController _controller;
   late final Animation<double> _scale;
 
-  bool _isPicking = false; // PREVENTS TRANSIENT REBUILD GLITCH
-  bool _showSuccessRing = false; // Success animation
+  bool _isPicking = false;
+  bool _showSuccessRing = false;
 
   @override
   void initState() {
@@ -51,27 +51,18 @@ class _AuthAvatarPickerState extends State<AuthAvatarPicker>
       duration: const Duration(milliseconds: 250),
     );
 
-    _scale = Tween<double>(
-      begin: 0.95,
-      end: 1.05,
-    ).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: Curves.easeOutBack,
-      ),
+    _scale = Tween<double>(begin: 0.95, end: 1.05).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutBack),
     );
-
   }
 
   @override
   void didUpdateWidget(covariant AuthAvatarPicker oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    // Trigger success ring when a new image arrives
     final hadOldImage =
         oldWidget.imageBytes != null || oldWidget.imageFile != null;
-    final hasNewImage =
-        widget.imageBytes != null || widget.imageFile != null;
+    final hasNewImage = widget.imageBytes != null || widget.imageFile != null;
 
     if (!hadOldImage && hasNewImage) {
       _showSuccessRing = true;
@@ -88,11 +79,9 @@ class _AuthAvatarPickerState extends State<AuthAvatarPicker>
   }
 
   Future<void> _handleTap() async {
-    if (widget.isSubmitting || _isPicking) return;
+    if (widget.isSubmitting || widget.isUploading || _isPicking) return;
 
-    // HAPTIC FEEDBACK
     HapticFeedback.mediumImpact();
-
     setState(() => _isPicking = true);
 
     try {
@@ -105,9 +94,7 @@ class _AuthAvatarPickerState extends State<AuthAvatarPicker>
     } catch (e, st) {
       debugPrint('[AuthAvatarPicker] onPickImage error: $e\n$st');
     } finally {
-      if (mounted) {
-        setState(() => _isPicking = false);
-      }
+      if (mounted) setState(() => _isPicking = false);
     }
   }
 
@@ -116,12 +103,15 @@ class _AuthAvatarPickerState extends State<AuthAvatarPicker>
     final l10n = AppLocalizations.of(context)!;
     final hasImage = widget.imageBytes != null || widget.imageFile != null;
 
-    // SAFE IMAGE PROVIDER (NO iOS / WEB GLITCH)
-    final ImageProvider? provider = kIsWeb
-        ? (widget.imageBytes != null ? MemoryImage(widget.imageBytes!) : null)
-        : (widget.imageFile != null ? FileImage(widget.imageFile!) : null);
+    // ✅ SAFER: allow bytes OR file on ALL platforms
+    ImageProvider? provider;
+    if (widget.imageBytes != null) {
+      provider = MemoryImage(widget.imageBytes!);
+    } else if (!kIsWeb && widget.imageFile != null) {
+      provider = FileImage(widget.imageFile!);
+    }
 
-    final Widget avatarImage = ClipOval(
+    final avatarImage = ClipOval(
       child: provider != null
           ? Image(
         image: provider,
@@ -155,13 +145,13 @@ class _AuthAvatarPickerState extends State<AuthAvatarPicker>
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: kSecondaryAmber.withOpacity(0.9),
+                    color: kGoldDeep.withOpacity(0.9),
                     width: 3,
                   ),
                 ),
               ),
 
-            // === Dynamic glow halo ===
+            // Glow halo
             AnimatedContainer(
               duration: const Duration(milliseconds: 400),
               curve: Curves.easeOut,
@@ -171,20 +161,20 @@ class _AuthAvatarPickerState extends State<AuthAvatarPicker>
                 shape: BoxShape.circle,
                 gradient: RadialGradient(
                   colors: [
-                    kPrimaryBlue.withOpacity(0.45),
-                    kSecondaryAmber.withOpacity(0.35),
+                    kPrimaryGold.withOpacity(0.45),
+                    kGoldDeep.withOpacity(0.35),
                     Colors.transparent,
                   ],
                   stops: const [0.4, 0.8, 1.0],
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: kPrimaryBlue.withOpacity(0.25),
+                    color: kPrimaryGold.withOpacity(0.25),
                     blurRadius: 30,
                     spreadRadius: 2,
                   ),
                   BoxShadow(
-                    color: kSecondaryAmber.withOpacity(0.25),
+                    color: kGoldDeep.withOpacity(0.22),
                     blurRadius: 30,
                     spreadRadius: 2,
                   ),
@@ -192,9 +182,9 @@ class _AuthAvatarPickerState extends State<AuthAvatarPicker>
               ),
             ),
 
-            // === Main avatar circle ===
+            // Main avatar circle
             AnimatedScale(
-              scale: widget.isSubmitting ? 1.0 : 1.02,
+              scale: (widget.isSubmitting || widget.isUploading) ? 1.0 : 1.02,
               duration: const Duration(milliseconds: 180),
               child: Container(
                 width: 126,
@@ -202,7 +192,7 @@ class _AuthAvatarPickerState extends State<AuthAvatarPicker>
                 padding: const EdgeInsets.all(3.5),
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: Colors.black.withOpacity(0.35), // HARD SAFE BASE
+                  color: Colors.black.withOpacity(0.35),
                   border: Border.all(
                     width: 2,
                     color: hasImage
@@ -211,7 +201,7 @@ class _AuthAvatarPickerState extends State<AuthAvatarPicker>
                   ),
                   gradient: LinearGradient(
                     colors: [
-                      Colors.white.withOpacity(0.1),
+                      Colors.white.withOpacity(0.10),
                       Colors.white.withOpacity(0.05),
                     ],
                     begin: Alignment.topLeft,
@@ -227,13 +217,13 @@ class _AuthAvatarPickerState extends State<AuthAvatarPicker>
                 ),
                 child: CircleAvatar(
                   radius: 56,
-                  backgroundColor: Colors.black.withOpacity(0.25), // NEVER RED
+                  backgroundColor: Colors.black.withOpacity(0.25),
                   child: avatarImage,
                 ),
               ),
             ),
 
-            // === Upload progress overlay (optional) ===
+            // Upload progress overlay
             if (widget.isUploading)
               Positioned.fill(
                 child: Container(
@@ -247,19 +237,23 @@ class _AuthAvatarPickerState extends State<AuthAvatarPicker>
                           ? widget.uploadProgress
                           : null,
                       strokeWidth: 3,
-                      color: kPrimaryBlue,
+                      color: kPrimaryGold,
                     ),
                   ),
                 ),
               ),
 
-            // === Remove image button (optional) ===
+            // ✅ RTL-safe remove button
             if (hasImage && widget.onRemoveImage != null && !widget.isUploading)
-              Positioned(
+              PositionedDirectional(
                 top: 6,
-                right: 8,
+                end: 8,
                 child: GestureDetector(
-                  onTap: widget.onRemoveImage,
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    widget.onRemoveImage?.call();
+                  },
                   child: Container(
                     padding: const EdgeInsets.all(4),
                     decoration: const BoxDecoration(
@@ -275,10 +269,10 @@ class _AuthAvatarPickerState extends State<AuthAvatarPicker>
                 ),
               ),
 
-            // === Neon camera icon ===
-            Positioned(
+            // ✅ RTL-safe camera icon
+            PositionedDirectional(
               bottom: 8,
-              right: 10,
+              end: 10,
               child: ScaleTransition(
                 scale: _scale,
                 child: AnimatedContainer(
@@ -286,19 +280,19 @@ class _AuthAvatarPickerState extends State<AuthAvatarPicker>
                   padding: const EdgeInsets.all(6),
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    gradient: const LinearGradient(
-                      colors: [kPrimaryBlue, kSecondaryAmber],
+                    gradient: LinearGradient(
+                      colors: [kPrimaryGold, kGoldDeep],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: kPrimaryBlue.withOpacity(0.4),
+                        color: kPrimaryGold.withOpacity(0.4),
                         blurRadius: 8,
                         spreadRadius: 1,
                       ),
                       BoxShadow(
-                        color: kSecondaryAmber.withOpacity(0.3),
+                        color: kGoldDeep.withOpacity(0.3),
                         blurRadius: 8,
                         spreadRadius: 1,
                       ),
@@ -313,19 +307,19 @@ class _AuthAvatarPickerState extends State<AuthAvatarPicker>
               ),
             ),
 
-            // === Optional shimmer pulse ===
+            // Optional shimmer pulse
             Positioned.fill(
               child: IgnorePointer(
                 child: AnimatedOpacity(
-                  opacity: widget.isSubmitting ? 0.2 : 0.05,
+                  opacity: (widget.isSubmitting || widget.isUploading) ? 0.2 : 0.05,
                   duration: const Duration(milliseconds: 400),
                   child: Container(
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       gradient: SweepGradient(
                         colors: [
-                          kPrimaryBlue.withOpacity(0.15),
-                          kSecondaryAmber.withOpacity(0.15),
+                          kPrimaryGold.withOpacity(0.15),
+                          kGoldDeep.withOpacity(0.15),
                           Colors.transparent,
                         ],
                       ),
@@ -335,7 +329,7 @@ class _AuthAvatarPickerState extends State<AuthAvatarPicker>
               ),
             ),
 
-            // Freeze UI while picking (prevents red flash)
+            // Freeze UI while picking
             if (_isPicking)
               Positioned.fill(
                 child: Container(

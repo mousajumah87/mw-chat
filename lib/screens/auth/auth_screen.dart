@@ -31,6 +31,7 @@ class _AuthScreenState extends State<AuthScreen> {
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   bool _showPassword = false;
+
   final _firstNameCtrl = TextEditingController();
   final _lastNameCtrl = TextEditingController();
 
@@ -40,7 +41,6 @@ class _AuthScreenState extends State<AuthScreen> {
   File? _imageFile;
   Uint8List? _imageBytes;
 
-  // ✅ NEW: Upload state
   bool _uploadingImage = false;
   double _uploadProgress = 0.0;
 
@@ -60,9 +60,6 @@ class _AuthScreenState extends State<AuthScreen> {
     super.dispose();
   }
 
-  // -------------------------
-  // ✅ IMAGE PICKING (UNCHANGED)
-  // -------------------------
   Future<void> _pickImage() async {
     if (_submitting || _pickingImage || !mounted) return;
 
@@ -108,13 +105,10 @@ class _AuthScreenState extends State<AuthScreen> {
         );
       }
     } finally {
-      if (mounted) {
-        setState(() => _pickingImage = false);
-      }
+      if (mounted) setState(() => _pickingImage = false);
     }
   }
 
-  // ✅ REMOVE PROFILE IMAGE
   void _removeImage() {
     setState(() {
       _imageBytes = null;
@@ -124,9 +118,6 @@ class _AuthScreenState extends State<AuthScreen> {
 
   static String _compressImage(String path) => path;
 
-  // -------------------------
-  // BIRTHDAY
-  // -------------------------
   Future<void> _pickBirthday() async {
     final now = DateTime.now();
     final initial = _birthday ?? DateTime(now.year - 18, now.month, now.day);
@@ -143,9 +134,6 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
-  // -------------------------
-  // TERMS OF USE
-  // -------------------------
   Future<void> _openTerms() async {
     final accepted = await Navigator.of(context).push<bool>(
       MaterialPageRoute(builder: (_) => const TermsOfUseScreen()),
@@ -159,9 +147,17 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
-  // -------------------------
-  // ✅ SUBMIT (WITH UPLOAD PROGRESS)
-  // -------------------------
+  Future<void> _warmUserDocFromServer(String uid) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .get(const GetOptions(source: Source.server));
+    } catch (_) {
+      // Safe no-op
+    }
+  }
+
   Future<void> _submit() async {
     final l10n = AppLocalizations.of(context)!;
 
@@ -179,10 +175,16 @@ class _AuthScreenState extends State<AuthScreen> {
 
     try {
       if (_isLogin) {
-        await FirebaseAuth.instance.signInWithEmailAndPassword(
+        final cred = await FirebaseAuth.instance.signInWithEmailAndPassword(
           email: _emailCtrl.text.trim(),
           password: _passwordCtrl.text.trim(),
         );
+
+        // Optional warm-up (does not navigate, does not break flow)
+        final uid = cred.user?.uid;
+        if (uid != null) {
+          await _warmUserDocFromServer(uid);
+        }
         return;
       }
 
@@ -199,7 +201,6 @@ class _AuthScreenState extends State<AuthScreen> {
 
       String? profileUrl;
 
-      // ✅ UPLOAD WITH PROGRESS
       if (_imageBytes != null || _imageFile != null) {
         final ref =
         FirebaseStorage.instance.ref().child('profile_pics/${user.uid}');
@@ -223,16 +224,12 @@ class _AuthScreenState extends State<AuthScreen> {
               ? (event.bytesTransferred / event.totalBytes).toDouble()
               : 0.0;
 
-          if (mounted) {
-            setState(() => _uploadProgress = progress);
-          }
+          if (mounted) setState(() => _uploadProgress = progress);
         });
 
         await task;
 
-        if (mounted) {
-          setState(() => _uploadingImage = false);
-        }
+        if (mounted) setState(() => _uploadingImage = false);
 
         profileUrl = await ref.getDownloadURL();
       }
@@ -283,14 +280,20 @@ class _AuthScreenState extends State<AuthScreen> {
         "${_birthday!.day.toString().padLeft(2, '0')}";
   }
 
-  // -------------------------
-  // UI BUILD
-  // -------------------------
+  void _resetRegisterState() {
+    _agreedToTerms = false; // ✅ default unchecked
+    _genderNotifier.value = 'none';
+    _birthday = null;
+    _imageBytes = null;
+    _imageFile = null;
+    _uploadingImage = false;
+    _uploadProgress = 0.0;
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final isRegister = !_isLogin;
-    final isRTL = Directionality.of(context) == TextDirection.rtl;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -299,9 +302,12 @@ class _AuthScreenState extends State<AuthScreen> {
           children: [
             Positioned(
               top: 32,
-              right: isRTL ? null : 32,
-              left: isRTL ? 32 : null,
-              child: const MwLanguageButton(),
+              left: 0,
+              right: 0,
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: const MwLanguageButton(),
+              ),
             ),
             Center(
               child: SingleChildScrollView(
@@ -313,12 +319,10 @@ class _AuthScreenState extends State<AuthScreen> {
                   decoration: BoxDecoration(
                     color: kSurfaceAltColor.withOpacity(0.6),
                     borderRadius: BorderRadius.circular(22),
-                    border: Border.all(
-                      color: kBorderColor.withOpacity(0.3),
-                    ),
+                    border: Border.all(color: kBorderColor.withOpacity(0.3)),
                     boxShadow: [
                       BoxShadow(
-                        color: kSecondaryAmber.withOpacity(0.15),
+                        color: kGoldDeep.withOpacity(0.15),
                         blurRadius: 20,
                         offset: const Offset(0, 12),
                       ),
@@ -346,15 +350,11 @@ class _AuthScreenState extends State<AuthScreen> {
                                 imageBytes: _imageBytes,
                                 imageFile: _imageFile,
                                 onPickImage: _pickImage,
-
-                                // ✅ NEW WIRING
                                 isUploading: _uploadingImage,
                                 uploadProgress: _uploadProgress,
                                 onRemoveImage: _removeImage,
-
                                 onPickBirthday: _pickBirthday,
-                                onGenderChanged: (v) =>
-                                _genderNotifier.value = v,
+                                onGenderChanged: (v) => _genderNotifier.value = v,
                                 agreedToTerms: _agreedToTerms,
                                 onAgreeChanged: (bool v) {
                                   setState(() {
@@ -375,12 +375,8 @@ class _AuthScreenState extends State<AuthScreen> {
                               prefixIcon: const Icon(Icons.email_outlined),
                             ),
                             validator: (v) {
-                              if (v == null || v.isEmpty) {
-                                return l10n.requiredField;
-                              }
-                              if (!v.contains('@')) {
-                                return l10n.invalidEmail;
-                              }
+                              if (v == null || v.isEmpty) return l10n.requiredField;
+                              if (!v.contains('@')) return l10n.invalidEmail;
                               return null;
                             },
                           ),
@@ -399,20 +395,14 @@ class _AuthScreenState extends State<AuthScreen> {
                                       : Icons.visibility_off,
                                   color: kTextSecondary,
                                 ),
-                                onPressed: () {
-                                  setState(() {
-                                    _showPassword = !_showPassword;
-                                  });
-                                },
+                                onPressed: () => setState(() {
+                                  _showPassword = !_showPassword;
+                                }),
                               ),
                             ),
                             validator: (v) {
-                              if (v == null || v.isEmpty) {
-                                return l10n.requiredField;
-                              }
-                              if (v.length < 6) {
-                                return l10n.minPassword;
-                              }
+                              if (v == null || v.isEmpty) return l10n.requiredField;
+                              if (v.length < 6) return l10n.minPassword;
                               return null;
                             },
                           ),
@@ -430,9 +420,9 @@ class _AuthScreenState extends State<AuthScreen> {
                           ElevatedButton(
                             onPressed: _submitting ? null : _submit,
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: kPrimaryBlue,
-                              foregroundColor: Colors.white,
-                              elevation: 4,
+                              backgroundColor: kPrimaryGold,
+                              foregroundColor: Colors.black,
+                              elevation: 3,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(14),
                               ),
@@ -448,29 +438,32 @@ class _AuthScreenState extends State<AuthScreen> {
                                 width: 22,
                                 height: 22,
                                 child: CircularProgressIndicator(
-                                  color: Colors.white,
+                                  color: Colors.black,
                                   strokeWidth: 2,
                                 ),
                               )
                                   : Text(
-                                isRegister
-                                    ? l10n.register
-                                    : l10n.login,
+                                isRegister ? l10n.register : l10n.login,
                                 style: const TextStyle(
                                   fontSize: 16,
-                                  fontWeight: FontWeight.w600,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.black,
                                 ),
                               ),
                             ),
                           ),
 
                           const SizedBox(height: 16),
-
                           TextButton(
                             onPressed: () {
                               setState(() {
                                 _isLogin = !_isLogin;
                                 _errorText = null;
+
+                                // ✅ When switching to Register, ensure defaults
+                                if (!_isLogin) {
+                                  _resetRegisterState();
+                                }
                               });
                             },
                             child: Text(

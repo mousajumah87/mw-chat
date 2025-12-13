@@ -57,7 +57,7 @@ class AboutScreen extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
               child: Text(
-                'mwchats.com',
+                l10n.websiteDomain,
                 style: base?.copyWith(
                   decoration: TextDecoration.underline,
                   fontWeight: FontWeight.w500,

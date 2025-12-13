@@ -81,6 +81,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get failedToCreateUser => 'Failed to create user';
 
   @override
+  String get languageLabel => 'Language';
+
+  @override
+  String get menuTitle => 'Menu';
+
+  @override
   String get settingUpProfile => 'Setting up your profile...';
 
   @override
@@ -176,6 +182,24 @@ class AppLocalizationsEn extends AppLocalizations {
   String get noOtherUsers => 'No other friends yet';
 
   @override
+  String get profile => 'Profile';
+
+  @override
+  String get viewProfile => 'View Profile';
+
+  @override
+  String get viewFriendProfile => 'View Friend Profile';
+
+  @override
+  String get viewMyProfile => 'View My Profile';
+
+  @override
+  String get autoUpdateNotice => 'This screen will update automatically once activated.';
+
+  @override
+  String get checkAgain => 'Check again';
+
+  @override
   String get typeMessageHint => 'Type a message...';
 
   @override
@@ -259,6 +283,35 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get holdMicToRecord => 'Hold the mic to record a voice message';
+
+  @override
+  String get previewVoiceMessage => 'Preview voice message';
+
+  @override
+  String get voiceMessageLabel => 'Voice message';
+
+  @override
+  String get genericFileLabel => 'File';
+
+  @override
+  String get removePhoto => 'Remove photo';
+
+  @override
+  String get websiteDomain => 'mwchats.com';
+
+  @override
+  String get deleteChatForMe => 'Delete for me';
+
+  @override
+  String get deleteChatForBoth => 'Delete for both';
+
+  @override
+  String get deletingChatInProgressTitle => 'Deleting chat...';
+
+  @override
+  String deletingChatProgress(int current, int total) {
+    return '$current / $total messages';
+  }
 
   @override
   String get deleteMessageTitle => 'Delete message';
@@ -710,4 +763,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get profileReportSnackbarError => 'Failed to submit report. Please try again.';
+
+  @override
+  String get generalErrorMessage => 'Something went wrong. Please try again.';
 }
