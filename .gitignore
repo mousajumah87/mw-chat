@@ -29,3 +29,7 @@ ios/Runner.xcodeproj/project.xcworkspace/
 
 # Others
 *.log
+
+# Xcode user state (never commit)
+ios/**/xcuserdata/
+ios/**/UserInterfaceState.xcuserstate
