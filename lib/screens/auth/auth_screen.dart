@@ -1,5 +1,4 @@
 // lib/screens/auth/auth_screen.dart
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -38,7 +37,6 @@ class _AuthScreenState extends State<AuthScreen> {
   final ValueNotifier<String> _genderNotifier = ValueNotifier('none');
 
   DateTime? _birthday;
-  File? _imageFile;
   Uint8List? _imageBytes;
 
   bool _uploadingImage = false;
@@ -102,9 +100,9 @@ class _AuthScreenState extends State<AuthScreen> {
             if (!mounted) return;
             Navigator.of(ctx).pop();
 
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(l10n.resetEmailSent)),
-            );
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text(l10n.resetEmailSent)));
           } on FirebaseAuthException catch (e) {
             final msg = _mapResetError(e, l10n);
             setLocalState(() {
@@ -147,7 +145,8 @@ class _AuthScreenState extends State<AuthScreen> {
                             setLocalState(() => inlineError = null);
                           }
                         },
-                        onSubmitted: (_) => sending ? null : submit(setLocalState),
+                        onSubmitted: (_) =>
+                            sending ? null : submit(setLocalState),
                       ),
                       if (sending) ...[
                         const SizedBox(height: 14),
@@ -188,7 +187,7 @@ class _AuthScreenState extends State<AuthScreen> {
       case 'invalid-email':
         return l10n.invalidEmail;
       case 'user-not-found':
-      // privacy-friendly:
+        // privacy-friendly:
         return l10n.resetEmailIfExists; // ✅ add key
       case 'missing-email':
         return l10n.requiredField;
@@ -220,28 +219,26 @@ class _AuthScreenState extends State<AuthScreen> {
         final bytes = await picked.readAsBytes();
         setState(() {
           _imageBytes = bytes;
-          _imageFile = null;
         });
       } else {
-        final compressed = await compute(_compressImage, picked.path);
+        final bytes = await picked.readAsBytes();
         setState(() {
-          _imageFile = File(compressed);
-          _imageBytes = null;
+          _imageBytes = bytes;
         });
       }
     } on PlatformException catch (e, st) {
       debugPrint('[AuthScreen] _pickImage PlatformException: $e\n$st');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.authError)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l10n.authError)));
       }
     } catch (e, st) {
       debugPrint('[AuthScreen] _pickImage error: $e\n$st');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.authError)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l10n.authError)));
       }
     } finally {
       if (mounted) setState(() => _pickingImage = false);
@@ -251,7 +248,6 @@ class _AuthScreenState extends State<AuthScreen> {
   void _removeImage() {
     setState(() {
       _imageBytes = null;
-      _imageFile = null;
     });
   }
 
@@ -274,9 +270,9 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   Future<void> _openTerms() async {
-    final accepted = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => const TermsOfUseScreen()),
-    );
+    final accepted = await Navigator.of(
+      context,
+    ).push<bool>(MaterialPageRoute(builder: (_) => const TermsOfUseScreen()));
 
     if (accepted == true) {
       setState(() {
@@ -339,9 +335,10 @@ class _AuthScreenState extends State<AuthScreen> {
 
       String? profileUrl;
 
-      if (_imageBytes != null || _imageFile != null) {
-        final ref =
-        FirebaseStorage.instance.ref().child('profile_pics/${user.uid}');
+      if (_imageBytes != null) {
+        final ref = FirebaseStorage.instance.ref().child(
+          'profile_pics/${user.uid}',
+        );
         final metadata = SettableMetadata(contentType: 'image/jpeg');
 
         setState(() {
@@ -349,13 +346,11 @@ class _AuthScreenState extends State<AuthScreen> {
           _uploadProgress = 0.0;
         });
 
-        UploadTask task;
-
-        if (kIsWeb && _imageBytes != null) {
-          task = ref.putData(_imageBytes!, metadata);
-        } else {
-          task = ref.putFile(_imageFile!, metadata);
+        final bytes = _imageBytes;
+        if (bytes == null) {
+          throw StateError('Missing image bytes');
         }
+        final UploadTask task = ref.putData(bytes, metadata);
 
         task.snapshotEvents.listen((event) {
           final double progress = event.totalBytes > 0
@@ -397,7 +392,10 @@ class _AuthScreenState extends State<AuthScreen> {
         userData['gender'] = gender;
       }
 
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).set(userData);
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .set(userData);
     } on FirebaseAuthException catch (e) {
       setState(() => _errorText = e.message ?? l10n.authError);
     } catch (e, st) {
@@ -420,7 +418,6 @@ class _AuthScreenState extends State<AuthScreen> {
     _genderNotifier.value = 'none';
     _birthday = null;
     _imageBytes = null;
-    _imageFile = null;
     _uploadingImage = false;
     _uploadProgress = 0.0;
   }
@@ -464,7 +461,10 @@ class _AuthScreenState extends State<AuthScreen> {
                     ],
                   ),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 34),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 28,
+                      vertical: 34,
+                    ),
                     child: Form(
                       key: _formKey,
                       child: Column(
@@ -482,13 +482,14 @@ class _AuthScreenState extends State<AuthScreen> {
                                 gender: g,
                                 isSubmitting: _submitting,
                                 imageBytes: _imageBytes,
-                                imageFile: _imageFile,
+                                imageFile: null,
                                 onPickImage: _pickImage,
                                 isUploading: _uploadingImage,
                                 uploadProgress: _uploadProgress,
                                 onRemoveImage: _removeImage,
                                 onPickBirthday: _pickBirthday,
-                                onGenderChanged: (v) => _genderNotifier.value = v,
+                                onGenderChanged: (v) =>
+                                    _genderNotifier.value = v,
                                 agreedToTerms: _agreedToTerms,
                                 onAgreeChanged: (bool v) {
                                   setState(() {
@@ -509,7 +510,8 @@ class _AuthScreenState extends State<AuthScreen> {
                               prefixIcon: const Icon(Icons.email_outlined),
                             ),
                             validator: (v) {
-                              if (v == null || v.isEmpty) return l10n.requiredField;
+                              if (v == null || v.isEmpty)
+                                return l10n.requiredField;
                               if (!v.contains('@')) return l10n.invalidEmail;
                               return null;
                             },
@@ -524,7 +526,9 @@ class _AuthScreenState extends State<AuthScreen> {
                               prefixIcon: const Icon(Icons.lock_outline),
                               suffixIcon: IconButton(
                                 icon: Icon(
-                                  _showPassword ? Icons.visibility : Icons.visibility_off,
+                                  _showPassword
+                                      ? Icons.visibility
+                                      : Icons.visibility_off,
                                   color: kTextSecondary,
                                 ),
                                 onPressed: () => setState(() {
@@ -533,7 +537,8 @@ class _AuthScreenState extends State<AuthScreen> {
                               ),
                             ),
                             validator: (v) {
-                              if (v == null || v.isEmpty) return l10n.requiredField;
+                              if (v == null || v.isEmpty)
+                                return l10n.requiredField;
                               if (v.length < 6) return l10n.minPassword;
                               return null;
                             },
@@ -545,7 +550,9 @@ class _AuthScreenState extends State<AuthScreen> {
                             Align(
                               alignment: AlignmentDirectional.centerEnd,
                               child: TextButton(
-                                onPressed: _submitting ? null : _showForgotPasswordDialog,
+                                onPressed: _submitting
+                                    ? null
+                                    : _showForgotPasswordDialog,
                                 child: Text(
                                   l10n.forgotPassword, // ✅ add key
                                   style: const TextStyle(
@@ -585,21 +592,21 @@ class _AuthScreenState extends State<AuthScreen> {
                               duration: const Duration(milliseconds: 250),
                               child: _submitting
                                   ? const SizedBox(
-                                width: 22,
-                                height: 22,
-                                child: CircularProgressIndicator(
-                                  color: Colors.black,
-                                  strokeWidth: 2,
-                                ),
-                              )
+                                      width: 22,
+                                      height: 22,
+                                      child: CircularProgressIndicator(
+                                        color: Colors.black,
+                                        strokeWidth: 2,
+                                      ),
+                                    )
                                   : Text(
-                                isRegister ? l10n.register : l10n.login,
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.black,
-                                ),
-                              ),
+                                      isRegister ? l10n.register : l10n.login,
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.black,
+                                      ),
+                                    ),
                             ),
                           ),
 
@@ -616,7 +623,9 @@ class _AuthScreenState extends State<AuthScreen> {
                               });
                             },
                             child: Text(
-                              isRegister ? l10n.alreadyHaveAccount : l10n.createNewAccount,
+                              isRegister
+                                  ? l10n.alreadyHaveAccount
+                                  : l10n.createNewAccount,
                               style: const TextStyle(
                                 color: kTextSecondary,
                                 fontWeight: FontWeight.w500,
