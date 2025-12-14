@@ -104,18 +104,6 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     return years.toString();
   }
 
-  Future<bool> _isUserBlocked(String currentUid) async {
-    final snap = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(currentUid)
-        .get();
-    final data = snap.data();
-    if (data == null) return false;
-    final blocked =
-        (data['blockedUserIds'] as List?)?.cast<String>() ?? const <String>[];
-    return blocked.contains(widget.userId);
-  }
-
   Future<void> _toggleBlockUser(
       BuildContext context, {
         required String currentUid,
@@ -125,6 +113,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
 
     final confirm = await showDialog<bool>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         backgroundColor: kSurfaceAltColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -170,19 +159,21 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     setState(() => _isBlocking = true);
     try {
       final ref = FirebaseFirestore.instance.collection('users').doc(currentUid);
-      await ref.update({
-        'blockedUserIds': currentlyBlocked
-            ? FieldValue.arrayRemove([widget.userId])
-            : FieldValue.arrayUnion([widget.userId]),
-      });
+
+      // ✅ Safer than update(): won’t fail if doc/field doesn’t exist yet
+      await ref.set(
+        {
+          'blockedUserIds': currentlyBlocked
+              ? FieldValue.arrayRemove([widget.userId])
+              : FieldValue.arrayUnion([widget.userId]),
+        },
+        SetOptions(merge: true),
+      );
 
       if (!mounted) return;
 
-      // ✅ Use cached messenger instead of ScaffoldMessenger.of(context)
       _showSnack(
-        currentlyBlocked
-            ? l10n.profileBlockSnackbarUnblocked
-            : l10n.profileBlockSnackbarBlocked,
+        currentlyBlocked ? l10n.profileBlockSnackbarUnblocked : l10n.profileBlockSnackbarBlocked,
       );
     } finally {
       if (mounted) setState(() => _isBlocking = false);
@@ -207,6 +198,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     try {
       await showDialog<void>(
         context: context,
+        useRootNavigator: true, // ✅ safer across iOS
         builder: (dialogContext) {
           String? selectedCategory;
 
@@ -236,12 +228,10 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                         fillColor: kSurfaceColor.withOpacity(0.4),
                       ),
                       items: reasonCategories
-                          .map(
-                            (r) => DropdownMenuItem<String>(
-                          value: r,
-                          child: Text(r),
-                        ),
-                      )
+                          .map((r) => DropdownMenuItem<String>(
+                        value: r,
+                        child: Text(r),
+                      ))
                           .toList(),
                       onChanged: (val) {
                         dialogSetState(() {
@@ -275,19 +265,14 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                     onPressed: !canSave
                         ? null
                         : () async {
-                      // Mark as reporting at the screen level
-                      if (mounted) {
-                        setState(() => _isReporting = true);
-                      }
+                      if (mounted) setState(() => _isReporting = true);
 
                       final details = reasonController.text.trim().isEmpty
                           ? null
                           : reasonController.text.trim();
 
                       try {
-                        await FirebaseFirestore.instance
-                            .collection('userReports')
-                            .add({
+                        await FirebaseFirestore.instance.collection('userReports').add({
                           'reporterId': currentUid,
                           'reportedUserId': widget.userId,
                           'reasonCategory': selectedCategory,
@@ -298,18 +283,13 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                       } catch (e, st) {
                         debugPrint('[UserProfile] report error: $e\n$st');
                       } finally {
-                        if (mounted) {
-                          setState(() => _isReporting = false);
-                        }
+                        if (mounted) setState(() => _isReporting = false);
                       }
 
                       if (dialogContext.mounted) {
                         Navigator.of(dialogContext).pop();
                       }
 
-                      // ✅ IMPORTANT FIX:
-                      // Do NOT use dialog builder context for ScaffoldMessenger.
-                      // Use cached messenger on the screen.
                       if (mounted) {
                         _showSnack(l10n.reportSubmitted);
                       }
@@ -328,7 +308,6 @@ class _UserProfileScreenState extends State<UserProfileScreen>
         },
       );
     } finally {
-      // ✅ Prevent controller leaks
       reasonController.dispose();
     }
   }
@@ -455,9 +434,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                             return Center(
                               child: Text(
                                 l10n.userNotFound,
-                                style: const TextStyle(
-                                  color: Colors.white70,
-                                ),
+                                style: const TextStyle(color: Colors.white70),
                               ),
                             );
                           }
@@ -471,14 +448,13 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                           final gender = data['gender'] ?? '';
                           final isActive = data['isActive'] != false;
 
-                          final theirBlocked =
-                              (data['blockedUserIds'] as List?)?.cast<String>() ?? [];
+                          final theirBlockedDynamic = (data['blockedUserIds'] as List<dynamic>?) ?? const [];
+                          final theirBlocked = theirBlockedDynamic.whereType<String>().toList();
                           final hasBlockedMe = currentUid != null && theirBlocked.contains(currentUid);
 
                           final rawIsOnline = data['isOnline'] == true && isActive;
-                          final lastSeen = data['lastSeen'] is Timestamp
-                              ? data['lastSeen'] as Timestamp
-                              : null;
+                          final lastSeen = data['lastSeen'] is Timestamp ? data['lastSeen'] as Timestamp : null;
+
                           final effectiveOnline = !hasBlockedMe &&
                               _isOnlineWithTtl(
                                 rawIsOnline: rawIsOnline,
@@ -528,8 +504,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                               CircleAvatar(
                                 radius: 58,
                                 backgroundColor: kSurfaceAltColor,
-                                backgroundImage:
-                                profileUrl.isNotEmpty ? NetworkImage(profileUrl) : null,
+                                backgroundImage: profileUrl.isNotEmpty ? NetworkImage(profileUrl) : null,
                                 child: profileUrl.isEmpty
                                     ? Text(
                                   avatarType == 'smurf' ? '🧜‍♀️' : '🐻',
@@ -564,16 +539,11 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                                     const SizedBox(height: 12),
                                     AnimatedContainer(
                                       duration: const Duration(milliseconds: 400),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 14,
-                                        vertical: 6,
-                                      ),
+                                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                                       decoration: BoxDecoration(
                                         color: presenceColor.withOpacity(0.20),
                                         borderRadius: BorderRadius.circular(20),
-                                        border: Border.all(
-                                          color: presenceColor.withOpacity(0.8),
-                                        ),
+                                        border: Border.all(color: presenceColor.withOpacity(0.8)),
                                         boxShadow: [
                                           BoxShadow(
                                             color: presenceColor.withOpacity(0.35),
@@ -585,11 +555,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                                       child: Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          Icon(
-                                            Icons.circle,
-                                            size: 10,
-                                            color: presenceColor,
-                                          ),
+                                          Icon(Icons.circle, size: 10, color: presenceColor),
                                           const SizedBox(width: 6),
                                           Text(
                                             presenceLabel,
@@ -633,6 +599,8 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                                           ? l10n.notSpecified
                                           : gender[0].toUpperCase() + gender.substring(1),
                                     ),
+
+                                    // ✅ Safety Tools (stream current user's block list instead of FutureBuilder get())
                                     if (!isSelf && currentUid != null) ...[
                                       const SizedBox(height: 28),
                                       const Divider(color: Colors.white24),
@@ -648,10 +616,19 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                                         ),
                                       ),
                                       const SizedBox(height: 10),
-                                      FutureBuilder<bool>(
-                                        future: _isUserBlocked(currentUid),
-                                        builder: (context, blockSnap) {
-                                          final isBlocked = blockSnap.data ?? false;
+
+                                      StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                                        stream: FirebaseFirestore.instance
+                                            .collection('users')
+                                            .doc(currentUid)
+                                            .snapshots(),
+                                        builder: (context, mySnap) {
+                                          final myData = mySnap.data?.data() ?? {};
+                                          final myBlockedDynamic =
+                                              (myData['blockedUserIds'] as List<dynamic>?) ?? const [];
+                                          final myBlocked = myBlockedDynamic.map((e) => e.toString()).toList();
+                                          final isBlocked = myBlocked.contains(widget.userId);
+
                                           return Column(
                                             children: [
                                               SizedBox(
@@ -665,9 +642,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                                                     currentlyBlocked: isBlocked,
                                                   ),
                                                   icon: Icon(
-                                                    isBlocked
-                                                        ? Icons.person_remove
-                                                        : Icons.block,
+                                                    isBlocked ? Icons.person_remove : Icons.block,
                                                     size: 18,
                                                   ),
                                                   label: Text(
@@ -698,17 +673,11 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                                                     context,
                                                     currentUid: currentUid,
                                                   ),
-                                                  icon: const Icon(
-                                                    Icons.flag_outlined,
-                                                    size: 18,
-                                                  ),
+                                                  icon: const Icon(Icons.flag_outlined, size: 18),
                                                   label: Text(l10n.profileReportButtonLabel),
                                                   style: OutlinedButton.styleFrom(
                                                     foregroundColor: kGoldDeep,
-                                                    side: const BorderSide(
-                                                      color: kGoldDeep,
-                                                      width: 1.4,
-                                                    ),
+                                                    side: const BorderSide(color: kGoldDeep, width: 1.4),
                                                     padding: const EdgeInsets.symmetric(vertical: 12),
                                                     shape: RoundedRectangleBorder(
                                                       borderRadius: BorderRadius.circular(24),
@@ -762,8 +731,7 @@ class _InfoRow extends StatelessWidget {
         const SizedBox(width: 10),
         Text(
           label,
-          style: theme.textTheme.bodyMedium
-              ?.copyWith(color: Colors.white70, fontSize: 14),
+          style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white70, fontSize: 14),
         ),
         const Spacer(),
         Text(

@@ -60,6 +60,145 @@ class _AuthScreenState extends State<AuthScreen> {
     super.dispose();
   }
 
+  // ---------------------------
+  // Forgot password
+  // ---------------------------
+  Future<void> _showForgotPasswordDialog() async {
+    if (_submitting || !mounted) return;
+
+    final l10n = AppLocalizations.of(context)!;
+    final emailCtrl = TextEditingController(text: _emailCtrl.text.trim());
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) {
+        String? inlineError;
+        bool sending = false;
+
+        Future<void> submit(StateSetter setLocalState) async {
+          final email = emailCtrl.text.trim();
+
+          // ✅ client-side validation (instant)
+          if (email.isEmpty) {
+            setLocalState(() => inlineError = l10n.requiredField);
+            return;
+          }
+
+          final emailOk = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email);
+          if (!emailOk) {
+            setLocalState(() => inlineError = l10n.invalidEmail);
+            return;
+          }
+
+          setLocalState(() {
+            inlineError = null;
+            sending = true;
+          });
+
+          try {
+            await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+
+            if (!mounted) return;
+            Navigator.of(ctx).pop();
+
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(l10n.resetEmailSent)),
+            );
+          } on FirebaseAuthException catch (e) {
+            final msg = _mapResetError(e, l10n);
+            setLocalState(() {
+              inlineError = msg; // ✅ show Firebase errors inline too
+              sending = false;
+            });
+          } catch (_) {
+            setLocalState(() {
+              inlineError = l10n.authError;
+              sending = false;
+            });
+          }
+        }
+
+        return StatefulBuilder(
+          builder: (context, setLocalState) {
+            return AlertDialog(
+              title: Text(l10n.resetPasswordTitle),
+
+              // ✅ keyboard + small screens safe (iPhone mini, etc.)
+              content: SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      TextField(
+                        controller: emailCtrl,
+                        keyboardType: TextInputType.emailAddress,
+                        textInputAction: TextInputAction.send,
+                        autofillHints: const [AutofillHints.email],
+                        decoration: InputDecoration(
+                          labelText: l10n.email,
+                          hintText: 'name@example.com',
+                          errorText: inlineError, // ✅ inline error under field
+                        ),
+                        onChanged: (_) {
+                          if (inlineError != null) {
+                            setLocalState(() => inlineError = null);
+                          }
+                        },
+                        onSubmitted: (_) => sending ? null : submit(setLocalState),
+                      ),
+                      if (sending) ...[
+                        const SizedBox(height: 14),
+                        const Center(
+                          child: SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+
+              actions: [
+                TextButton(
+                  onPressed: sending ? null : () => Navigator.of(ctx).pop(),
+                  child: Text(l10n.cancel),
+                ),
+                ElevatedButton(
+                  onPressed: sending ? null : () => submit(setLocalState),
+                  child: Text(l10n.send),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    emailCtrl.dispose();
+  }
+
+  String _mapResetError(FirebaseAuthException e, AppLocalizations l10n) {
+    switch (e.code) {
+      case 'invalid-email':
+        return l10n.invalidEmail;
+      case 'user-not-found':
+      // privacy-friendly:
+        return l10n.resetEmailIfExists; // ✅ add key
+      case 'missing-email':
+        return l10n.requiredField;
+      case 'too-many-requests':
+        return l10n.tooManyRequests; // ✅ add key
+      default:
+        return e.message ?? l10n.authError;
+    }
+  }
+
   Future<void> _pickImage() async {
     if (_submitting || _pickingImage || !mounted) return;
 
@@ -180,7 +319,6 @@ class _AuthScreenState extends State<AuthScreen> {
           password: _passwordCtrl.text.trim(),
         );
 
-        // Optional warm-up (does not navigate, does not break flow)
         final uid = cred.user?.uid;
         if (uid != null) {
           await _warmUserDocFromServer(uid);
@@ -259,10 +397,7 @@ class _AuthScreenState extends State<AuthScreen> {
         userData['gender'] = gender;
       }
 
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .set(userData);
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set(userData);
     } on FirebaseAuthException catch (e) {
       setState(() => _errorText = e.message ?? l10n.authError);
     } catch (e, st) {
@@ -281,7 +416,7 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   void _resetRegisterState() {
-    _agreedToTerms = false; // ✅ default unchecked
+    _agreedToTerms = false;
     _genderNotifier.value = 'none';
     _birthday = null;
     _imageBytes = null;
@@ -329,8 +464,7 @@ class _AuthScreenState extends State<AuthScreen> {
                     ],
                   ),
                   child: Padding(
-                    padding:
-                    const EdgeInsets.symmetric(horizontal: 28, vertical: 34),
+                    padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 34),
                     child: Form(
                       key: _formKey,
                       child: Column(
@@ -390,9 +524,7 @@ class _AuthScreenState extends State<AuthScreen> {
                               prefixIcon: const Icon(Icons.lock_outline),
                               suffixIcon: IconButton(
                                 icon: Icon(
-                                  _showPassword
-                                      ? Icons.visibility
-                                      : Icons.visibility_off,
+                                  _showPassword ? Icons.visibility : Icons.visibility_off,
                                   color: kTextSecondary,
                                 ),
                                 onPressed: () => setState(() {
@@ -406,6 +538,24 @@ class _AuthScreenState extends State<AuthScreen> {
                               return null;
                             },
                           ),
+
+                          // ✅ Forgot password only for login
+                          if (!isRegister) ...[
+                            const SizedBox(height: 6),
+                            Align(
+                              alignment: AlignmentDirectional.centerEnd,
+                              child: TextButton(
+                                onPressed: _submitting ? null : _showForgotPasswordDialog,
+                                child: Text(
+                                  l10n.forgotPassword, // ✅ add key
+                                  style: const TextStyle(
+                                    color: kTextSecondary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
 
                           if (_errorText != null) ...[
                             const SizedBox(height: 10),
@@ -460,16 +610,13 @@ class _AuthScreenState extends State<AuthScreen> {
                                 _isLogin = !_isLogin;
                                 _errorText = null;
 
-                                // ✅ When switching to Register, ensure defaults
                                 if (!_isLogin) {
                                   _resetRegisterState();
                                 }
                               });
                             },
                             child: Text(
-                              isRegister
-                                  ? l10n.alreadyHaveAccount
-                                  : l10n.createNewAccount,
+                              isRegister ? l10n.alreadyHaveAccount : l10n.createNewAccount,
                               style: const TextStyle(
                                 color: kTextSecondary,
                                 fontWeight: FontWeight.w500,

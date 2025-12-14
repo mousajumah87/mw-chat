@@ -55,6 +55,8 @@ class _ChatInputBarState extends State<ChatInputBar>
   bool get _isUploading =>
       widget.uploadProgress != null && widget.uploadProgress! < 1.0;
 
+  bool get _uiLocked => widget.sending || _isUploading;
+
   @override
   void initState() {
     super.initState();
@@ -64,7 +66,24 @@ class _ChatInputBarState extends State<ChatInputBar>
     _waveController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 800),
-    )..repeat(reverse: true);
+    );
+    // ✅ only animate when recording (less CPU / smoother web)
+    if (widget.isRecording) {
+      _waveController.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant ChatInputBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (oldWidget.isRecording != widget.isRecording) {
+      if (widget.isRecording) {
+        _waveController.repeat(reverse: true);
+      } else {
+        _waveController.stop();
+      }
+    }
   }
 
   @override
@@ -85,22 +104,31 @@ class _ChatInputBarState extends State<ChatInputBar>
   String _formatDuration(Duration? d) {
     final duration = d ?? Duration.zero;
     final minutes = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final seconds =
-    duration.inSeconds.remainder(60).toString().padLeft(2, '0');
+    final seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
     return '$minutes:$seconds';
   }
 
   void _handleSendPressed() {
-    if (widget.sending || _isUploading) return;
+    if (_uiLocked) return;
     widget.onSend();
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _messageFocusNode.requestFocus();
-      }
+      if (mounted) _messageFocusNode.requestFocus();
     });
   }
 
-  // ================= WAVEFORM =================
+  /// ✅ IMPORTANT: hide keyboard before opening attachment UI (iOS/Android safe)
+  Future<void> _handleAttachPressed() async {
+    if (_uiLocked) return;
+
+    if (_messageFocusNode.hasFocus) _messageFocusNode.unfocus();
+    FocusManager.instance.primaryFocus?.unfocus();
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+
+    if (!mounted) return;
+    widget.onAttach();
+  }
+
   Widget _buildWaveform() {
     return AnimatedBuilder(
       animation: _waveController,
@@ -123,7 +151,6 @@ class _ChatInputBarState extends State<ChatInputBar>
     );
   }
 
-  // ================= FULL RECORD BAR =================
   Widget _buildFullRecordingBar() {
     return Container(
       height: 52,
@@ -136,29 +163,22 @@ class _ChatInputBarState extends State<ChatInputBar>
       ),
       child: Row(
         children: [
-          // ✅ CANCEL
           GestureDetector(
-            onTap: widget.onMicCancel,
+            onTap: _uiLocked ? null : widget.onMicCancel,
             child: const Icon(Icons.close, color: Colors.white),
           ),
-
           const SizedBox(width: 12),
-
           const Icon(Icons.mic, color: Colors.redAccent),
           const SizedBox(width: 6),
           _buildWaveform(),
           const SizedBox(width: 10),
-
           Text(
             _formatDuration(widget.recordDuration),
             style: const TextStyle(color: Colors.white),
           ),
-
           const Spacer(),
-
-          // ✅ SEND
           GestureDetector(
-            onTap: widget.onMicLongPressEnd,
+            onTap: _uiLocked ? null : widget.onMicLongPressEnd,
             child: Container(
               padding: const EdgeInsets.all(10),
               decoration: const BoxDecoration(
@@ -173,10 +193,20 @@ class _ChatInputBarState extends State<ChatInputBar>
     );
   }
 
-  // ================= MIC BUTTON =================
   Widget _buildMicButton() {
+    if (_uiLocked) {
+      return Container(
+        margin: const EdgeInsets.only(right: 6),
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.06),
+          shape: BoxShape.circle,
+        ),
+        child: const Icon(Icons.mic_rounded, color: Colors.white38),
+      );
+    }
+
     if (kIsWeb) {
-      // ✅ WEB TOGGLE
       return GestureDetector(
         onTap: () {
           if (widget.isRecording) {
@@ -203,7 +233,6 @@ class _ChatInputBarState extends State<ChatInputBar>
       );
     }
 
-    // ✅ MOBILE HOLD + DRAG
     return Listener(
       onPointerDown: (_) {
         _dragDistance = 0;
@@ -250,26 +279,27 @@ class _ChatInputBarState extends State<ChatInputBar>
     setState(() {});
   }
 
-  // ================= UI =================
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final bool isUploading = _isUploading;
+
+    final textScale = MediaQuery.textScalerOf(context);
+    final baseFont = textScale.scale(16);
+    final effectiveFont = baseFont < 16 ? 16.0 : baseFont;
 
     return SafeArea(
       top: false,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // 🔄 Upload progress bar (image / video / file)
           if (isUploading)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: LinearProgressIndicator(
-                value: widget.uploadProgress, // 0..1
+                value: widget.uploadProgress,
               ),
             ),
-
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
             decoration: BoxDecoration(
@@ -283,31 +313,36 @@ class _ChatInputBarState extends State<ChatInputBar>
                 IconButton(
                   icon: const Icon(Icons.attach_file),
                   color: Colors.white70,
-                  onPressed: (widget.sending || isUploading)
-                      ? null
-                      : widget.onAttach,
+                  onPressed: _uiLocked ? null : _handleAttachPressed,
                 ),
                 Expanded(
                   child: TextField(
-                    key: const ValueKey(
-                        'chat_input_textfield'), // ✅ stable identity
+                    key: const ValueKey('chat_input_textfield'),
                     controller: widget.controller,
                     focusNode: _messageFocusNode,
                     onChanged: widget.onTextChanged,
                     onSubmitted: (_) => _handleSendPressed(),
                     minLines: 1,
                     maxLines: 4,
-                    textInputAction: TextInputAction
-                        .newline, // ✅ keeps multiline behavior
-                    style: const TextStyle(color: Colors.white),
+                    textInputAction: TextInputAction.newline,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: effectiveFont,
+                      height: 1.25,
+                    ),
+                    keyboardAppearance: Brightness.dark,
                     decoration: InputDecoration(
                       hintText: l10n.typeMessageHint,
-                      hintStyle:
-                      const TextStyle(color: Colors.white54),
+                      hintStyle: TextStyle(
+                        color: Colors.white54,
+                        fontSize: effectiveFont - 1,
+                      ),
                       filled: true,
                       fillColor: Colors.white.withOpacity(0.04),
                       contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 10),
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(24),
                         borderSide: BorderSide.none,
@@ -320,9 +355,7 @@ class _ChatInputBarState extends State<ChatInputBar>
                   IconButton(
                     icon: const Icon(Icons.send),
                     color: Theme.of(context).colorScheme.primary,
-                    onPressed: (widget.sending || isUploading)
-                        ? null
-                        : _handleSendPressed,
+                    onPressed: _uiLocked ? null : _handleSendPressed,
                   )
                 else
                   _buildMicButton(),

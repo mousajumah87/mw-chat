@@ -26,6 +26,11 @@ const kErrorColor = Colors.redAccent;
 const kBubbleMeColor = kGoldDeep;
 const kBubbleOtherColor = Color(0xFF1E1E1E);
 
+// === Typing Indicator (NEW) ===
+const kTypingBg = Color(0xFF121212); // slightly lifted from bg
+const kTypingBorder = Color(0xFF2C2C2C);
+const kTypingGlow = kGoldDeep;
+
 // === Gradient and Glow ===
 final LinearGradient mwGradient = LinearGradient(
   begin: Alignment.topLeft,
@@ -49,6 +54,26 @@ BoxDecoration mwGlowDecoration = BoxDecoration(
   ],
   borderRadius: BorderRadius.circular(16),
 );
+
+// Typing indicator glass decoration (usable anywhere)
+BoxDecoration mwTypingGlassDecoration({double radius = 18}) {
+  return BoxDecoration(
+    color: kTypingBg.withOpacity(0.62),
+    borderRadius: BorderRadius.circular(radius),
+    border: Border.all(
+      color: kTypingBorder.withOpacity(0.65),
+      width: 1,
+    ),
+    boxShadow: [
+      BoxShadow(
+        color: kTypingGlow.withOpacity(0.18),
+        blurRadius: 18,
+        spreadRadius: 1,
+        offset: const Offset(0, 6),
+      ),
+    ],
+  );
+}
 
 // === THEME DATA ===
 //

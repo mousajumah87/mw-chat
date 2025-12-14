@@ -319,6 +319,14 @@
     "profileReportButtonLabel": "الإبلاغ عن المستخدم",
     "profileReportSnackbarSuccess": "تم إرسال البلاغ. سنقوم بمراجعته.",
     "profileReportSnackbarError": "فشل إرسال البلاغ. يرجى المحاولة مرة أخرى.",
-    "generalErrorMessage": "حدث خطأ ما. يُرجى المحاولة مرة أخرى."
+    "generalErrorMessage": "حدث خطأ ما. يُرجى المحاولة مرة أخرى.",
+
+    "forgotPassword": "نسيت كلمة المرور؟",
+    "resetPasswordTitle": "إعادة تعيين كلمة المرور",
+    "resetEmailSent": "تم إرسال رابط إعادة تعيين كلمة المرور. تحقق من بريدك الإلكتروني.",
+    "resetEmailIfExists": "إذا كان هذا البريد الإلكتروني موجودًا، فستتلقى رابط إعادة التعيين.",
+    "tooManyRequests": "محاولات كثيرة. يرجى المحاولة لاحقًا.",
+    "send": "إرسال"
+
 
 }

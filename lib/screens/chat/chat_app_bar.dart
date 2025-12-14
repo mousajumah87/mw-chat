@@ -105,8 +105,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
             final firstName = otherData['firstName'] as String? ?? '';
             final lastName = otherData['lastName'] as String? ?? '';
             final email = otherData['email'] as String? ?? title;
-            final displayName =
-            (firstName.isNotEmpty ? '$firstName $lastName' : email).trim();
+            final displayName = (firstName.isNotEmpty ? '$firstName $lastName' : email).trim();
 
             final isActive = otherData['isActive'] != false;
             final rawIsOnline = (otherData['isOnline'] == true) && isActive;
@@ -140,9 +139,8 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
 
             final profileUrl = otherData['profileUrl'] as String?;
             final avatarType = otherData['avatarType'] as String?;
-            final dotColor = !isActive
-                ? Colors.grey
-                : (effectiveOnline ? Colors.greenAccent : Colors.grey);
+            final dotColor =
+            !isActive ? Colors.grey : (effectiveOnline ? Colors.greenAccent : Colors.grey);
 
             return InkWell(
               borderRadius: BorderRadius.circular(24),
@@ -177,8 +175,6 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
                     ],
                   ),
                   const SizedBox(width: 10),
-
-                  // ✅ Prevent iOS overflow; allows text to shrink safely.
                   Flexible(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -231,6 +227,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
 
     await showDialog<void>(
       context: context,
+      useRootNavigator: true, // ✅ important when called from bottom-sheet flow
       builder: (dialogContext) {
         String? selectedCategory;
 
@@ -346,11 +343,11 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
     final title = isCurrentlyBlocked ? l10n.unblockUserTitle : l10n.blockUserTitle;
     final description =
     isCurrentlyBlocked ? l10n.unblockUserDescription : l10n.blockUserDescription;
-    final confirmLabel =
-    isCurrentlyBlocked ? l10n.unblockUserConfirm : l10n.blockUserTitle;
+    final confirmLabel = isCurrentlyBlocked ? l10n.unblockUserConfirm : l10n.blockUserTitle;
 
     final shouldProceed = await showDialog<bool>(
       context: context,
+      useRootNavigator: true, // ✅
       builder: (dialogContext) => AlertDialog(
         title: Text(title),
         content: Text(description),
@@ -381,6 +378,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
 
     showDialog(
       context: context,
+      useRootNavigator: true,
       barrierDismissible: false,
       builder: (_) => const Center(child: CircularProgressIndicator()),
     );
@@ -418,6 +416,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
 
     final shouldProceed = await showDialog<bool>(
       context: context,
+      useRootNavigator: true,
       builder: (dialogContext) => AlertDialog(
         title: Text(l10n.removeFriendTitle),
         content: Text(l10n.removeFriendDescription),
@@ -476,6 +475,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
 
     final shouldProceed = await showDialog<bool>(
       context: context,
+      useRootNavigator: true,
       builder: (dialogContext) => AlertDialog(
         title: Text(l10n.cancelFriendRequestTitle),
         content: Text(l10n.cancelFriendRequestDescription),
@@ -526,14 +526,17 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
   }
 
   Future<void> _openMenu(BuildContext context) async {
-    final l10n = AppLocalizations.of(context)!;
+    // ✅ This is the ONLY safe context to use for dialogs/navigation after closing the sheet.
+    final BuildContext parentContext = context;
+
+    final l10n = AppLocalizations.of(parentContext)!;
     final bool hasOther = otherUserId != null;
 
     await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true, // ✅ allow taller + scroll (fix overflow)
+      context: parentContext,
+      isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      useSafeArea: true, // ✅ iOS safe area
+      useSafeArea: true,
       builder: (sheetContext) {
         Widget buildItem({
           required IconData icon,
@@ -573,7 +576,16 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
         }
 
         final media = MediaQuery.of(sheetContext);
-        final maxH = media.size.height * 0.78; // ✅ cap height (fix 52px overflow)
+        final maxH = media.size.height * 0.78;
+
+        // ✅ helper to close sheet then run action safely on parent context
+        void closeThen(VoidCallback action) {
+          Navigator.of(sheetContext).pop();
+          Future.microtask(() {
+            if (!parentContext.mounted) return;
+            action();
+          });
+        }
 
         return Align(
           alignment: Alignment.bottomCenter,
@@ -594,7 +606,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
                         .collection('users')
                         .doc(currentUserId)
                         .snapshots(),
-                    builder: (context, mySnap) {
+                    builder: (sheetBuildContext, mySnap) {
                       final myData = mySnap.data?.data() ?? {};
                       final blockedListDynamic =
                           (myData['blockedUserIds'] as List<dynamic>?) ?? const [];
@@ -613,7 +625,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
                             .doc(otherUserId)
                             .snapshots()
                             : const Stream.empty(),
-                        builder: (context, friendSnap) {
+                        builder: (sheetBuildContext2, friendSnap) {
                           final friendData = friendSnap.data?.data();
                           final friendStatus = friendData?['status'] as String?;
                           final bool isFriendAccepted = friendStatus == 'accepted';
@@ -643,10 +655,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
                                   icon: Icons.delete_outline,
                                   label: l10n.deleteChatTitle,
                                   color: Colors.redAccent,
-                                  onTap: () {
-                                    Navigator.of(sheetContext).pop();
-                                    onClearChat?.call();
-                                  },
+                                  onTap: () => closeThen(() => onClearChat?.call()),
                                 ),
                               if (onClearChat != null) const SizedBox(height: 10),
 
@@ -654,15 +663,13 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
                                 buildItem(
                                   icon: Icons.info_outline_rounded,
                                   label: l10n.viewFriendProfile,
-                                  onTap: () {
-                                    Navigator.of(sheetContext).pop();
-                                    Navigator.of(context).push(
+                                  onTap: () => closeThen(() {
+                                    Navigator.of(parentContext).push(
                                       MaterialPageRoute(
-                                        builder: (_) =>
-                                            UserProfileScreen(userId: otherUserId!),
+                                        builder: (_) => UserProfileScreen(userId: otherUserId!),
                                       ),
                                     );
-                                  },
+                                  }),
                                 ),
                               if (hasOther) const SizedBox(height: 10),
 
@@ -671,10 +678,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
                                   icon: Icons.flag_outlined,
                                   label: l10n.reportUserTitle,
                                   color: Colors.redAccent,
-                                  onTap: () {
-                                    Navigator.of(sheetContext).pop();
-                                    _showReportDialog(context);
-                                  },
+                                  onTap: () => closeThen(() => _showReportDialog(parentContext)),
                                 ),
                               if (hasOther) const SizedBox(height: 10),
 
@@ -683,13 +687,12 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
                                   icon: Icons.block,
                                   label: blockLabel,
                                   color: Colors.redAccent,
-                                  onTap: () {
-                                    Navigator.of(sheetContext).pop();
+                                  onTap: () => closeThen(() {
                                     _confirmToggleBlockUser(
-                                      context,
+                                      parentContext,
                                       isCurrentlyBlocked: isBlocked,
                                     );
-                                  },
+                                  }),
                                 ),
 
                               if (hasOther && isFriendAccepted) ...[
@@ -698,10 +701,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
                                   icon: Icons.person_remove_alt_1,
                                   label: l10n.removeFriendTitle,
                                   color: Colors.redAccent,
-                                  onTap: () {
-                                    Navigator.of(sheetContext).pop();
-                                    _confirmRemoveFriend(context);
-                                  },
+                                  onTap: () => closeThen(() => _confirmRemoveFriend(parentContext)),
                                 ),
                               ],
 
@@ -711,10 +711,8 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
                                   icon: Icons.undo_rounded,
                                   label: l10n.cancelFriendRequestTitle,
                                   color: Colors.redAccent,
-                                  onTap: () {
-                                    Navigator.of(sheetContext).pop();
-                                    _confirmCancelFriendRequest(context);
-                                  },
+                                  onTap: () =>
+                                      closeThen(() => _confirmCancelFriendRequest(parentContext)),
                                 ),
                               ],
 
@@ -723,12 +721,11 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
                               buildItem(
                                 icon: Icons.person_outline_rounded,
                                 label: l10n.viewMyProfile,
-                                onTap: () {
-                                  Navigator.of(sheetContext).pop();
-                                  Navigator.of(context).push(
+                                onTap: () => closeThen(() {
+                                  Navigator.of(parentContext).push(
                                     MaterialPageRoute(builder: (_) => const ProfileScreen()),
                                   );
-                                },
+                                }),
                               ),
 
                               const SizedBox(height: 10),
@@ -737,10 +734,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
                                 icon: Icons.logout,
                                 label: l10n.logout,
                                 color: Colors.redAccent,
-                                onTap: () {
-                                  Navigator.of(sheetContext).pop();
-                                  onLogout();
-                                },
+                                onTap: () => closeThen(onLogout),
                               ),
                             ],
                           );
@@ -766,7 +760,6 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
   Widget build(BuildContext context) {
     final bool canPop = Navigator.of(context).canPop();
 
-    // ✅ Compact icon buttons (fix iOS header overflow)
     Widget compactIconButton({
       required String tooltip,
       required IconData icon,
@@ -782,7 +775,6 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
       );
     }
 
-    // ✅ Keep centerTitle truly centered by balancing left and right widths
     final double sideWidth = canPop ? 88 : 48;
 
     return Container(
@@ -800,7 +792,6 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
         titleSpacing: 0,
         centerTitle: true,
         title: _buildTitle(context),
-
         leadingWidth: sideWidth,
         leading: Align(
           alignment: Alignment.centerLeft,
@@ -821,7 +812,6 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
             ],
           ),
         ),
-
         actions: [
           SizedBox(width: sideWidth),
         ],

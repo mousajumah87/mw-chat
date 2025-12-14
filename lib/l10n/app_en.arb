@@ -321,6 +321,14 @@
     "profileReportButtonLabel": "Report user",
     "profileReportSnackbarSuccess": "Report submitted. We will review it.",
     "profileReportSnackbarError": "Failed to submit report. Please try again.",
-    "generalErrorMessage": "Something went wrong. Please try again."
+    "generalErrorMessage": "Something went wrong. Please try again.",
+
+    "forgotPassword": "Forgot password?",
+    "resetPasswordTitle": "Reset password",
+    "resetEmailSent": "Password reset email sent. Check your inbox.",
+    "resetEmailIfExists": "If this email exists, you will receive a reset link.",
+    "tooManyRequests": "Too many attempts. Please try again later.",
+    "send": "Send"
+
 
 }

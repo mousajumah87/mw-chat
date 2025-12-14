@@ -766,4 +766,22 @@ class AppLocalizationsAr extends AppLocalizations {
 
   @override
   String get generalErrorMessage => 'حدث خطأ ما. يُرجى المحاولة مرة أخرى.';
+
+  @override
+  String get forgotPassword => 'نسيت كلمة المرور؟';
+
+  @override
+  String get resetPasswordTitle => 'إعادة تعيين كلمة المرور';
+
+  @override
+  String get resetEmailSent => 'تم إرسال رابط إعادة تعيين كلمة المرور. تحقق من بريدك الإلكتروني.';
+
+  @override
+  String get resetEmailIfExists => 'إذا كان هذا البريد الإلكتروني موجودًا، فستتلقى رابط إعادة التعيين.';
+
+  @override
+  String get tooManyRequests => 'محاولات كثيرة. يرجى المحاولة لاحقًا.';
+
+  @override
+  String get send => 'إرسال';
 }

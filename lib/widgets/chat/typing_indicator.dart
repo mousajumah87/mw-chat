@@ -1,6 +1,8 @@
 // lib/widgets/chat/typing_indicator.dart
 
-import 'dart:math';
+import 'dart:math' as math;
+import 'dart:ui';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
 
@@ -19,129 +21,279 @@ class TypingIndicator extends StatefulWidget {
 }
 
 class _TypingIndicatorState extends State<TypingIndicator>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _scale;
-  late Animation<double> _shake;
+    with TickerProviderStateMixin {
+  late final AnimationController _bearController;
+  late final AnimationController _dotsController;
 
   bool _isFastMode = false;
 
-  // Correct PNG asset path
-  static const String _bearAssetPath =
-      'assets/typing/bear_keyboard.png';
+  static const String _bearAssetPath = 'assets/typing/bear_keyboard.png';
 
   @override
   void initState() {
     super.initState();
 
-    _controller = AnimationController(
+    _bearController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
-    )..repeat(reverse: true);
+    )..repeat();
 
-    _scale = Tween<double>(begin: 0.94, end: 1.06).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
-
-    _shake = Tween<double>(begin: -1.5, end: 1.5).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
+    _dotsController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 950),
+    )..repeat();
   }
 
   @override
   void didUpdateWidget(covariant TypingIndicator oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    // ✅ Auto-detect fast typing
     final isNowFast = widget.text.length > 14;
 
     if (isNowFast != _isFastMode) {
       _isFastMode = isNowFast;
 
-      _controller.duration = _isFastMode
-          ? const Duration(milliseconds: 420) // ⚡ FAST
-          : const Duration(milliseconds: 900); // 🐻 NORMAL
-
-      _controller
+      _bearController.duration =
+      _isFastMode ? const Duration(milliseconds: 520) : const Duration(milliseconds: 900);
+      _bearController
         ..reset()
-        ..repeat(reverse: true);
+        ..repeat();
+
+      _dotsController.duration =
+      _isFastMode ? const Duration(milliseconds: 700) : const Duration(milliseconds: 950);
+      _dotsController
+        ..reset()
+        ..repeat();
     }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _bearController.dispose();
+    _dotsController.dispose();
     super.dispose();
   }
 
+  double _clamp(double v, double min, double max) =>
+      v < min ? min : (v > max ? max : v);
+
   @override
   Widget build(BuildContext context) {
-    if (!widget.isVisible) return const SizedBox.shrink();
+    // If parent hides it, keep size stable when invisible to avoid layout jump
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 180),
+      switchInCurve: Curves.easeOut,
+      switchOutCurve: Curves.easeIn,
+      child: widget.isVisible
+          ? LayoutBuilder(
+        key: const ValueKey('typing-visible'),
+        builder: (context, constraints) {
+          final media = MediaQuery.of(context);
+          final availableW = constraints.hasBoundedWidth
+              ? constraints.maxWidth
+              : media.size.width;
 
-    final maxWidth = MediaQuery.of(context).size.width * 0.8;
+          final maxBubbleWidth = availableW * 0.88;
 
-    return RepaintBoundary(
+          // Bear size based on available width
+          final bearSize = _clamp(availableW * 0.13, 50, 66);
+
+          // Bubble padding totals (vertical) = 10(top) + 10(bottom)
+          // But bear also has its own size → needed height roughly:
+          final neededHeight = bearSize + 20;
+
+          // If parent gives tiny height (your Web bug), scale bubble down instead of clipping
+          double scale = 1.0;
+          if (constraints.hasBoundedHeight &&
+              constraints.maxHeight > 0 &&
+              constraints.maxHeight < neededHeight) {
+            scale = _clamp(constraints.maxHeight / neededHeight, 0.55, 1.0);
+          }
+
+          final enableBlur = !kIsWeb; // blur only on mobile by default
+          final blurSigma = _isFastMode ? 9.0 : 10.0;
+
+          final textStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
+            fontSize: 12.5,
+            color: kTextSecondary,
+            height: 1.15,
+          ) ??
+              const TextStyle(fontSize: 12.5, color: kTextSecondary, height: 1.15);
+
+          final bubble = ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: maxBubbleWidth),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: enableBlur
+                  ? BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
+                child: _buildBubble(bearSize, textStyle),
+              )
+                  : _buildBubble(bearSize, textStyle),
+            ),
+          );
+
+          return Padding(
+            padding: const EdgeInsetsDirectional.fromSTEB(18, 4, 16, 8),
+            child: SizedBox(
+              width: double.infinity,
+              child: Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: Transform.scale(
+                  scale: scale,
+                  alignment: AlignmentDirectional.centerStart,
+                  child: bubble,
+                ),
+              ),
+            ),
+          );
+        },
+      )
+          : const SizedBox(
+        key: ValueKey('typing-hidden'),
+        height: 0,
+        width: 0,
+      ),
+    );
+  }
+
+  Widget _buildBubble(double bearSize, TextStyle textStyle) {
+    return DecoratedBox(
+      decoration: mwTypingGlassDecoration(radius: 18),
       child: Padding(
-        padding: const EdgeInsets.only(left: 18, right: 16, bottom: 8, top: 4),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: maxWidth),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              // 🐻 Typing Bear (Safe + Fast Mode)
-              AnimatedBuilder(
-                animation: _controller,
-                builder: (context, child) {
-                  return Transform.translate(
-                    offset: Offset(
-                      _isFastMode
-                          ? _shake.value * Random().nextDouble()
-                          : 0,
-                      0,
-                    ),
-                    child: Transform.scale(
-                      scale: _scale.value,
-                      child: child,
-                    ),
-                  );
-                },
-                child: Image.asset(
-                  _bearAssetPath,
-                  width: 40,
-                  height: 40,
-                  fit: BoxFit.contain,
+        padding: const EdgeInsetsDirectional.fromSTEB(12, 10, 14, 10),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            AnimatedBuilder(
+              animation: _bearController,
+              builder: (context, child) {
+                final t = _bearController.value * math.pi * 2;
 
-                  // Final safety net (no red errors ever)
-                  errorBuilder: (context, error, stackTrace) {
-                    debugPrint(
-                      '❌ TypingIndicator asset failed to load: $_bearAssetPath\n$error',
-                    );
-                    return const Icon(
-                      Icons.keyboard,
-                      size: 32,
-                      color: kTextSecondary,
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(width: 10),
-              // Your existing typing text (unchanged)
-              Flexible(
-                child: Text(
-                  widget.text,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: kTextSecondary,
-                    height: 1.2,
+                final bounceY = -math.sin(t) * (_isFastMode ? 2.2 : 1.6);
+                final shakeX = _isFastMode ? math.sin(t * 3) * 1.8 : 0.0;
+                final tilt = math.sin(t) * (_isFastMode ? 0.055 : 0.035);
+                final scale = 1.0 + (math.sin(t) * (_isFastMode ? 0.06 : 0.04));
+
+                return Transform.translate(
+                  offset: Offset(shakeX, bounceY),
+                  child: Transform.rotate(
+                    angle: tilt,
+                    child: Transform.scale(scale: scale, child: child),
                   ),
-                  overflow: TextOverflow.ellipsis,
-                ),
+                );
+              },
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Container(
+                    width: bearSize,
+                    height: bearSize,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: kGoldDeep.withOpacity(0.22),
+                          blurRadius: 18,
+                          spreadRadius: 1,
+                        ),
+                      ],
+                    ),
+                  ),
+                  Image.asset(
+                    _bearAssetPath,
+                    width: bearSize,
+                    height: bearSize,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) {
+                      debugPrint('❌ TypingIndicator asset failed: $_bearAssetPath\n$error');
+                      return Icon(
+                        Icons.keyboard,
+                        size: _clamp(bearSize * 0.75, 32, 44),
+                        color: kTextSecondary,
+                      );
+                    },
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      widget.text,
+                      style: textStyle,
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                      softWrap: false,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  _TypingDots(controller: _dotsController),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
+    );
+  }
+}
+
+class _TypingDots extends StatelessWidget {
+  final AnimationController controller;
+  const _TypingDots({required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) {
+        final v = controller.value;
+
+        double dotPhase(int i) {
+          final p = (v + (i * 0.18)) % 1.0;
+          return (math.sin(p * math.pi)).clamp(0.0, 1.0);
+        }
+
+        Widget dot(int i) {
+          final a = dotPhase(i);
+          final opacity = 0.28 + (a * 0.72);
+          final scale = 0.85 + (a * 0.35);
+
+          return Opacity(
+            opacity: opacity,
+            child: Transform.scale(
+              scale: scale,
+              child: Container(
+                width: 4.6,
+                height: 4.6,
+                margin: const EdgeInsets.symmetric(horizontal: 1.6),
+                decoration: BoxDecoration(
+                  color: kPrimaryGold.withOpacity(0.95),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: kGoldDeep.withOpacity(0.14),
+                      blurRadius: 8,
+                      spreadRadius: 0.5,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [dot(0), dot(1), dot(2)],
+        );
+      },
     );
   }
 }

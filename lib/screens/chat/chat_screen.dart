@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
+
 import '../../utils/current_chat_tracker.dart';
 import '../../utils/presence_service.dart';
 
@@ -43,15 +44,14 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final _msgController = TextEditingController();
   final ChatFriendshipService _friendshipService = ChatFriendshipService();
   late final ChatMediaService _mediaService;
+
   double? _uploadProgress;
   bool get _isUploading =>
       _uploadProgress != null && _uploadProgress! < 1.0;
-
-
 
   bool _sending = false;
 
@@ -90,6 +90,9 @@ class _ChatScreenState extends State<ChatScreen> {
   // Voice recording UI tick timer (ChatMediaService owns the actual state)
   Timer? _recordTimer;
 
+  // Read-receipt debounce to avoid spamming writes
+  Timer? _seenDebounce;
+
   // Basic banned words list – lightweight filter
   static const List<String> _bannedWords = [
     'abuse',
@@ -104,9 +107,7 @@ class _ChatScreenState extends State<ChatScreen> {
   /// We now **always** enforce friendship for valid user pairs.
   /// If either id is missing, we skip enforcement.
   bool get _isFriendshipEnforced {
-    if (_currentUserId.isEmpty ||
-        _otherUserId == null ||
-        _otherUserId!.isEmpty) {
+    if (_currentUserId.isEmpty || _otherUserId == null || _otherUserId!.isEmpty) {
       return false;
     }
     return true;
@@ -133,6 +134,8 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
 
+    WidgetsBinding.instance.addObserver(this);
+
     final user = FirebaseAuth.instance.currentUser;
     _currentUserId = user?.uid ?? '';
 
@@ -156,6 +159,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
     // Tell the tracker: user is now inside this chat room.
     CurrentChatTracker.instance.enterRoom(widget.roomId);
+
     // When the chat is opened, reset my unread counter for this room.
     _resetMyUnread();
 
@@ -191,7 +195,6 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     });
 
-
     _mediaService = ChatMediaService(
       roomId: widget.roomId,
       currentUserId: _currentUserId,
@@ -201,30 +204,114 @@ class _ChatScreenState extends State<ChatScreen> {
       validateMessageContent: _validateMessageContent,
     );
 
-    // Listen if chat has any messages (used to enable/disable delete)
+    // ✅ lightweight "has any messages" subscription (avoid streaming entire chat)
+    _subscribeHasAnyMessages();
+
+    // ✅ mark recent visible messages as seen (read receipts) after first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scheduleMarkSeen();
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // When the app resumes and this chat is on screen, mark messages as seen again
+    if (state == AppLifecycleState.resumed) {
+      _scheduleMarkSeen();
+    }
+  }
+
+  // --------- Lightweight "has any messages" ----------
+  void _subscribeHasAnyMessages() {
+    _messagesSub?.cancel();
+
     _messagesSub = FirebaseFirestore.instance
         .collection('privateChats')
         .doc(widget.roomId)
         .collection('messages')
+        .orderBy('createdAt', descending: true)
+        .limit(30)
         .snapshots()
         .listen((snap) {
       if (!mounted) return;
 
-      final visibleMessages = snap.docs.where((doc) {
+      final visible = snap.docs.any((doc) {
         final data = doc.data();
         final hiddenFor = (data['hiddenFor'] as List?)?.cast<String>() ?? [];
         return !hiddenFor.contains(_currentUserId);
-      }).toList();
-
-      final hasAny = visibleMessages.isNotEmpty;
-
-      // Only rebuild if the value actually changes
-      if (hasAny == _hasAnyMessages) return;
-
-      setState(() {
-        _hasAnyMessages = hasAny;
       });
+
+      if (visible != _hasAnyMessages) {
+        setState(() => _hasAnyMessages = visible);
+      }
+
+      // Also: if new messages arrive while screen is open, mark seen (debounced)
+      _scheduleMarkSeen();
     });
+  }
+
+  // --------- Read receipts / seenBy ----------
+  void _scheduleMarkSeen() {
+    if (!mounted) return;
+    if (_currentUserId.isEmpty) return;
+    if (_otherUserId == null || _otherUserId!.isEmpty) return;
+    if (_isAnyBlock) return;
+
+    // Debounce to avoid rapid writes when snapshots fire quickly
+    _seenDebounce?.cancel();
+    _seenDebounce = Timer(const Duration(milliseconds: 450), () {
+      _markRecentMessagesAsSeen();
+    });
+  }
+
+  Future<void> _markRecentMessagesAsSeen() async {
+    final me = _currentUserId;
+    final other = _otherUserId;
+    if (me.isEmpty || other == null || other.isEmpty) return;
+    if (_isAnyBlock) return;
+
+    final roomRef =
+    FirebaseFirestore.instance.collection('privateChats').doc(widget.roomId);
+
+    try {
+      final snap = await roomRef
+          .collection('messages')
+          .orderBy('createdAt', descending: true)
+          .limit(40)
+          .get();
+
+      final batch = FirebaseFirestore.instance.batch();
+      int updates = 0;
+
+      for (final doc in snap.docs) {
+        final data = doc.data();
+
+        final senderId = data['senderId'] as String?;
+        if (senderId == null || senderId == me) continue;
+
+        final hiddenFor = (data['hiddenFor'] as List?)?.cast<String>() ?? [];
+        if (hiddenFor.contains(me)) continue;
+
+        final seenBy = (data['seenBy'] as List?)?.cast<String>() ?? const [];
+        if (seenBy.contains(me)) continue;
+
+        batch.update(doc.reference, {
+          'seenBy': FieldValue.arrayUnion([me]),
+        });
+
+        updates++;
+        if (updates >= 20) break; // cap per call
+      }
+
+      if (updates > 0) {
+        await batch.commit();
+      }
+
+      // Best effort: keep unread count reset while chat is open
+      await _resetMyUnread();
+    } catch (e, st) {
+      debugPrint('[ChatScreen] _markRecentMessagesAsSeen error: $e\n$st');
+    }
   }
 
   /// Listen to my `users/{uid}` doc and update `_isBlocked` in real time.
@@ -294,12 +381,10 @@ class _ChatScreenState extends State<ChatScreen> {
         .listen(
           (snap) {
         final data = snap.data() ?? {};
-        final blockedListDynamic =
-        data['blockedUserIds'] as List<dynamic>?;
-        final hasBlockedMeNow = blockedListDynamic
-            ?.whereType<String>()
-            .contains(_currentUserId) ??
-            false;
+        final blockedListDynamic = data['blockedUserIds'] as List<dynamic>?;
+        final hasBlockedMeNow =
+            blockedListDynamic?.whereType<String>().contains(_currentUserId) ??
+                false;
 
         if (mounted) {
           setState(() {
@@ -345,6 +430,10 @@ class _ChatScreenState extends State<ChatScreen> {
           _friendStatus = status;
           _loadingFriendship = false;
         });
+
+        // If user becomes accepted while already on screen,
+        // mark messages as seen.
+        _scheduleMarkSeen();
       },
     );
   }
@@ -539,13 +628,15 @@ class _ChatScreenState extends State<ChatScreen> {
       );
 
       await batch.commit();
+
+      // If I send a message while screen is open, keep seen state synced
+      _scheduleMarkSeen();
     } catch (e, st) {
       debugPrint('[ChatScreen] _sendMessage error: $e\n$st');
     } finally {
       if (mounted) setState(() => _sending = false);
     }
   }
-
 
   // ---------- VOICE NOTE HELPERS (Record via ChatMediaService) ----------
 
@@ -569,10 +660,11 @@ class _ChatScreenState extends State<ChatScreen> {
       await _mediaService.sendFileMessage(
         file,
         forcedType: 'audio',
-        forcedContentType: 'audio/m4a',
+        // ✅ Do NOT force content type here. Let classifier decide by extension.
       );
     }
     if (mounted) setState(() {});
+    _scheduleMarkSeen();
   }
 
   Future<void> _cancelVoiceRecording() async {
@@ -586,6 +678,12 @@ class _ChatScreenState extends State<ChatScreen> {
     // Don’t allow opening the attach sheet while an upload is in progress
     if (_isUploading) return;
 
+    // ✅ iOS/Android: close keyboard before opening the sheet
+    FocusScope.of(context).unfocus();
+    FocusManager.instance.primaryFocus?.unfocus();
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+    if (!mounted) return;
+
     final l10n = AppLocalizations.of(context)!;
 
     await showModalBottomSheet<void>(
@@ -597,15 +695,14 @@ class _ChatScreenState extends State<ChatScreen> {
       builder: (ctx) {
         final media = MediaQuery.of(ctx);
         final maxWidth = media.size.width > 640 ? 520.0 : double.infinity;
-        final bool isWeb = kIsWeb; // we already import flutter/foundation.dart
+        final bool isWeb = kIsWeb;
 
         return Center(
           child: ConstrainedBox(
             constraints: BoxConstraints(maxWidth: maxWidth),
             child: SafeArea(
               child: Padding(
-                padding:
-                const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -639,8 +736,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
                     // 📷 From gallery (works on all platforms)
                     ListTile(
-                      leading:
-                      const Icon(Icons.photo, color: Colors.white70),
+                      leading: const Icon(Icons.photo, color: Colors.white70),
                       title: Text(l10n.attachPhotoFromGallery),
                       onTap: () {
                         Navigator.of(ctx).pop();
@@ -648,8 +744,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       },
                     ),
                     ListTile(
-                      leading: const Icon(Icons.videocam,
-                          color: Colors.white70),
+                      leading: const Icon(Icons.videocam, color: Colors.white70),
                       title: Text(l10n.attachVideoFromGallery),
                       onTap: () {
                         Navigator.of(ctx).pop();
@@ -716,6 +811,9 @@ class _ChatScreenState extends State<ChatScreen> {
           });
         },
       );
+
+      // After sending media, mark seen for state consistency
+      _scheduleMarkSeen();
     } finally {
       if (!mounted) return;
       setState(() {
@@ -737,13 +835,15 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _captureImageWithCamera({CameraDevice camera = CameraDevice.rear}) async {
-    final file = await _mediaService.captureImageWithCamera(preferredCamera: camera);
+    final file =
+    await _mediaService.captureImageWithCamera(preferredCamera: camera);
     if (file == null) return; // user canceled
     await _sendPlatformFile(file);
   }
 
   Future<void> _captureVideoWithCamera({CameraDevice camera = CameraDevice.rear}) async {
-    final file = await _mediaService.captureVideoWithCamera(preferredCamera: camera);
+    final file =
+    await _mediaService.captureVideoWithCamera(preferredCamera: camera);
     if (file == null) return; // user canceled
     await _sendPlatformFile(file);
   }
@@ -771,6 +871,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+
+    _seenDebounce?.cancel();
     _msgController.dispose();
     _roomSub?.cancel();
     _blockSub?.cancel();
@@ -781,6 +884,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _typingDebounce?.cancel();
     _recordTimer?.cancel();
     _mediaService.dispose();
+
     _updateMyTyping(false); // best-effort
     CurrentChatTracker.instance.leaveRoom();
     super.dispose();
@@ -926,9 +1030,9 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       );
     } else if (_canSendMessages) {
-      // IMPORTANT: do NOT wrap ChatInputBar in extra padding (ChatInputBar already uses SafeArea + internal padding)
+      // IMPORTANT: do NOT wrap ChatInputBar in extra padding
       bottomArea = ChatInputBar(
-        key: ValueKey('chat_input_${widget.roomId}'), // ✅ stable identity
+        key: ValueKey('chat_input_${widget.roomId}'),
         controller: _msgController,
         sending: _sending || _isUploading,
         uploadProgress: _uploadProgress,
@@ -988,14 +1092,17 @@ class _ChatScreenState extends State<ChatScreen> {
 
             // Typing indicator (only when not blocked)
             if (!_isAnyBlock)
-              SizedBox(
-                height: 26,
-                child: TypingIndicator(
-                  isVisible: _isOtherTyping,
+              AnimatedSize(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOut,
+                alignment: Alignment.topCenter,
+                child: _isOtherTyping
+                    ? TypingIndicator(
+                  isVisible: true,
                   text: l10n.isTyping(widget.title),
-                ),
+                )
+                    : const SizedBox(height: 0),
               ),
-
             // Bottom area (input / blocked / cannot-send)
             bottomArea,
           ],

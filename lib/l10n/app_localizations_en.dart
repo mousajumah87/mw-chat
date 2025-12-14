@@ -766,4 +766,22 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get generalErrorMessage => 'Something went wrong. Please try again.';
+
+  @override
+  String get forgotPassword => 'Forgot password?';
+
+  @override
+  String get resetPasswordTitle => 'Reset password';
+
+  @override
+  String get resetEmailSent => 'Password reset email sent. Check your inbox.';
+
+  @override
+  String get resetEmailIfExists => 'If this email exists, you will receive a reset link.';
+
+  @override
+  String get tooManyRequests => 'Too many attempts. Please try again later.';
+
+  @override
+  String get send => 'Send';
 }

@@ -4,11 +4,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-
 import '../../widgets/chat/message_bubble.dart';
 import '../../utils/time_utils.dart';
 import '../../l10n/app_localizations.dart';
-import '../../theme/app_theme.dart';
 
 class ChatMessageList extends StatefulWidget {
   final String roomId;
@@ -36,24 +34,66 @@ class _ChatMessageListState extends State<ChatMessageList> {
   Timer? _debounceTimer;
   final Set<String> _seenMessagesCache = {};
 
-
   // Friend status for this chat:
   // null, "accepted", "requested", "request_received", ...
   String? _friendStatus;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _friendSub;
 
+  // ---------- Pagination / Realtime ----------
+  final ScrollController _scrollController = ScrollController();
+
+  // We keep a growing in-memory list for paged results.
+  final List<QueryDocumentSnapshot<Map<String, dynamic>>> _docs = [];
+  final Set<String> _docIds = {}; // dedupe
+
+  // 1) A realtime listener for the newest messages.
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _liveSub;
+
+  // 2) Manual page loads for older messages.
+  DocumentSnapshot<Map<String, dynamic>>? _oldestDoc;
+  bool _isLoadingMore = false;
+  bool _hasMore = true;
+
+  // Tuning knobs
+  static const int _pageSize = 40;
+  static const int _liveWindow = 40; // realtime window size (newest N messages)
+
   @override
   void initState() {
     super.initState();
     _listenFriendStatus();
+
+    _scrollController.addListener(_onScroll);
+
+    // If blocked, we don’t stream anything.
+    if (!widget.isBlocked) {
+      _startLiveListener();
+      // Also load an initial older page so you get some history immediately.
+      // (Live listener already provides newest window.)
+      _loadMoreOlder();
+    }
   }
 
   @override
   void didUpdateWidget(covariant ChatMessageList oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.currentUserId != widget.currentUserId ||
-        oldWidget.otherUserId != widget.otherUserId) {
+
+    final roomChanged = oldWidget.roomId != widget.roomId;
+    final userChanged = oldWidget.currentUserId != widget.currentUserId ||
+        oldWidget.otherUserId != widget.otherUserId;
+    final blockedChanged = oldWidget.isBlocked != widget.isBlocked;
+
+    if (userChanged) {
       _listenFriendStatus();
+    }
+
+    if (roomChanged || blockedChanged) {
+      _resetPagingState();
+
+      if (!widget.isBlocked) {
+        _startLiveListener();
+        _loadMoreOlder();
+      }
     }
   }
 
@@ -61,7 +101,19 @@ class _ChatMessageListState extends State<ChatMessageList> {
   void dispose() {
     _debounceTimer?.cancel();
     _friendSub?.cancel();
+    _liveSub?.cancel();
+    _scrollController.dispose();
     super.dispose();
+  }
+
+  void _resetPagingState() {
+    _liveSub?.cancel();
+    _docs.clear();
+    _docIds.clear();
+    _oldestDoc = null;
+    _isLoadingMore = false;
+    _hasMore = true;
+    if (mounted) setState(() {});
   }
 
   // ================= FRIEND STATUS LISTENER =================
@@ -73,9 +125,11 @@ class _ChatMessageListState extends State<ChatMessageList> {
     final otherId = widget.otherUserId;
 
     if (myId.isEmpty || otherId == null || otherId.isEmpty) {
-      setState(() {
-        _friendStatus = null;
-      });
+      if (mounted) {
+        setState(() {
+          _friendStatus = null;
+        });
+      }
       return;
     }
 
@@ -240,7 +294,11 @@ class _ChatMessageListState extends State<ChatMessageList> {
     }
 
     if (hasUpdates) {
-      await batch.commit();
+      try {
+        await batch.commit();
+      } catch (e, st) {
+        debugPrint('[ChatMessageList] seenBy batch commit error: $e\n$st');
+      }
 
       // Also reset unread count for the current user in this chat.
       try {
@@ -276,9 +334,8 @@ class _ChatMessageListState extends State<ChatMessageList> {
     // If the other user has not seen this message yet, and I delete it,
     // decrement their unread counter.
     if (!seenBy.contains(widget.otherUserId)) {
-      final roomRef = FirebaseFirestore.instance
-          .collection('privateChats')
-          .doc(widget.roomId);
+      final roomRef =
+      FirebaseFirestore.instance.collection('privateChats').doc(widget.roomId);
 
       await roomRef.set(
         {
@@ -325,14 +382,12 @@ class _ChatMessageListState extends State<ChatMessageList> {
 
         // New structured fields
         'reasonCategory': reasonCategory,
-        'reasonDetails': (reasonDetails == null ||
-            reasonDetails.trim().isEmpty)
+        'reasonDetails': (reasonDetails == null || reasonDetails.trim().isEmpty)
             ? null
             : reasonDetails.trim(),
 
         // Backward-compatible combined reason string
-        'reason': (reasonDetails == null ||
-            reasonDetails.trim().isEmpty)
+        'reason': (reasonDetails == null || reasonDetails.trim().isEmpty)
             ? reasonCategory
             : '$reasonCategory – ${reasonDetails.trim()}',
 
@@ -355,7 +410,6 @@ class _ChatMessageListState extends State<ChatMessageList> {
       );
     }
   }
-
 
   Future<void> _showReportDialog(
       BuildContext context,
@@ -432,8 +486,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
                       context,
                       messageDoc,
                       reasonCategory: selectedCategory!,
-                      reasonDetails:
-                      details.isEmpty ? null : details,
+                      reasonDetails: details.isEmpty ? null : details,
                     );
                     if (dialogContext.mounted) {
                       Navigator.of(dialogContext).pop();
@@ -458,7 +511,6 @@ class _ChatMessageListState extends State<ChatMessageList> {
       },
     );
   }
-
 
   // ================= DELETE / REPORT MENU =================
 
@@ -504,7 +556,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
                 ListTile(
                   leading: const Icon(Icons.delete_outline, color: Colors.red),
                   title: Text(
-                    l10n.deleteMessageTitle, // same title text
+                    l10n.deleteMessageTitle,
                     style: const TextStyle(color: Colors.white),
                   ),
                   onTap: () => Navigator.of(sheetContext)
@@ -518,8 +570,8 @@ class _ChatMessageListState extends State<ChatMessageList> {
                   l10n.reportMessageTitle,
                   style: const TextStyle(color: Colors.white),
                 ),
-                onTap: () => Navigator.of(sheetContext)
-                    .pop(_MessageAction.report),
+                onTap: () =>
+                    Navigator.of(sheetContext).pop(_MessageAction.report),
               ),
               const SizedBox(height: 4),
             ],
@@ -594,8 +646,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
             side: BorderSide(color: Colors.white.withOpacity(0.18)),
           ),
           child: Padding(
-            padding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             child: Row(
               children: [
                 const Icon(Icons.person_add, color: Colors.white70),
@@ -648,6 +699,133 @@ class _ChatMessageListState extends State<ChatMessageList> {
     return const SizedBox.shrink();
   }
 
+  // ================= PAGINATION HELPERS =================
+
+  void _onScroll() {
+    // reverse:true means "top of UI" is the end of scroll (maxScrollExtent).
+    // When user scrolls up (towards older messages), offset approaches maxScrollExtent.
+    if (!_scrollController.hasClients) return;
+    if (_isLoadingMore || !_hasMore) return;
+
+    final max = _scrollController.position.maxScrollExtent;
+    final offset = _scrollController.offset;
+
+    // When within 300px of the "top" (older side), load more.
+    if (offset >= (max - 300)) {
+      _loadMoreOlder();
+    }
+  }
+
+  void _startLiveListener() {
+    _liveSub?.cancel();
+
+    _liveSub = FirebaseFirestore.instance
+        .collection('privateChats')
+        .doc(widget.roomId)
+        .collection('messages')
+        .orderBy('createdAt', descending: true)
+        .limit(_liveWindow)
+        .snapshots()
+        .listen(
+          (snap) {
+        if (!mounted) return;
+
+        bool changed = false;
+
+        // Insert/replace newest docs into memory list
+        for (final d in snap.docs) {
+          if (_docIds.add(d.id)) {
+            _docs.add(d);
+            changed = true;
+          } else {
+            // update existing
+            final idx = _docs.indexWhere((x) => x.id == d.id);
+            if (idx != -1) {
+              _docs[idx] = d;
+              changed = true;
+            }
+          }
+        }
+
+        // update pointer for oldest doc
+        if (_docs.isNotEmpty) {
+          // Find the oldest doc we currently have (smallest createdAt)
+          _oldestDoc = _docs.reduce((a, b) {
+            final aTs = (a.data()['createdAt'] as Timestamp?);
+            final bTs = (b.data()['createdAt'] as Timestamp?);
+            if (aTs == null && bTs == null) return a;
+            if (aTs == null) return b;
+            if (bTs == null) return a;
+            return aTs.compareTo(bTs) <= 0 ? a : b;
+          });
+        }
+
+        if (changed) {
+          setState(() {});
+        }
+      },
+      onError: (e, st) {
+        debugPrint('[ChatMessageList] live listener error: $e\n$st');
+      },
+    );
+  }
+
+  Future<void> _loadMoreOlder() async {
+    if (_isLoadingMore || !_hasMore) return;
+    if (widget.isBlocked) return;
+
+    setState(() => _isLoadingMore = true);
+
+    try {
+      Query<Map<String, dynamic>> q = FirebaseFirestore.instance
+          .collection('privateChats')
+          .doc(widget.roomId)
+          .collection('messages')
+          .orderBy('createdAt', descending: true)
+          .limit(_pageSize);
+
+      // We already have some docs; load older than the oldest we know.
+      // With descending order, "older" means startAfterDocument(oldestDoc).
+      final oldest = _oldestDoc;
+      if (oldest != null) {
+        q = q.startAfterDocument(oldest);
+      }
+
+      final snap = await q.get();
+
+      if (!mounted) return;
+
+      if (snap.docs.isEmpty) {
+        _hasMore = false;
+        setState(() => _isLoadingMore = false);
+        return;
+      }
+
+      bool changed = false;
+
+      for (final d in snap.docs) {
+        if (_docIds.add(d.id)) {
+          _docs.add(d);
+          changed = true;
+        }
+      }
+
+      // Move oldest pointer
+      _oldestDoc = snap.docs.last;
+
+      // If returned less than page size, assume no more
+      if (snap.docs.length < _pageSize) {
+        _hasMore = false;
+      }
+
+      if (changed) setState(() {});
+    } catch (e, st) {
+      debugPrint('[ChatMessageList] _loadMoreOlder error: $e\n$st');
+    } finally {
+      if (mounted) setState(() => _isLoadingMore = false);
+    }
+  }
+
   // ================= UI =================
 
   @override
@@ -683,113 +861,129 @@ class _ChatMessageListState extends State<ChatMessageList> {
       );
     }
 
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance
-          .collection('privateChats')
-          .doc(widget.roomId)
-          .collection('messages')
-      // Optimization: limit to last 200 messages, still shows all recent.
-          .orderBy('createdAt', descending: true)
-          .limit(200)
-          .snapshots(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
-        }
+    // ✅ Apply "delete for me" filtering using hiddenFor
+    final visibleDocs = _docs.where((doc) {
+      final data = doc.data();
+      final hiddenFor =
+          (data['hiddenFor'] as List?)?.cast<String>() ?? const <String>[];
+      return !hiddenFor.contains(widget.currentUserId);
+    }).toList();
 
-        // ✅ Apply "delete for me" filtering using hiddenFor
-        final allDocs = snapshot.data!.docs;
-        final docs = allDocs.where((doc) {
-          final data = doc.data();
-          final hiddenFor =
-              (data['hiddenFor'] as List?)?.cast<String>() ?? const <String>[];
-          return !hiddenFor.contains(widget.currentUserId);
-        }).toList();
+    // Sort to ensure stable display: newest first (because reverse:true)
+    visibleDocs.sort((a, b) {
+      final aTs = a.data()['createdAt'] as Timestamp?;
+      final bTs = b.data()['createdAt'] as Timestamp?;
+      if (aTs == null && bTs == null) return 0;
+      if (aTs == null) return 1;
+      if (bTs == null) return -1;
+      return bTs.compareTo(aTs); // newest first
+    });
 
-        // If no visible messages after filtering
-        if (docs.isEmpty) {
-          if (_friendStatus == 'request_received' ||
-              _friendStatus == 'requested') {
-            return ListView(
-              key: const PageStorageKey<String>('chatMessageList'),
-              reverse: true,
-              padding: const EdgeInsets.all(12),
-              children: [
-                _buildFriendBanner(context),
-                Center(
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 12),
-                    child: Text(
-                      l10n.noMessagesYet,
-                      textAlign: TextAlign.center,
-                      style: emptyStateStyle,
-                    ),
-                  ),
-                ),
-              ],
-            );
-          }
-
-          return Center(
-            child: Text(
-              l10n.noMessagesYet,
-              textAlign: TextAlign.center,
-              style: emptyStateStyle,
-            ),
-          );
-        }
-
-        // Schedule seen updates (debounced) using visible docs
-        _scheduleMarkMessagesAsSeen(docs);
-
-        final bool showBanner =
-            _friendStatus == 'request_received' ||
-                _friendStatus == 'requested';
-        final int itemCount = docs.length + (showBanner ? 1 : 0);
-
-        return ListView.builder(
+    if (visibleDocs.isEmpty) {
+      if (_friendStatus == 'request_received' || _friendStatus == 'requested') {
+        return ListView(
+          controller: _scrollController,
           key: const PageStorageKey<String>('chatMessageList'),
           reverse: true,
           padding: const EdgeInsets.all(12),
-          itemCount: itemCount,
-          itemBuilder: (context, i) {
-            // With reverse: true, the last index appears at the top.
-            if (showBanner && i == itemCount - 1) {
-              return _buildFriendBanner(context);
-            }
-
-            // Normal message row.
-            final doc = docs[i];
-            final data = doc.data();
-            final senderId = data['senderId'] as String?;
-            final isMe = senderId == widget.currentUserId;
-
-            return RepaintBoundary(
-              child: Align(
-                alignment:
-                isMe ? Alignment.centerRight : Alignment.centerLeft,
-                child: GestureDetector(
-                  onLongPress: () =>
-                      _onMessageLongPress(context, doc, isMe),
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(maxWidth: maxWidth),
-                    child: MessageBubble(
-                      key: ValueKey(doc.id),
-                      text: data['text'] ?? '',
-                      timeLabel: formatTimestamp(data['createdAt']),
-                      isMe: isMe,
-                      // "Seen" dot logic: did the *other* user see this?
-                      isSeen: (data['seenBy'] ?? [])
-                          .contains(widget.otherUserId),
-                      fileUrl: data['fileUrl'],
-                      fileName: data['fileName'],
-                      fileType: data['type'],
-                    ),
-                  ),
+          children: [
+            _buildFriendBanner(context),
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Text(
+                  l10n.noMessagesYet,
+                  textAlign: TextAlign.center,
+                  style: emptyStateStyle,
                 ),
               ),
-            );
-          },
+            ),
+          ],
+        );
+      }
+
+      return Center(
+        child: Text(
+          l10n.noMessagesYet,
+          textAlign: TextAlign.center,
+          style: emptyStateStyle,
+        ),
+      );
+    }
+
+    // Schedule seen updates (debounced) using visible docs
+    _scheduleMarkMessagesAsSeen(visibleDocs);
+
+    final bool showBanner =
+        _friendStatus == 'request_received' || _friendStatus == 'requested';
+
+    // +1 for banner (top area because reverse:true)
+    // +1 for loading indicator when paging (also shown near top)
+    final bool showLoadingTile = _isLoadingMore;
+    final int extra = (showBanner ? 1 : 0) + (showLoadingTile ? 1 : 0);
+    final int itemCount = visibleDocs.length + extra;
+
+    return ListView.builder(
+      controller: _scrollController,
+      key: const PageStorageKey<String>('chatMessageList'),
+      reverse: true,
+      padding: const EdgeInsets.all(12),
+      itemCount: itemCount,
+      itemBuilder: (context, i) {
+        // In reverse:true, higher indices appear "higher" on screen.
+        int cursor = itemCount - 1;
+
+        // Banner at the very top (highest index)
+        if (showBanner && i == cursor) {
+          return _buildFriendBanner(context);
+        }
+        if (showBanner) cursor--;
+
+        // Loading tile under banner (still near top)
+        if (showLoadingTile && i == cursor) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: Center(
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+            ),
+          );
+        }
+        if (showLoadingTile) cursor--;
+
+        // Normal message rows
+        final doc = visibleDocs[i];
+        final data = doc.data();
+        final senderId = data['senderId'] as String?;
+        final isMe = senderId == widget.currentUserId;
+
+        return RepaintBoundary(
+          child: Align(
+            alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+            child: GestureDetector(
+              onLongPress: () => _onMessageLongPress(context, doc, isMe),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: maxWidth),
+                child: MessageBubble(
+                  key: ValueKey(doc.id),
+                  text: data['text'] ?? '',
+                  timeLabel: formatTimestamp(data['createdAt']),
+                  isMe: isMe,
+                  // "Seen" dot logic: did the *other* user see this?
+                  isSeen: (data['seenBy'] ?? []).contains(widget.otherUserId),
+                  fileUrl: data['fileUrl'],
+                  fileName: data['fileName'],
+                  fileType: data['type'],
+                ),
+              ),
+            ),
+          ),
         );
       },
     );
@@ -801,4 +995,3 @@ enum _MessageAction {
   deleteForBoth,
   report,
 }
-
