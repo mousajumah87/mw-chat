@@ -1,4 +1,5 @@
 // lib/screens/home/user_profile_screen.dart
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
@@ -104,6 +105,31 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     return years.toString();
   }
 
+  // ✅ Open profile image in full screen (Instagram-like)
+  void _openProfilePhotoFullScreen({
+    required String imageUrl,
+    required String heroTag,
+  }) {
+    if (imageUrl.trim().isEmpty) return;
+
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        opaque: false,
+        barrierColor: Colors.transparent, // viewer handles bg fade
+        pageBuilder: (_, __, ___) => _FullScreenImageViewer(
+          imageUrl: imageUrl,
+          heroTag: heroTag,
+        ),
+        transitionsBuilder: (_, animation, __, child) {
+          return FadeTransition(
+            opacity: animation,
+            child: child,
+          );
+        },
+      ),
+    );
+  }
+
   Future<void> _toggleBlockUser(
       BuildContext context, {
         required String currentUid,
@@ -173,7 +199,9 @@ class _UserProfileScreenState extends State<UserProfileScreen>
       if (!mounted) return;
 
       _showSnack(
-        currentlyBlocked ? l10n.profileBlockSnackbarUnblocked : l10n.profileBlockSnackbarBlocked,
+        currentlyBlocked
+            ? l10n.profileBlockSnackbarUnblocked
+            : l10n.profileBlockSnackbarBlocked,
       );
     } finally {
       if (mounted) setState(() => _isBlocking = false);
@@ -444,16 +472,19 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                           final lastName = data['lastName'] ?? '';
                           final fullName = '$firstName $lastName'.trim();
                           final avatarType = data['avatarType'] ?? 'bear';
-                          final profileUrl = data['profileUrl'] ?? '';
+                          final profileUrl = (data['profileUrl'] ?? '').toString();
                           final gender = data['gender'] ?? '';
                           final isActive = data['isActive'] != false;
 
-                          final theirBlockedDynamic = (data['blockedUserIds'] as List<dynamic>?) ?? const [];
+                          final theirBlockedDynamic =
+                              (data['blockedUserIds'] as List<dynamic>?) ?? const [];
                           final theirBlocked = theirBlockedDynamic.whereType<String>().toList();
-                          final hasBlockedMe = currentUid != null && theirBlocked.contains(currentUid);
+                          final hasBlockedMe =
+                              currentUid != null && theirBlocked.contains(currentUid);
 
                           final rawIsOnline = data['isOnline'] == true && isActive;
-                          final lastSeen = data['lastSeen'] is Timestamp ? data['lastSeen'] as Timestamp : null;
+                          final lastSeen =
+                          data['lastSeen'] is Timestamp ? data['lastSeen'] as Timestamp : null;
 
                           final effectiveOnline = !hasBlockedMe &&
                               _isOnlineWithTtl(
@@ -477,42 +508,106 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                               ? DateFormat.yMMMd(l10n.localeName).format(dob)
                               : l10n.unknown;
 
-                          final avatar = Stack(
-                            alignment: Alignment.center,
-                            children: [
-                              AnimatedBuilder(
-                                animation: _glowController,
-                                builder: (_, __) {
-                                  final glow = _glowController.value;
-                                  return Container(
-                                    width: 130,
-                                    height: 130,
+                          final heroTag = 'profile_photo_${widget.userId}';
+
+                          // ✅ Avatar (tappable + Hero full screen) using CachedNetworkImage
+                          final avatar = GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: profileUrl.isEmpty
+                                ? null
+                                : () => _openProfilePhotoFullScreen(
+                              imageUrl: profileUrl,
+                              heroTag: heroTag,
+                            ),
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                AnimatedBuilder(
+                                  animation: _glowController,
+                                  builder: (_, __) {
+                                    final glow = _glowController.value;
+                                    return Container(
+                                      width: 130,
+                                      height: 130,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        gradient: RadialGradient(
+                                          colors: [
+                                            kPrimaryGold.withOpacity(0.3 + glow * 0.2),
+                                            kGoldDeep.withOpacity(0.2 + glow * 0.2),
+                                            Colors.transparent,
+                                          ],
+                                          stops: const [0.4, 0.8, 1],
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                                Hero(
+                                  tag: heroTag,
+                                  child: Container(
+                                    width: 116,
+                                    height: 116,
                                     decoration: BoxDecoration(
                                       shape: BoxShape.circle,
-                                      gradient: RadialGradient(
-                                        colors: [
-                                          kPrimaryGold.withOpacity(0.3 + glow * 0.2),
-                                          kGoldDeep.withOpacity(0.2 + glow * 0.2),
-                                          Colors.transparent,
-                                        ],
-                                        stops: const [0.4, 0.8, 1],
+                                      color: kSurfaceAltColor,
+                                      border: Border.all(
+                                        color: Colors.white.withOpacity(0.10),
                                       ),
                                     ),
-                                  );
-                                },
-                              ),
-                              CircleAvatar(
-                                radius: 58,
-                                backgroundColor: kSurfaceAltColor,
-                                backgroundImage: profileUrl.isNotEmpty ? NetworkImage(profileUrl) : null,
-                                child: profileUrl.isEmpty
-                                    ? Text(
-                                  avatarType == 'smurf' ? '🧜‍♀️' : '🐻',
-                                  style: const TextStyle(fontSize: 42),
-                                )
-                                    : null,
-                              ),
-                            ],
+                                    clipBehavior: Clip.antiAlias,
+                                    child: profileUrl.isEmpty
+                                        ? Center(
+                                      child: Text(
+                                        avatarType == 'smurf' ? '🧜‍♀️' : '🐻',
+                                        style: const TextStyle(fontSize: 42),
+                                      ),
+                                    )
+                                        : CachedNetworkImage(
+                                      imageUrl: profileUrl,
+                                      fit: BoxFit.cover,
+                                      filterQuality: FilterQuality.high,
+                                      placeholder: (context, url) => const Center(
+                                        child: SizedBox(
+                                          width: 22,
+                                          height: 22,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.white70,
+                                          ),
+                                        ),
+                                      ),
+                                      errorWidget: (context, url, error) => Center(
+                                        child: Text(
+                                          avatarType == 'smurf' ? '🧜‍♀️' : '🐻',
+                                          style: const TextStyle(fontSize: 42),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                if (profileUrl.isNotEmpty)
+                                  Positioned(
+                                    bottom: 2,
+                                    right: 2,
+                                    child: Container(
+                                      padding: const EdgeInsets.all(6),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withOpacity(0.60),
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: Colors.white.withOpacity(0.12),
+                                        ),
+                                      ),
+                                      child: const Icon(
+                                        Icons.zoom_in_rounded,
+                                        size: 18,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
                           );
 
                           return SingleChildScrollView(
@@ -600,7 +695,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                                           : gender[0].toUpperCase() + gender.substring(1),
                                     ),
 
-                                    // ✅ Safety Tools (stream current user's block list instead of FutureBuilder get())
+                                    // ✅ Safety Tools (unchanged)
                                     if (!isSelf && currentUid != null) ...[
                                       const SizedBox(height: 28),
                                       const Divider(color: Colors.white24),
@@ -616,7 +711,6 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                                         ),
                                       ),
                                       const SizedBox(height: 10),
-
                                       StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
                                         stream: FirebaseFirestore.instance
                                             .collection('users')
@@ -626,7 +720,8 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                                           final myData = mySnap.data?.data() ?? {};
                                           final myBlockedDynamic =
                                               (myData['blockedUserIds'] as List<dynamic>?) ?? const [];
-                                          final myBlocked = myBlockedDynamic.map((e) => e.toString()).toList();
+                                          final myBlocked =
+                                          myBlockedDynamic.map((e) => e.toString()).toList();
                                           final isBlocked = myBlocked.contains(widget.userId);
 
                                           return Column(
@@ -765,6 +860,201 @@ class _ShimmerLoader extends StatelessWidget {
             strokeWidth: 2,
             color: Colors.white70,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ✅ Full-screen image viewer (Instagram-like) WITH CACHED NETWORK IMAGE
+// - pinch zoom + pan
+// - double-tap zoom
+// - swipe-down to dismiss (only when not zoomed)
+class _FullScreenImageViewer extends StatefulWidget {
+  final String imageUrl;
+  final String heroTag;
+
+  const _FullScreenImageViewer({
+    required this.imageUrl,
+    required this.heroTag,
+  });
+
+  @override
+  State<_FullScreenImageViewer> createState() => _FullScreenImageViewerState();
+}
+
+class _FullScreenImageViewerState extends State<_FullScreenImageViewer> {
+  final TransformationController _transform = TransformationController();
+  TapDownDetails? _doubleTapDetails;
+
+  double _dragDy = 0.0;
+  bool _isDraggingDown = false;
+
+  static const double _dismissThreshold = 140.0;
+  static const double _maxBgFadeDistance = 420.0;
+
+  double get _currentScale => _transform.value.storage[0];
+  bool get _isZoomed => _currentScale > 1.01;
+
+  void _resetZoom() {
+    _transform.value = Matrix4.identity();
+  }
+
+  void _handleDoubleTap() {
+    if (_isZoomed) {
+      setState(_resetZoom);
+      return;
+    }
+
+    final d = _doubleTapDetails;
+    if (d == null) return;
+
+    const double scale = 2.6; // Instagram-ish
+    final tap = d.localPosition;
+
+    final zoomed = Matrix4.identity()
+      ..translate(-tap.dx * (scale - 1), -tap.dy * (scale - 1))
+      ..scale(scale);
+
+    setState(() {
+      _transform.value = zoomed;
+    });
+  }
+
+  void _onVerticalDragStart(DragStartDetails d) {
+    if (_isZoomed) return;
+    _isDraggingDown = true;
+  }
+
+  void _onVerticalDragUpdate(DragUpdateDetails d) {
+    if (!_isDraggingDown || _isZoomed) return;
+    setState(() {
+      _dragDy += d.delta.dy;
+      if (_dragDy < 0) _dragDy = 0;
+    });
+  }
+
+  void _onVerticalDragEnd(DragEndDetails d) {
+    if (!_isDraggingDown || _isZoomed) return;
+
+    final velocity = d.primaryVelocity ?? 0.0;
+    final shouldDismiss = _dragDy > _dismissThreshold || velocity > 1200;
+
+    if (shouldDismiss) {
+      Navigator.of(context).maybePop();
+    } else {
+      setState(() {
+        _dragDy = 0.0;
+        _isDraggingDown = false;
+      });
+    }
+  }
+
+  double _backgroundOpacity() {
+    final t = (_dragDy / _maxBgFadeDistance).clamp(0.0, 1.0);
+    return (1.0 - (t * 0.75)).clamp(0.25, 1.0);
+  }
+
+  double _contentScaleDuringDrag() {
+    final t = (_dragDy / _maxBgFadeDistance).clamp(0.0, 1.0);
+    return (1.0 - (t * 0.10)).clamp(0.90, 1.0);
+  }
+
+  @override
+  void dispose() {
+    _transform.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bgOpacity = _backgroundOpacity();
+    final dragScale = _contentScaleDuringDrag();
+
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: SafeArea(
+        child: Stack(
+          children: [
+            // Background (tap to close)
+            Positioned.fill(
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 90),
+                opacity: bgOpacity,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => Navigator.of(context).maybePop(),
+                  child: Container(color: Colors.black),
+                ),
+              ),
+            ),
+
+            // Image content (double tap + swipe down)
+            Center(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onDoubleTapDown: (d) => _doubleTapDetails = d,
+                onDoubleTap: _handleDoubleTap,
+                onVerticalDragStart: _onVerticalDragStart,
+                onVerticalDragUpdate: _onVerticalDragUpdate,
+                onVerticalDragEnd: _onVerticalDragEnd,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 110),
+                  curve: Curves.easeOut,
+                  transform: Matrix4.identity()
+                    ..translate(0.0, _dragDy)
+                    ..scale(dragScale),
+                  child: Hero(
+                    tag: widget.heroTag,
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InteractiveViewer(
+                        transformationController: _transform,
+                        panEnabled: true,
+                        minScale: 1.0,
+                        maxScale: 5.0,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: CachedNetworkImage(
+                            imageUrl: widget.imageUrl,
+                            fit: BoxFit.contain,
+                            filterQuality: FilterQuality.high,
+                            placeholder: (context, url) => const SizedBox(
+                              width: 56,
+                              height: 56,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white70,
+                              ),
+                            ),
+                            errorWidget: (context, url, error) => const Padding(
+                              padding: EdgeInsets.all(18),
+                              child: Icon(
+                                Icons.broken_image_outlined,
+                                color: Colors.white70,
+                                size: 42,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+            // Close button
+            Positioned(
+              top: 10,
+              right: 10,
+              child: IconButton(
+                onPressed: () => Navigator.of(context).maybePop(),
+                icon: const Icon(Icons.close_rounded, color: Colors.white, size: 28),
+                tooltip: 'Close',
+              ),
+            ),
+          ],
         ),
       ),
     );
