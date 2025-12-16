@@ -570,6 +570,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get reasonOther => 'Other';
 
   @override
+  String get deleteMessageSuccess => 'Message deleted';
+
+  @override
+  String get deleteMessageFailed => 'Failed to delete message';
+
+  @override
+  String get deletedForMe => 'Deleted for me';
+
+  @override
   String get deletingAccount => 'Deleting account...';
 
   @override
@@ -784,4 +793,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get send => 'Send';
+
+  @override
+  String get ok => 'OK';
 }

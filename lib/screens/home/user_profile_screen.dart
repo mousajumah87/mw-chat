@@ -1,4 +1,5 @@
 // lib/screens/home/user_profile_screen.dart
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -10,6 +11,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../l10n/app_localizations.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ui/mw_background.dart';
+import '../../widgets/ui/mw_feedback.dart';
+import '../../widgets/safety/report_user_dialog.dart';
 
 class UserProfileScreen extends StatefulWidget {
   final String userId;
@@ -26,12 +29,8 @@ class _UserProfileScreenState extends State<UserProfileScreen>
   static const String _websiteUrl = 'https://www.mwchats.com';
 
   bool _isBlocking = false;
-  bool _isReporting = false;
 
   late final AnimationController _glowController;
-
-  // ✅ Cache ScaffoldMessenger safely (prevents deactivated ancestor lookup)
-  ScaffoldMessengerState? _messenger;
 
   @override
   void initState() {
@@ -43,22 +42,9 @@ class _UserProfileScreenState extends State<UserProfileScreen>
   }
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // ✅ Safe: capture messenger while widget is active
-    _messenger = ScaffoldMessenger.maybeOf(context);
-  }
-
-  @override
   void dispose() {
     _glowController.dispose();
     super.dispose();
-  }
-
-  void _showSnack(String message) {
-    final m = _messenger;
-    if (m == null) return;
-    m.showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _openMwWebsite() async {
@@ -142,7 +128,11 @@ class _UserProfileScreenState extends State<UserProfileScreen>
       useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         backgroundColor: kSurfaceAltColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: kBorderColor.withOpacity(0.55)),
+        ),
         title: Text(
           currentlyBlocked
               ? l10n.profileBlockDialogTitleUnblock
@@ -160,7 +150,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
             onPressed: () => Navigator.of(ctx).pop(false),
             child: Text(
               l10n.cancel,
-              style: const TextStyle(color: Colors.white70),
+              style: TextStyle(color: kTextSecondary.withOpacity(0.95)),
             ),
           ),
           TextButton(
@@ -171,7 +161,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                   : l10n.profileBlockDialogConfirmBlock,
               style: TextStyle(
                 color: currentlyBlocked ? kPrimaryGold : Colors.redAccent,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ),
@@ -198,145 +188,18 @@ class _UserProfileScreenState extends State<UserProfileScreen>
 
       if (!mounted) return;
 
-      _showSnack(
-        currentlyBlocked
+      await MwFeedback.success(
+        context,
+        message: currentlyBlocked
             ? l10n.profileBlockSnackbarUnblocked
             : l10n.profileBlockSnackbarBlocked,
       );
+    } catch (e, st) {
+      debugPrint('[UserProfile] block/unblock error: $e\n$st');
+      if (!mounted) return;
+      await MwFeedback.error(context, message: l10n.generalErrorMessage);
     } finally {
       if (mounted) setState(() => _isBlocking = false);
-    }
-  }
-
-  Future<void> _reportUser(
-      BuildContext context, {
-        required String currentUid,
-      }) async {
-    final l10n = AppLocalizations.of(context)!;
-    final reasonController = TextEditingController();
-
-    final List<String> reasonCategories = <String>[
-      l10n.reasonHarassment,
-      l10n.reasonSpam,
-      l10n.reasonHate,
-      l10n.reasonSexual,
-      l10n.reasonOther,
-    ];
-
-    try {
-      await showDialog<void>(
-        context: context,
-        useRootNavigator: true, // ✅ safer across iOS
-        builder: (dialogContext) {
-          String? selectedCategory;
-
-          return StatefulBuilder(
-            builder: (innerContext, dialogSetState) {
-              final bool canSave = selectedCategory != null;
-
-              return AlertDialog(
-                backgroundColor: kSurfaceAltColor,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                title: Text(
-                  l10n.reportUserTitle,
-                  style: const TextStyle(color: Colors.white),
-                ),
-                content: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    DropdownButtonFormField<String>(
-                      value: selectedCategory,
-                      isExpanded: true,
-                      decoration: InputDecoration(
-                        labelText: l10n.reportUserReasonLabel,
-                        border: const OutlineInputBorder(),
-                        filled: true,
-                        fillColor: kSurfaceColor.withOpacity(0.4),
-                      ),
-                      items: reasonCategories
-                          .map((r) => DropdownMenuItem<String>(
-                        value: r,
-                        child: Text(r),
-                      ))
-                          .toList(),
-                      onChanged: (val) {
-                        dialogSetState(() {
-                          selectedCategory = val;
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: reasonController,
-                      maxLines: 4,
-                      decoration: InputDecoration(
-                        hintText: l10n.reportUserHint,
-                        filled: true,
-                        fillColor: kSurfaceColor.withOpacity(0.4),
-                        border: const OutlineInputBorder(),
-                      ),
-                      style: const TextStyle(color: Colors.white),
-                    ),
-                  ],
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.of(dialogContext).pop(),
-                    child: Text(
-                      l10n.cancel,
-                      style: const TextStyle(color: Colors.white70),
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: !canSave
-                        ? null
-                        : () async {
-                      if (mounted) setState(() => _isReporting = true);
-
-                      final details = reasonController.text.trim().isEmpty
-                          ? null
-                          : reasonController.text.trim();
-
-                      try {
-                        await FirebaseFirestore.instance.collection('userReports').add({
-                          'reporterId': currentUid,
-                          'reportedUserId': widget.userId,
-                          'reasonCategory': selectedCategory,
-                          'reasonDetails': details,
-                          'createdAt': FieldValue.serverTimestamp(),
-                          'status': 'open',
-                        });
-                      } catch (e, st) {
-                        debugPrint('[UserProfile] report error: $e\n$st');
-                      } finally {
-                        if (mounted) setState(() => _isReporting = false);
-                      }
-
-                      if (dialogContext.mounted) {
-                        Navigator.of(dialogContext).pop();
-                      }
-
-                      if (mounted) {
-                        _showSnack(l10n.reportSubmitted);
-                      }
-                    },
-                    child: Text(
-                      l10n.save,
-                      style: TextStyle(
-                        color: canSave ? kGoldDeep : kGoldDeep.withOpacity(0.4),
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            },
-          );
-        },
-      );
-    } finally {
-      reasonController.dispose();
     }
   }
 
@@ -407,10 +270,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     final isWide = width >= 900;
 
     return Scaffold(
-      backgroundColor: Colors.black,
       appBar: AppBar(
-        backgroundColor: Colors.black.withOpacity(0.85),
-        elevation: 0,
         centerTitle: true,
         title: Text(
           l10n.userProfileTitle,
@@ -510,7 +370,6 @@ class _UserProfileScreenState extends State<UserProfileScreen>
 
                           final heroTag = 'profile_photo_${widget.userId}';
 
-                          // ✅ Avatar (tappable + Hero full screen) using CachedNetworkImage
                           final avatar = GestureDetector(
                             behavior: HitTestBehavior.opaque,
                             onTap: profileUrl.isEmpty
@@ -695,7 +554,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                                           : gender[0].toUpperCase() + gender.substring(1),
                                     ),
 
-                                    // ✅ Safety Tools (unchanged)
+                                    // ✅ Safety Tools (NO DUPLICATION: uses ReportUserDialog)
                                     if (!isSelf && currentUid != null) ...[
                                       const SizedBox(height: 28),
                                       const Divider(color: Colors.white24),
@@ -762,11 +621,10 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                                               SizedBox(
                                                 width: double.infinity,
                                                 child: OutlinedButton.icon(
-                                                  onPressed: _isReporting
-                                                      ? null
-                                                      : () => _reportUser(
+                                                  onPressed: () => ReportUserDialog.open(
                                                     context,
-                                                    currentUid: currentUid,
+                                                    reportedUserId: widget.userId,
+                                                    reporterUserIdOverride: currentUid,
                                                   ),
                                                   icon: const Icon(Icons.flag_outlined, size: 18),
                                                   label: Text(l10n.profileReportButtonLabel),
@@ -909,7 +767,7 @@ class _FullScreenImageViewerState extends State<_FullScreenImageViewer> {
     final d = _doubleTapDetails;
     if (d == null) return;
 
-    const double scale = 2.6; // Instagram-ish
+    const double scale = 2.6;
     final tap = d.localPosition;
 
     final zoomed = Matrix4.identity()
@@ -976,7 +834,6 @@ class _FullScreenImageViewerState extends State<_FullScreenImageViewer> {
       body: SafeArea(
         child: Stack(
           children: [
-            // Background (tap to close)
             Positioned.fill(
               child: AnimatedOpacity(
                 duration: const Duration(milliseconds: 90),
@@ -988,8 +845,6 @@ class _FullScreenImageViewerState extends State<_FullScreenImageViewer> {
                 ),
               ),
             ),
-
-            // Image content (double tap + swipe down)
             Center(
               child: GestureDetector(
                 behavior: HitTestBehavior.translucent,
@@ -1043,8 +898,6 @@ class _FullScreenImageViewerState extends State<_FullScreenImageViewer> {
                 ),
               ),
             ),
-
-            // Close button
             Positioned(
               top: 10,
               right: 10,

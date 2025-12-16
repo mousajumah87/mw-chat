@@ -1,12 +1,19 @@
 // lib/screens/chat/chat_message_list.dart
 
 import 'dart:async';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+
 import '../../widgets/chat/message_bubble.dart';
 import '../../utils/time_utils.dart';
 import '../../l10n/app_localizations.dart';
+import '../../theme/app_theme.dart';
+
+// reuse shared dialogs/helpers
+import '../../widgets/safety/report_message_dialog.dart';
+import '../../widgets/ui/mw_feedback.dart';
 
 class ChatMessageList extends StatefulWidget {
   final String roomId;
@@ -33,44 +40,42 @@ class _ChatMessageListState extends State<ChatMessageList> {
   // Seen batching debounce
   Timer? _debounceTimer;
   final Set<String> _seenMessagesCache = {};
+  String? _lastSeenScheduleKey;
 
-  // Friend status for this chat:
-  // null, "accepted", "requested", "request_received", ...
+  // Friend status
   String? _friendStatus;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _friendSub;
 
-  // ---------- Pagination / Realtime ----------
+  // Pagination + realtime
   final ScrollController _scrollController = ScrollController();
 
-  // We keep a growing in-memory list for paged results.
-  final List<QueryDocumentSnapshot<Map<String, dynamic>>> _docs = [];
-  final Set<String> _docIds = {}; // dedupe
+  /// Single source of truth: all loaded docs in a map to prevent duplicates
+  final Map<String, DocumentSnapshot<Map<String, dynamic>>> _docMap = {};
 
-  // 1) A realtime listener for the newest messages.
+  /// For delete race hardening
+  final Set<String> _pendingLocalRemovals = {};
+
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _liveSub;
 
-  // 2) Manual page loads for older messages.
   DocumentSnapshot<Map<String, dynamic>>? _oldestDoc;
   bool _isLoadingMore = false;
   bool _hasMore = true;
 
-  // Tuning knobs
   static const int _pageSize = 40;
-  static const int _liveWindow = 40; // realtime window size (newest N messages)
+  static const int _liveWindow = 40;
+
+  int _gen = 0; // ignore late callbacks after room change
 
   @override
   void initState() {
     super.initState();
-    _listenFriendStatus();
 
+    _listenFriendStatus();
     _scrollController.addListener(_onScroll);
 
-    // If blocked, we don’t stream anything.
     if (!widget.isBlocked) {
       _startLiveListener();
-      // Also load an initial older page so you get some history immediately.
-      // (Live listener already provides newest window.)
-      _loadMoreOlder();
+      _loadMoreOlder(); // initial older page
     }
   }
 
@@ -83,17 +88,15 @@ class _ChatMessageListState extends State<ChatMessageList> {
         oldWidget.otherUserId != widget.otherUserId;
     final blockedChanged = oldWidget.isBlocked != widget.isBlocked;
 
-    if (userChanged) {
-      _listenFriendStatus();
-    }
+    if (userChanged) _listenFriendStatus();
 
     if (roomChanged || blockedChanged) {
-      _resetPagingState();
+      _resetAllState();
 
-      if (!widget.isBlocked) {
-        _startLiveListener();
-        _loadMoreOlder();
-      }
+      if (widget.isBlocked) return;
+
+      _startLiveListener();
+      _loadMoreOlder();
     }
   }
 
@@ -106,13 +109,31 @@ class _ChatMessageListState extends State<ChatMessageList> {
     super.dispose();
   }
 
-  void _resetPagingState() {
+  Future<void> _toastSuccess(String message) async {
+    if (!mounted) return;
+    await MwFeedback.success(context, message: message);
+  }
+
+  Future<void> _toastError(String message) async {
+    if (!mounted) return;
+    await MwFeedback.error(context, message: message);
+  }
+
+  void _resetAllState() {
+    _gen++;
     _liveSub?.cancel();
-    _docs.clear();
-    _docIds.clear();
+    _liveSub = null;
+
+    _pendingLocalRemovals.clear();
+    _docMap.clear();
+
     _oldestDoc = null;
     _isLoadingMore = false;
     _hasMore = true;
+
+    _seenMessagesCache.clear();
+    _lastSeenScheduleKey = null;
+
     if (mounted) setState(() {});
   }
 
@@ -125,11 +146,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
     final otherId = widget.otherUserId;
 
     if (myId.isEmpty || otherId == null || otherId.isEmpty) {
-      if (mounted) {
-        setState(() {
-          _friendStatus = null;
-        });
-      }
+      if (mounted) setState(() => _friendStatus = null);
       return;
     }
 
@@ -143,141 +160,68 @@ class _ChatMessageListState extends State<ChatMessageList> {
           (snap) {
         final data = snap.data();
         final status = data?['status'] as String?;
-        if (mounted) {
-          setState(() {
-            _friendStatus = status;
-          });
-        }
+        if (mounted) setState(() => _friendStatus = status);
       },
       onError: (e, st) {
         debugPrint('[ChatMessageList] _listenFriendStatus error: $e\n$st');
-        if (mounted) {
-          setState(() {
-            _friendStatus = null;
-          });
-        }
+        if (mounted) setState(() => _friendStatus = null);
       },
     );
   }
 
-  // ================= FRIEND REQUEST ACTIONS =================
+  // ================= TIMESTAMP HELPERS =================
 
-  Future<void> _acceptFriendRequest() async {
-    final myId = widget.currentUserId;
-    final otherId = widget.otherUserId;
-    if (myId.isEmpty || otherId == null || otherId.isEmpty) return;
+  Timestamp _effectiveTs(DocumentSnapshot<Map<String, dynamic>> d) {
+    final data = d.data();
+    final v = data?['createdAt'];
+    if (v is Timestamp) return v;
 
-    final batch = FirebaseFirestore.instance.batch();
-    final myRef = FirebaseFirestore.instance
-        .collection('users')
-        .doc(myId)
-        .collection('friends')
-        .doc(otherId);
-    final theirRef = FirebaseFirestore.instance
-        .collection('users')
-        .doc(otherId)
-        .collection('friends')
-        .doc(myId);
+    final v2 = data?['clientCreatedAt'];
+    if (v2 is Timestamp) return v2;
 
-    final now = FieldValue.serverTimestamp();
+    final v3 = data?['localCreatedAt'];
+    if (v3 is Timestamp) return v3;
 
-    batch.set(
-      myRef,
-      {
-        'status': 'accepted',
-        'updatedAt': now,
-      },
-      SetOptions(merge: true),
-    );
-    batch.set(
-      theirRef,
-      {
-        'status': 'accepted',
-        'updatedAt': now,
-      },
-      SetOptions(merge: true),
-    );
-
-    try {
-      await batch.commit();
-      if (!mounted) return;
-      final l10n = AppLocalizations.of(context)!;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.friendRequestAccepted)),
-      );
-    } catch (e, st) {
-      debugPrint('[ChatMessageList] _acceptFriendRequest error: $e\n$st');
-      if (!mounted) return;
-      final l10n = AppLocalizations.of(context)!;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.friendRequestAcceptFailed)),
-      );
-    }
+    return Timestamp.now();
   }
 
-  Future<void> _declineFriendRequest() async {
-    final myId = widget.currentUserId;
-    final otherId = widget.otherUserId;
-    if (myId.isEmpty || otherId == null || otherId.isEmpty) return;
-
-    final batch = FirebaseFirestore.instance.batch();
-    final myRef = FirebaseFirestore.instance
-        .collection('users')
-        .doc(myId)
-        .collection('friends')
-        .doc(otherId);
-    final theirRef = FirebaseFirestore.instance
-        .collection('users')
-        .doc(otherId)
-        .collection('friends')
-        .doc(myId);
-
-    batch.delete(myRef);
-    batch.delete(theirRef);
-
-    try {
-      await batch.commit();
-      if (!mounted) return;
-      final l10n = AppLocalizations.of(context)!;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.friendRequestDeclined)),
-      );
-    } catch (e, st) {
-      debugPrint('[ChatMessageList] _declineFriendRequest error: $e\n$st');
-      if (!mounted) return;
-      final l10n = AppLocalizations.of(context)!;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.friendRequestDeclineFailed)),
-      );
-    }
+  bool _isVisibleForMe(DocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = doc.data() ?? const <String, dynamic>{};
+    final hiddenFor = (data['hiddenFor'] as List?)?.cast<String>() ?? const <String>[];
+    return !hiddenFor.contains(widget.currentUserId);
   }
 
   // ================= SEEN HANDLING =================
 
-  void _scheduleMarkMessagesAsSeen(
-      List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
-      ) {
+  void _scheduleMarkMessagesAsSeen(List<DocumentSnapshot<Map<String, dynamic>>> docs) {
+    if (widget.isBlocked) return;
+    if (widget.currentUserId.isEmpty) return;
+    if (widget.otherUserId == null || widget.otherUserId!.isEmpty) return;
+
+    final ids = docs.take(25).map((d) => d.id).join('|');
+    final key = '${widget.roomId}:${widget.currentUserId}:$ids';
+    if (_lastSeenScheduleKey == key) return;
+    _lastSeenScheduleKey = key;
+
     _debounceTimer?.cancel();
     _debounceTimer = Timer(const Duration(milliseconds: 300), () {
       _markMessagesAsSeen(docs);
     });
   }
 
-  Future<void> _markMessagesAsSeen(
-      List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
-      ) async {
+  Future<void> _markMessagesAsSeen(List<DocumentSnapshot<Map<String, dynamic>>> docs) async {
+    if (widget.isBlocked) return;
     if (widget.currentUserId.isEmpty) return;
+    if (widget.otherUserId == null || widget.otherUserId!.isEmpty) return;
 
     final batch = FirebaseFirestore.instance.batch();
     bool hasUpdates = false;
 
     for (final doc in docs) {
-      final data = doc.data();
+      final data = doc.data() ?? const <String, dynamic>{};
       final senderId = data['senderId'] as String?;
-      final seenBy =
-          (data['seenBy'] as List?)?.cast<String>() ?? const <String>[];
+      final seenBy = (data['seenBy'] as List?)?.cast<String>() ?? const <String>[];
 
-      // Only mark messages from the other user, and only once per message.
       if (senderId == null ||
           senderId == widget.currentUserId ||
           _seenMessagesCache.contains(doc.id)) {
@@ -299,217 +243,307 @@ class _ChatMessageListState extends State<ChatMessageList> {
       } catch (e, st) {
         debugPrint('[ChatMessageList] seenBy batch commit error: $e\n$st');
       }
+    }
 
-      // Also reset unread count for the current user in this chat.
-      try {
-        await FirebaseFirestore.instance
-            .collection('privateChats')
-            .doc(widget.roomId)
-            .set(
-          {
-            'unreadCounts': {widget.currentUserId: 0},
-          },
-          SetOptions(merge: true),
-        );
-      } on FirebaseException catch (e) {
-        debugPrint(
-          '⚠️ Failed to reset unread count on seen: ${e.code} ${e.message}',
-        );
-      }
+    try {
+      await FirebaseFirestore.instance
+          .collection('privateChats')
+          .doc(widget.roomId)
+          .set(
+        {
+          'unreadCounts': {widget.currentUserId: 0},
+        },
+        SetOptions(merge: true),
+      );
+    } on FirebaseException catch (e) {
+      debugPrint('⚠️ Failed to reset unread count on seen: ${e.code} ${e.message}');
     }
   }
 
-  // ================= UPDATE UNREAD ON DELETE =================
+  // ================= UNREAD CONSISTENCY =================
 
-  Future<void> _decrementUnreadIfNeeded(
-      DocumentSnapshot<Map<String, dynamic>> messageDoc,
-      ) async {
+  Future<void> _decrementUnreadIfNeeded(DocumentSnapshot<Map<String, dynamic>> messageDoc) async {
     if (widget.otherUserId == null) return;
 
     final data = messageDoc.data();
     if (data == null) return;
 
     final seenBy = (data['seenBy'] as List?)?.cast<String>() ?? [];
+    if (seenBy.contains(widget.otherUserId)) return;
 
-    // If the other user has not seen this message yet, and I delete it,
-    // decrement their unread counter.
-    if (!seenBy.contains(widget.otherUserId)) {
-      final roomRef =
-      FirebaseFirestore.instance.collection('privateChats').doc(widget.roomId);
-
-      await roomRef.set(
-        {
-          'unreadCounts': {
-            widget.otherUserId!: FieldValue.increment(-1),
-          },
-        },
-        SetOptions(merge: true),
-      );
-    }
-  }
-
-  // ================= REPORT MESSAGE =================
-
-  Future<void> _reportMessage(
-      BuildContext context,
-      DocumentSnapshot<Map<String, dynamic>> messageDoc, {
-        required String reasonCategory,
-        String? reasonDetails,
-      }) async {
-    final l10n = AppLocalizations.of(context)!;
-    final user = FirebaseAuth.instance.currentUser;
-
-    // If somehow user is not logged in, show an error instead of doing nothing.
-    if (user == null) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.generalErrorMessage)),
-      );
-      return;
-    }
-
-    final data = messageDoc.data() ?? {};
-    final type = data['type'] ?? 'text';
+    final roomRef = FirebaseFirestore.instance.collection('privateChats').doc(widget.roomId);
 
     try {
-      await FirebaseFirestore.instance.collection('contentReports').add({
-        'type': type,
-        'roomId': widget.roomId,
-        'messageId': messageDoc.id,
-        'senderId': data['senderId'],
-        'senderEmail': data['senderEmail'],
-        'reporterId': user.uid,
+      await FirebaseFirestore.instance.runTransaction((tx) async {
+        final snap = await tx.get(roomRef);
+        final data = snap.data() as Map<String, dynamic>?;
 
-        // New structured fields
-        'reasonCategory': reasonCategory,
-        'reasonDetails': (reasonDetails == null || reasonDetails.trim().isEmpty)
-            ? null
-            : reasonDetails.trim(),
+        final unreadCounts = (data?['unreadCounts'] as Map?)?.cast<String, dynamic>() ?? {};
+        final cur = (unreadCounts[widget.otherUserId!] as num?)?.toInt() ?? 0;
+        final next = cur - 1;
 
-        // Backward-compatible combined reason string
-        'reason': (reasonDetails == null || reasonDetails.trim().isEmpty)
-            ? reasonCategory
-            : '$reasonCategory – ${reasonDetails.trim()}',
-
-        'text': data['text'] ?? '',
-        'fileUrl': data['fileUrl'],
-        'fileName': data['fileName'],
-        'createdAt': FieldValue.serverTimestamp(),
-        'status': 'open',
+        tx.set(
+          roomRef,
+          {
+            'unreadCounts': {widget.otherUserId!: next < 0 ? 0 : next},
+          },
+          SetOptions(merge: true),
+        );
       });
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.reportSubmitted)),
-      );
-    } catch (e, st) {
-      debugPrint('[ChatMessageList] _reportMessage error: $e\n$st');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.generalErrorMessage)),
-      );
+    } catch (e) {
+      debugPrint('[ChatMessageList] decrement unread txn failed: $e');
     }
   }
 
-  Future<void> _showReportDialog(
-      BuildContext context,
-      DocumentSnapshot<Map<String, dynamic>> messageDoc,
-      ) async {
-    final l10n = AppLocalizations.of(context)!;
-    final reasonController = TextEditingController();
+  // ================= PAGINATION =================
 
-    final List<String> reasonCategories = <String>[
-      l10n.reasonHarassment,
-      l10n.reasonSpam,
-      l10n.reasonHate,
-      l10n.reasonSexual,
-      l10n.reasonOther,
-    ];
+  void _onScroll() {
+    // reverse:true means "older side" is maxScrollExtent.
+    if (!_scrollController.hasClients) return;
+    if (_isLoadingMore || !_hasMore) return;
+    if (widget.isBlocked) return;
 
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) {
-        String? selectedCategory;
+    final max = _scrollController.position.maxScrollExtent;
+    final offset = _scrollController.offset;
 
-        return StatefulBuilder(
-          builder: (context, dialogSetState) {
-            final bool canSave = selectedCategory != null;
+    if (offset >= (max - 300)) {
+      _loadMoreOlder();
+    }
+  }
 
-            return AlertDialog(
-              title: Text(l10n.reportMessageTitle),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  DropdownButtonFormField<String>(
-                    value: selectedCategory,
-                    isExpanded: true,
-                    decoration: InputDecoration(
-                      labelText: l10n.reportUserReasonLabel,
-                      border: const OutlineInputBorder(),
-                    ),
-                    items: reasonCategories
-                        .map(
-                          (r) => DropdownMenuItem<String>(
-                        value: r,
-                        child: Text(r),
-                      ),
-                    )
-                        .toList(),
-                    onChanged: (val) {
-                      dialogSetState(() {
-                        selectedCategory = val;
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: reasonController,
-                    maxLines: 4,
-                    decoration: InputDecoration(
-                      hintText: l10n.reportMessageHint, // optional details
-                      border: const OutlineInputBorder(),
-                    ),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: Text(l10n.cancel),
-                ),
-                TextButton(
-                  onPressed: !canSave
-                      ? null
-                      : () async {
-                    final details = reasonController.text.trim();
-                    await _reportMessage(
-                      context,
-                      messageDoc,
-                      reasonCategory: selectedCategory!,
-                      reasonDetails: details.isEmpty ? null : details,
-                    );
-                    if (dialogContext.mounted) {
-                      Navigator.of(dialogContext).pop();
-                    }
-                  },
-                  child: Text(
-                    l10n.save,
-                    style: TextStyle(
-                      color: canSave
-                          ? Theme.of(context).colorScheme.primary
-                          : Theme.of(context)
-                          .colorScheme
-                          .primary
-                          .withOpacity(0.4),
-                    ),
-                  ),
-                ),
-              ],
-            );
-          },
-        );
+  void _recomputeOldest() {
+    if (_docMap.isEmpty) {
+      _oldestDoc = null;
+      return;
+    }
+    DocumentSnapshot<Map<String, dynamic>>? oldest;
+    Timestamp? oldestTs;
+
+    for (final d in _docMap.values) {
+      final ts = _effectiveTs(d);
+      if (oldest == null) {
+        oldest = d;
+        oldestTs = ts;
+        continue;
+      }
+      if (ts.compareTo(oldestTs!) < 0) {
+        oldest = d;
+        oldestTs = ts;
+      }
+    }
+    _oldestDoc = oldest;
+  }
+
+  Future<void> _loadMoreOlder() async {
+    if (_isLoadingMore || !_hasMore) return;
+    if (widget.isBlocked) return;
+
+    setState(() => _isLoadingMore = true);
+    final int myGen = _gen;
+
+    try {
+      Query<Map<String, dynamic>> q = FirebaseFirestore.instance
+          .collection('privateChats')
+          .doc(widget.roomId)
+          .collection('messages')
+          .orderBy('createdAt', descending: true)
+          .limit(_pageSize);
+
+      final oldest = _oldestDoc;
+      if (oldest != null) {
+        q = q.startAfterDocument(oldest);
+      }
+
+      final snap = await q.get();
+      if (!mounted) return;
+      if (myGen != _gen) return;
+
+      if (snap.docs.isEmpty) {
+        _hasMore = false;
+        return;
+      }
+
+      for (final d in snap.docs) {
+        _docMap.putIfAbsent(d.id, () => d);
+      }
+
+      _recomputeOldest();
+
+      if (snap.docs.length < _pageSize) {
+        _hasMore = false;
+      }
+
+      setState(() {});
+    } catch (e, st) {
+      debugPrint('[ChatMessageList] _loadMoreOlder error: $e\n$st');
+    } finally {
+      if (mounted && myGen == _gen) setState(() => _isLoadingMore = false);
+    }
+  }
+
+  // ================= LIVE LISTENER =================
+
+  void _startLiveListener() {
+    _liveSub?.cancel();
+    final int myGen = _gen;
+
+    _liveSub = FirebaseFirestore.instance
+        .collection('privateChats')
+        .doc(widget.roomId)
+        .collection('messages')
+        .orderBy('createdAt', descending: true)
+        .limit(_liveWindow)
+        .snapshots()
+        .listen(
+          (snap) {
+        if (!mounted) return;
+        if (myGen != _gen) return;
+        if (widget.isBlocked) return;
+
+        if (snap.docs.isEmpty) {
+          _docMap.clear();
+          _pendingLocalRemovals.clear();
+          _oldestDoc = null;
+          _hasMore = false;
+          _isLoadingMore = false;
+          setState(() {});
+          return;
+        }
+
+        for (final change in snap.docChanges) {
+          final doc = change.doc;
+
+          // If we removed locally already, ignore redundant events
+          if (_pendingLocalRemovals.contains(doc.id) &&
+              change.type != DocumentChangeType.added) {
+            if (change.type == DocumentChangeType.removed) {
+              _pendingLocalRemovals.remove(doc.id);
+            }
+            continue;
+          }
+
+          if (change.type == DocumentChangeType.removed) {
+            _docMap.remove(doc.id);
+            continue;
+          }
+
+          // added / modified
+          _docMap[doc.id] = doc;
+        }
+
+        _recomputeOldest();
+        setState(() {});
+      },
+      onError: (e, st) {
+        debugPrint('[ChatMessageList] live listener error: $e\n$st');
       },
     );
+  }
+
+  // ================= STORAGE HELPERS (for deleting message attachments) =================
+
+  Set<String> _extractStoragePathsFromMessage(Map<String, dynamic> data) {
+    final paths = <String>{};
+
+    void add(dynamic v) {
+      if (v is String && v.trim().isNotEmpty) paths.add(v.trim());
+    }
+
+    add(data['storagePath']);
+    add(data['thumbStoragePath']);
+    add(data['thumbnailStoragePath']);
+
+    final attachments = data['attachments'];
+    if (attachments is List) {
+      for (final item in attachments) {
+        if (item is Map) {
+          add(item['storagePath']);
+          add(item['thumbStoragePath']);
+          add(item['thumbnailStoragePath']);
+        }
+      }
+    }
+
+    final media = data['media'];
+    if (media is Map) {
+      add(media['storagePath']);
+      add(media['thumbStoragePath']);
+      add(media['thumbnailStoragePath']);
+    }
+
+    // Back-compat: try parse URLs too
+    final urlFields = [
+      data['fileUrl'],
+      data['mediaUrl'],
+      data['imageUrl'],
+      data['videoUrl'],
+      data['audioUrl'],
+      data['voiceUrl'],
+      data['thumbnailUrl'],
+      data['thumbUrl'],
+      data['url'],
+    ];
+
+    for (final v in urlFields) {
+      if (v is String && v.trim().isNotEmpty) {
+        final p = _storagePathFromUrl(v.trim());
+        if (p != null && p.isNotEmpty) paths.add(p);
+      }
+    }
+
+    return paths;
+  }
+
+  String? _storagePathFromUrl(String url) {
+    try {
+      final u = Uri.parse(url);
+
+      // gs://bucket/path/to/object
+      if (u.scheme == 'gs') {
+        final p = u.path;
+        if (p.isEmpty) return null;
+        return p.startsWith('/') ? p.substring(1) : p;
+      }
+
+      // https://firebasestorage.googleapis.com/v0/b/<bucket>/o/<encodedPath>
+      if (u.host.contains('firebasestorage.googleapis.com')) {
+        final seg = u.pathSegments;
+        final oIndex = seg.indexOf('o');
+        if (oIndex != -1 && oIndex + 1 < seg.length) {
+          return Uri.decodeComponent(seg[oIndex + 1]);
+        }
+      }
+
+      // https://storage.googleapis.com/download/storage/v1/b/<bucket>/o/<encodedPath>
+      if (u.host.contains('storage.googleapis.com')) {
+        final seg = u.pathSegments;
+        final oIndex = seg.indexOf('o');
+        if (oIndex != -1 && oIndex + 1 < seg.length) {
+          return Uri.decodeComponent(seg[oIndex + 1]);
+        }
+      }
+
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _purgeStorageForMessagePaths(Set<String> paths) async {
+    if (paths.isEmpty) return;
+
+    try {
+      final fn = FirebaseFunctions.instanceFor(region: 'us-central1')
+          .httpsCallable('purgeChatRoom');
+
+      await fn.call({
+        'roomId': widget.roomId,
+        'paths': paths.toList(growable: false),
+      });
+    } catch (e) {
+      // Non-fatal: message delete should still proceed
+      debugPrint('[ChatMessageList] purgeChatRoom failed (non-fatal): $e');
+    }
   }
 
   // ================= DELETE / REPORT MENU =================
@@ -523,11 +557,16 @@ class _ChatMessageListState extends State<ChatMessageList> {
 
     final selected = await showModalBottomSheet<_MessageAction>(
       context: context,
-      backgroundColor: const Color(0xFF121212),
+      backgroundColor: kSurfaceAltColor,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (sheetContext) {
+        final titleStyle = Theme.of(sheetContext).textTheme.bodyLarge?.copyWith(
+          color: kTextPrimary,
+          fontWeight: FontWeight.w700,
+        );
+
         return SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -537,39 +576,30 @@ class _ChatMessageListState extends State<ChatMessageList> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.white24,
+                  color: kTextSecondary.withOpacity(0.35),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
               const SizedBox(height: 8),
               if (isMe) ...[
                 ListTile(
-                  leading: const Icon(Icons.visibility_off_outlined,
-                      color: Colors.white70),
-                  title: Text(
-                    l10n.deleteChatForMe,
-                    style: const TextStyle(color: Colors.white),
-                  ),
-                  onTap: () => Navigator.of(sheetContext)
-                      .pop(_MessageAction.deleteForMe),
+                  leading: Icon(Icons.visibility_off_outlined,
+                      color: kTextSecondary.withOpacity(0.95)),
+                  title: Text(l10n.deleteChatForMe, style: titleStyle),
+                  onTap: () =>
+                      Navigator.of(sheetContext).pop(_MessageAction.deleteForMe),
                 ),
                 ListTile(
-                  leading: const Icon(Icons.delete_outline, color: Colors.red),
-                  title: Text(
-                    l10n.deleteMessageTitle,
-                    style: const TextStyle(color: Colors.white),
-                  ),
+                  leading: const Icon(Icons.delete_outline, color: kErrorColor),
+                  title: Text(l10n.deleteMessageTitle, style: titleStyle),
                   onTap: () => Navigator.of(sheetContext)
                       .pop(_MessageAction.deleteForBoth),
                 ),
               ],
               ListTile(
-                leading:
-                const Icon(Icons.flag_outlined, color: Colors.orange),
-                title: Text(
-                  l10n.reportMessageTitle,
-                  style: const TextStyle(color: Colors.white),
-                ),
+                leading: Icon(Icons.flag_outlined,
+                    color: kPrimaryGold.withOpacity(0.95)),
+                title: Text(l10n.reportMessageTitle, style: titleStyle),
                 onTap: () =>
                     Navigator.of(sheetContext).pop(_MessageAction.report),
               ),
@@ -582,21 +612,57 @@ class _ChatMessageListState extends State<ChatMessageList> {
 
     if (selected == null) return;
 
-    // ✅ "Delete for me" → hide only for current user using hiddenFor[]
+    void removeLocalNow(String id) {
+      _pendingLocalRemovals.add(id);
+      _docMap.remove(id);
+      if (mounted) setState(() {});
+    }
+
+    void restoreLocalNow(DocumentSnapshot<Map<String, dynamic>> doc) {
+      _pendingLocalRemovals.remove(doc.id);
+      _docMap[doc.id] = doc;
+      if (mounted) setState(() {});
+    }
+
+    // -------- Delete for me (hide) --------
     if (selected == _MessageAction.deleteForMe && isMe) {
-      await messageDoc.reference.update({
-        'hiddenFor': FieldValue.arrayUnion([widget.currentUserId]),
-      });
+      try {
+        await messageDoc.reference.update({
+          'hiddenFor': FieldValue.arrayUnion([widget.currentUserId]),
+        });
+        removeLocalNow(messageDoc.id);
+        await _toastSuccess(l10n.deletedForMe);
+      } on FirebaseException catch (e, st) {
+        debugPrint('[ChatMessageList] deleteForMe failed: ${e.code} ${e.message}\n$st');
+        await _toastError(l10n.chatHistoryDeleteFailed);
+      } catch (e, st) {
+        debugPrint('[ChatMessageList] deleteForMe failed: $e\n$st');
+        await _toastError(l10n.chatHistoryDeleteFailed);
+      }
       return;
     }
 
-    // ✅ "Delete for both" → keep your old hard-delete behavior
+    // -------- Delete for both (real delete) --------
     if (selected == _MessageAction.deleteForBoth && isMe) {
       final confirmed = await showDialog<bool>(
         context: context,
+        useRootNavigator: true,
         builder: (ctx) => AlertDialog(
-          title: Text(l10n.deleteMessageTitle),
-          content: Text(l10n.deleteMessageConfirm),
+          backgroundColor: kSurfaceAltColor,
+          surfaceTintColor: Colors.transparent,
+          title: Text(
+            l10n.deleteMessageTitle,
+            style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+              color: kTextPrimary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          content: Text(
+            l10n.deleteMessageConfirm,
+            style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
+              color: kTextSecondary.withOpacity(0.95),
+            ),
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -606,7 +672,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
               onPressed: () => Navigator.pop(ctx, true),
               child: Text(
                 l10n.delete,
-                style: const TextStyle(color: Colors.red),
+                style: const TextStyle(color: kErrorColor),
               ),
             ),
           ],
@@ -616,230 +682,56 @@ class _ChatMessageListState extends State<ChatMessageList> {
 
       if (!confirmed) return;
 
-      final msgRef = messageDoc.reference;
-      await _decrementUnreadIfNeeded(messageDoc);
-      await msgRef.delete();
+      // Optimistic UI removal
+      removeLocalNow(messageDoc.id);
+
+      try {
+        // 1) best effort unread decrement
+        try {
+          await _decrementUnreadIfNeeded(messageDoc);
+        } catch (_) {}
+
+        // 2) delete storage files for this message (server-side, secure)
+        final data = messageDoc.data() ?? const <String, dynamic>{};
+        final paths = _extractStoragePathsFromMessage(Map<String, dynamic>.from(data));
+        await _purgeStorageForMessagePaths(paths);
+
+        // 3) delete message doc (source of truth)
+        await messageDoc.reference.delete();
+
+        await _toastSuccess(l10n.deleteMessageSuccess);
+      } on FirebaseException catch (e, st) {
+        debugPrint('[ChatMessageList] deleteForBoth failed: ${e.code} ${e.message}\n$st');
+        restoreLocalNow(messageDoc);
+        await _toastError(l10n.deleteMessageFailed);
+      } catch (e, st) {
+        debugPrint('[ChatMessageList] deleteForBoth failed: $e\n$st');
+        restoreLocalNow(messageDoc);
+        await _toastError(l10n.deleteMessageFailed);
+      }
+
       return;
     }
 
+    // -------- Report --------
     if (selected == _MessageAction.report) {
-      await _showReportDialog(context, messageDoc);
-    }
-  }
-
-  // ================= FRIEND REQUEST BANNER =================
-
-  Widget _buildFriendBanner(BuildContext context) {
-    final status = _friendStatus;
-    if (status == null) return const SizedBox.shrink();
-
-    final l10n = AppLocalizations.of(context)!;
-
-    if (status == 'request_received') {
-      // Incoming request → Accept / Decline.
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 8.0),
-        child: Card(
-          color: Colors.white.withOpacity(0.06),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: BorderSide(color: Colors.white.withOpacity(0.18)),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            child: Row(
-              children: [
-                const Icon(Icons.person_add, color: Colors.white70),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    l10n.friendRequestIncomingBanner,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                    ),
-                  ),
-                ),
-                TextButton(
-                  onPressed: _acceptFriendRequest,
-                  child: Text(
-                    l10n.friendAcceptTooltip,
-                    style: const TextStyle(color: Colors.greenAccent),
-                  ),
-                ),
-                TextButton(
-                  onPressed: _declineFriendRequest,
-                  child: Text(
-                    l10n.friendDeclineTooltip,
-                    style: const TextStyle(color: Colors.redAccent),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+      await ReportMessageDialog.open(
+        context,
+        roomId: widget.roomId,
+        messageDoc: messageDoc,
       );
-    }
-
-    if (status == 'requested') {
-      // Outgoing request → info only (design kept as-is, empty card).
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 8.0),
-        child: Card(
-          color: Colors.white.withOpacity(0.04),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: BorderSide(color: Colors.white.withOpacity(0.14)),
-          ),
-        ),
-      );
-    }
-
-    // For "accepted" or any other status, no banner.
-    return const SizedBox.shrink();
-  }
-
-  // ================= PAGINATION HELPERS =================
-
-  void _onScroll() {
-    // reverse:true means "top of UI" is the end of scroll (maxScrollExtent).
-    // When user scrolls up (towards older messages), offset approaches maxScrollExtent.
-    if (!_scrollController.hasClients) return;
-    if (_isLoadingMore || !_hasMore) return;
-
-    final max = _scrollController.position.maxScrollExtent;
-    final offset = _scrollController.offset;
-
-    // When within 300px of the "top" (older side), load more.
-    if (offset >= (max - 300)) {
-      _loadMoreOlder();
-    }
-  }
-
-  void _startLiveListener() {
-    _liveSub?.cancel();
-
-    _liveSub = FirebaseFirestore.instance
-        .collection('privateChats')
-        .doc(widget.roomId)
-        .collection('messages')
-        .orderBy('createdAt', descending: true)
-        .limit(_liveWindow)
-        .snapshots()
-        .listen(
-          (snap) {
-        if (!mounted) return;
-
-        bool changed = false;
-
-        // Insert/replace newest docs into memory list
-        for (final d in snap.docs) {
-          if (_docIds.add(d.id)) {
-            _docs.add(d);
-            changed = true;
-          } else {
-            // update existing
-            final idx = _docs.indexWhere((x) => x.id == d.id);
-            if (idx != -1) {
-              _docs[idx] = d;
-              changed = true;
-            }
-          }
-        }
-
-        // update pointer for oldest doc
-        if (_docs.isNotEmpty) {
-          // Find the oldest doc we currently have (smallest createdAt)
-          _oldestDoc = _docs.reduce((a, b) {
-            final aTs = (a.data()['createdAt'] as Timestamp?);
-            final bTs = (b.data()['createdAt'] as Timestamp?);
-            if (aTs == null && bTs == null) return a;
-            if (aTs == null) return b;
-            if (bTs == null) return a;
-            return aTs.compareTo(bTs) <= 0 ? a : b;
-          });
-        }
-
-        if (changed) {
-          setState(() {});
-        }
-      },
-      onError: (e, st) {
-        debugPrint('[ChatMessageList] live listener error: $e\n$st');
-      },
-    );
-  }
-
-  Future<void> _loadMoreOlder() async {
-    if (_isLoadingMore || !_hasMore) return;
-    if (widget.isBlocked) return;
-
-    setState(() => _isLoadingMore = true);
-
-    try {
-      Query<Map<String, dynamic>> q = FirebaseFirestore.instance
-          .collection('privateChats')
-          .doc(widget.roomId)
-          .collection('messages')
-          .orderBy('createdAt', descending: true)
-          .limit(_pageSize);
-
-      // We already have some docs; load older than the oldest we know.
-      // With descending order, "older" means startAfterDocument(oldestDoc).
-      final oldest = _oldestDoc;
-      if (oldest != null) {
-        q = q.startAfterDocument(oldest);
-      }
-
-      final snap = await q.get();
-
-      if (!mounted) return;
-
-      if (snap.docs.isEmpty) {
-        _hasMore = false;
-        setState(() => _isLoadingMore = false);
-        return;
-      }
-
-      bool changed = false;
-
-      for (final d in snap.docs) {
-        if (_docIds.add(d.id)) {
-          _docs.add(d);
-          changed = true;
-        }
-      }
-
-      // Move oldest pointer
-      _oldestDoc = snap.docs.last;
-
-      // If returned less than page size, assume no more
-      if (snap.docs.length < _pageSize) {
-        _hasMore = false;
-      }
-
-      if (changed) setState(() {});
-    } catch (e, st) {
-      debugPrint('[ChatMessageList] _loadMoreOlder error: $e\n$st');
-    } finally {
-      if (mounted) setState(() => _isLoadingMore = false);
     }
   }
 
   // ================= UI =================
 
-  @override
-  Widget build(BuildContext context) {
-    final maxWidth = MediaQuery.of(context).size.width * 0.7;
-    final l10n = AppLocalizations.of(context)!;
-
-    // NEW: high-contrast style for overlay/empty states
-    const TextStyle emptyStateStyle = TextStyle(
-      color: Colors.white,
+  Widget _buildOverlayMessage(String text) {
+    final style = Theme.of(context).textTheme.bodyMedium?.copyWith(
+      color: kTextPrimary,
       fontSize: 14,
-      fontWeight: FontWeight.w500,
+      fontWeight: FontWeight.w600,
       shadows: [
-        Shadow(
+        const Shadow(
           color: Colors.black54,
           offset: Offset(0, 1),
           blurRadius: 4,
@@ -847,144 +739,129 @@ class _ChatMessageListState extends State<ChatMessageList> {
       ],
     );
 
-    // 🔒 Blocked state overlay (center of screen)
-    if (widget.isBlocked) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
+    return ListView(
+      reverse: true,
+      padding: const EdgeInsets.all(24),
+      children: [
+        const SizedBox(height: 80),
+        Center(
           child: Text(
-            l10n.userBlockedInfo,
+            text,
             textAlign: TextAlign.center,
-            style: emptyStateStyle,
+            style: style,
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+
+    if (widget.isBlocked) {
+      return _buildOverlayMessage(l10n.userBlockedInfo);
+    }
+
+    final visibleDocs = _docMap.values.where(_isVisibleForMe).toList()
+      ..sort((a, b) => _effectiveTs(b).compareTo(_effectiveTs(a)));
+
+    if (visibleDocs.isNotEmpty) {
+      _scheduleMarkMessagesAsSeen(visibleDocs);
+    }
+
+    if (visibleDocs.isEmpty) {
+      return ListView(
+        controller: _scrollController,
+        reverse: true,
+        padding: const EdgeInsets.all(12),
+        children: [
+          const SizedBox(height: 12),
+          Center(
+            child: Text(
+              l10n.noMessagesYet,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: kTextPrimary,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                shadows: const [
+                  Shadow(
+                    color: Colors.black54,
+                    offset: Offset(0, 1),
+                    blurRadius: 4,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    final extraItems = <Widget>[];
+    if (_isLoadingMore) {
+      extraItems.add(
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Center(
+            child: SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
           ),
         ),
       );
     }
 
-    // ✅ Apply "delete for me" filtering using hiddenFor
-    final visibleDocs = _docs.where((doc) {
-      final data = doc.data();
-      final hiddenFor =
-          (data['hiddenFor'] as List?)?.cast<String>() ?? const <String>[];
-      return !hiddenFor.contains(widget.currentUserId);
-    }).toList();
-
-    // Sort to ensure stable display: newest first (because reverse:true)
-    visibleDocs.sort((a, b) {
-      final aTs = a.data()['createdAt'] as Timestamp?;
-      final bTs = b.data()['createdAt'] as Timestamp?;
-      if (aTs == null && bTs == null) return 0;
-      if (aTs == null) return 1;
-      if (bTs == null) return -1;
-      return bTs.compareTo(aTs); // newest first
-    });
-
-    if (visibleDocs.isEmpty) {
-      if (_friendStatus == 'request_received' || _friendStatus == 'requested') {
-        return ListView(
-          controller: _scrollController,
-          key: const PageStorageKey<String>('chatMessageList'),
-          reverse: true,
-          padding: const EdgeInsets.all(12),
-          children: [
-            _buildFriendBanner(context),
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: Text(
-                  l10n.noMessagesYet,
-                  textAlign: TextAlign.center,
-                  style: emptyStateStyle,
-                ),
-              ),
-            ),
-          ],
-        );
-      }
-
-      return Center(
-        child: Text(
-          l10n.noMessagesYet,
-          textAlign: TextAlign.center,
-          style: emptyStateStyle,
-        ),
-      );
-    }
-
-    // Schedule seen updates (debounced) using visible docs
-    _scheduleMarkMessagesAsSeen(visibleDocs);
-
-    final bool showBanner =
-        _friendStatus == 'request_received' || _friendStatus == 'requested';
-
-    // +1 for banner (top area because reverse:true)
-    // +1 for loading indicator when paging (also shown near top)
-    final bool showLoadingTile = _isLoadingMore;
-    final int extra = (showBanner ? 1 : 0) + (showLoadingTile ? 1 : 0);
-    final int itemCount = visibleDocs.length + extra;
+    final maxWidth = MediaQuery.of(context).size.width * 0.7;
 
     return ListView.builder(
       controller: _scrollController,
-      key: const PageStorageKey<String>('chatMessageList'),
       reverse: true,
       padding: const EdgeInsets.all(12),
-      itemCount: itemCount,
-      itemBuilder: (context, i) {
-        // In reverse:true, higher indices appear "higher" on screen.
-        int cursor = itemCount - 1;
+      itemCount: visibleDocs.length + extraItems.length,
+      itemBuilder: (context, index) {
+        if (index < visibleDocs.length) {
+          final doc = visibleDocs[index];
+          final data = doc.data() ?? const <String, dynamic>{};
 
-        // Banner at the very top (highest index)
-        if (showBanner && i == cursor) {
-          return _buildFriendBanner(context);
-        }
-        if (showBanner) cursor--;
+          final senderId = data['senderId'] as String?;
+          final isMe = senderId == widget.currentUserId;
 
-        // Loading tile under banner (still near top)
-        if (showLoadingTile && i == cursor) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            child: Center(
-              child: SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Theme.of(context).colorScheme.primary,
+          final seenBy = (data['seenBy'] as List?)?.cast<String>() ?? const <String>[];
+
+          return RepaintBoundary(
+            child: Align(
+              alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+              child: GestureDetector(
+                onLongPress: () => _onMessageLongPress(context, doc, isMe),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: maxWidth),
+                  child: MessageBubble(
+                    key: ValueKey(doc.id),
+                    text: (data['text'] ?? '').toString(),
+                    timeLabel: formatTimestamp(data['createdAt']),
+                    isMe: isMe,
+                    isSeen: widget.otherUserId != null &&
+                        widget.otherUserId!.isNotEmpty &&
+                        seenBy.contains(widget.otherUserId),
+                    fileUrl: data['fileUrl'] as String?,
+                    fileName: data['fileName'] as String?,
+                    fileType: data['type']?.toString(),
+                  ),
                 ),
               ),
             ),
           );
         }
-        if (showLoadingTile) cursor--;
 
-        // Normal message rows
-        final doc = visibleDocs[i];
-        final data = doc.data();
-        final senderId = data['senderId'] as String?;
-        final isMe = senderId == widget.currentUserId;
-
-        return RepaintBoundary(
-          child: Align(
-            alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-            child: GestureDetector(
-              onLongPress: () => _onMessageLongPress(context, doc, isMe),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: maxWidth),
-                child: MessageBubble(
-                  key: ValueKey(doc.id),
-                  text: data['text'] ?? '',
-                  timeLabel: formatTimestamp(data['createdAt']),
-                  isMe: isMe,
-                  // "Seen" dot logic: did the *other* user see this?
-                  isSeen: (data['seenBy'] ?? []).contains(widget.otherUserId),
-                  fileUrl: data['fileUrl'],
-                  fileName: data['fileName'],
-                  fileType: data['type'],
-                ),
-              ),
-            ),
-          ),
-        );
+        final extraIndex = index - visibleDocs.length;
+        return extraItems[extraIndex];
       },
     );
   }

@@ -50,8 +50,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   late final ChatMediaService _mediaService;
 
   double? _uploadProgress;
-  bool get _isUploading =>
-      _uploadProgress != null && _uploadProgress! < 1.0;
+  bool get _isUploading => _uploadProgress != null && _uploadProgress! < 1.0;
 
   bool _sending = false;
 
@@ -81,7 +80,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   // "incoming"  => they sent request to me
   String? _friendStatus;
   bool _loadingFriendship = true;
-  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _friendSub;
 
   // lightweight typing debounce (to avoid hammering Firestore)
   Timer? _typingDebounce;
@@ -92,6 +90,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   // Read-receipt debounce to avoid spamming writes
   Timer? _seenDebounce;
+
+  // Prevent setState after dispose
+  bool _disposed = false;
 
   // Basic banned words list – lightweight filter
   static const List<String> _bannedWords = [
@@ -107,7 +108,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   /// We now **always** enforce friendship for valid user pairs.
   /// If either id is missing, we skip enforcement.
   bool get _isFriendshipEnforced {
-    if (_currentUserId.isEmpty || _otherUserId == null || _otherUserId!.isEmpty) {
+    if (_currentUserId.isEmpty ||
+        _otherUserId == null ||
+        _otherUserId!.isEmpty) {
       return false;
     }
     return true;
@@ -178,6 +181,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         .doc(widget.roomId)
         .snapshots()
         .listen((doc) {
+      if (_disposed) return;
       if (!doc.exists || _otherUserId == null) return;
       final data = doc.data();
       if (data == null) return;
@@ -204,10 +208,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       validateMessageContent: _validateMessageContent,
     );
 
-    // ✅ lightweight "has any messages" subscription (avoid streaming entire chat)
+    // ✅ lightweight "has any messages" subscription
     _subscribeHasAnyMessages();
 
-    // ✅ mark recent visible messages as seen (read receipts) after first frame
+    // ✅ mark recent visible messages as seen after first frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scheduleMarkSeen();
     });
@@ -233,7 +237,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         .limit(30)
         .snapshots()
         .listen((snap) {
-      if (!mounted) return;
+      if (!mounted || _disposed) return;
 
       final visible = snap.docs.any((doc) {
         final data = doc.data();
@@ -252,19 +256,21 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   // --------- Read receipts / seenBy ----------
   void _scheduleMarkSeen() {
-    if (!mounted) return;
+    if (!mounted || _disposed) return;
     if (_currentUserId.isEmpty) return;
     if (_otherUserId == null || _otherUserId!.isEmpty) return;
     if (_isAnyBlock) return;
 
-    // Debounce to avoid rapid writes when snapshots fire quickly
     _seenDebounce?.cancel();
     _seenDebounce = Timer(const Duration(milliseconds: 450), () {
+      if (_disposed) return;
       _markRecentMessagesAsSeen();
     });
   }
 
   Future<void> _markRecentMessagesAsSeen() async {
+    if (_disposed) return;
+
     final me = _currentUserId;
     final other = _otherUserId;
     if (me.isEmpty || other == null || other.isEmpty) return;
@@ -279,6 +285,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           .orderBy('createdAt', descending: true)
           .limit(40)
           .get();
+
+      if (_disposed) return;
 
       final batch = FirebaseFirestore.instance.batch();
       int updates = 0;
@@ -334,6 +342,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         .snapshots()
         .listen(
           (snap) {
+        if (_disposed) return;
         final data = snap.data() ?? {};
         final blockedListDynamic =
             (data['blockedUserIds'] as List<dynamic>?) ?? const [];
@@ -350,12 +359,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       },
       onError: (e, st) {
         debugPrint('[ChatScreen] _subscribeToBlockState error: $e\n$st');
-        if (mounted) {
-          setState(() {
-            _isBlocked = false;
-            _loadingBlockState = false;
-          });
-        }
+        if (!mounted || _disposed) return;
+        setState(() {
+          _isBlocked = false;
+          _loadingBlockState = false;
+        });
       },
     );
   }
@@ -380,11 +388,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         .snapshots()
         .listen(
           (snap) {
+        if (_disposed) return;
+
         final data = snap.data() ?? {};
-        final blockedListDynamic = data['blockedUserIds'] as List<dynamic>?;
-        final hasBlockedMeNow =
-            blockedListDynamic?.whereType<String>().contains(_currentUserId) ??
-                false;
+        final raw = data['blockedUserIds'] as List<dynamic>?;
+
+        // ✅ Robust: handle List<dynamic> safely
+        final blockedIds = (raw ?? const <dynamic>[])
+            .map((e) => e.toString())
+            .toList();
+
+        final hasBlockedMeNow = blockedIds.contains(_currentUserId);
 
         if (mounted) {
           setState(() {
@@ -396,12 +410,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       onError: (e, st) {
         debugPrint(
             '[ChatScreen] _subscribeToOtherUserBlockState error: $e\n$st');
-        if (mounted) {
-          setState(() {
-            _hasBlockedMe = false;
-            _loadingOtherBlockState = false;
-          });
-        }
+        if (!mounted || _disposed) return;
+        setState(() {
+          _hasBlockedMe = false;
+          _loadingOtherBlockState = false;
+        });
       },
     );
   }
@@ -425,14 +438,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       me: me,
       other: other,
       onUpdate: (status) {
-        if (!mounted) return;
+        if (!mounted || _disposed) return;
         setState(() {
           _friendStatus = status;
           _loadingFriendship = false;
         });
 
-        // If user becomes accepted while already on screen,
-        // mark messages as seen.
         _scheduleMarkSeen();
       },
     );
@@ -441,22 +452,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   // =============== FRIEND REQUEST HELPERS =================
 
   Future<void> _sendFriendRequest() =>
-      _friendshipService.sendRequest(
-        me: _currentUserId,
-        other: _otherUserId!,
-      );
+      _friendshipService.sendRequest(me: _currentUserId, other: _otherUserId!);
 
   Future<void> _acceptFriendRequest() =>
-      _friendshipService.acceptRequest(
-        me: _currentUserId,
-        other: _otherUserId!,
-      );
+      _friendshipService.acceptRequest(me: _currentUserId, other: _otherUserId!);
 
   Future<void> _declineFriendRequest() =>
-      _friendshipService.declineRequest(
-        me: _currentUserId,
-        other: _otherUserId!,
-      );
+      _friendshipService.declineRequest(me: _currentUserId, other: _otherUserId!);
 
   /// Reset my unread counter for this room to 0.
   Future<void> _resetMyUnread() async {
@@ -479,29 +481,33 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   Future<void> _updateMyTyping(bool isTyping) async {
     if (_currentUserId.isEmpty) return;
+    if (_disposed) return;
 
-    await FirebaseFirestore.instance
-        .collection('privateChats')
-        .doc(widget.roomId)
-        .set(
-      {
-        'typing_$_currentUserId': isTyping,
-      },
-      SetOptions(merge: true),
-    );
+    try {
+      await FirebaseFirestore.instance
+          .collection('privateChats')
+          .doc(widget.roomId)
+          .set(
+        {
+          'typing_$_currentUserId': isTyping,
+        },
+        SetOptions(merge: true),
+      );
+    } catch (e) {
+      // best-effort only
+      debugPrint('[ChatScreen] _updateMyTyping failed: $e');
+    }
   }
 
   /// Debounced handler for text changes in the composer.
   void _onComposerChanged(String value) {
     final hasText = value.trim().isNotEmpty;
 
-    // only send "true" when transitioning from not-typing -> typing
     if (hasText && !_isMeTypingFlag) {
       _isMeTypingFlag = true;
       _updateMyTyping(true);
     }
 
-    // reset timer; when user stops for 600ms, send "false"
     _typingDebounce?.cancel();
     _typingDebounce = Timer(const Duration(milliseconds: 600), () {
       _isMeTypingFlag = false;
@@ -535,7 +541,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   // ---------- TEXT MESSAGE ----------
 
-  /// Send a text message and atomically update unread count for the other user.
   Future<void> _sendMessage() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
@@ -567,7 +572,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final text = _msgController.text.trim();
     if (text.isEmpty) return;
 
-    /// ✅ ✅ ✅ CRITICAL iOS FIX → CLEAR IMMEDIATELY (BEFORE ASYNC)
+    // ✅ Keep your iOS fix: clear immediately
     _msgController.clear();
 
     final error = _validateMessageContent(text);
@@ -578,6 +583,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       return;
     }
 
+    if (!mounted || _disposed) return;
     setState(() => _sending = true);
 
     try {
@@ -629,27 +635,25 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
       await batch.commit();
 
-      // If I send a message while screen is open, keep seen state synced
       _scheduleMarkSeen();
     } catch (e, st) {
       debugPrint('[ChatScreen] _sendMessage error: $e\n$st');
     } finally {
-      if (mounted) setState(() => _sending = false);
+      if (mounted && !_disposed) setState(() => _sending = false);
     }
   }
 
-  // ---------- VOICE NOTE HELPERS (Record via ChatMediaService) ----------
+  // ---------- VOICE NOTE HELPERS ----------
 
   Future<void> _startVoiceRecording() async {
     final ok = await _mediaService.startVoiceRecording();
     if (ok) {
-      // Tick UI every second so the red pill timer updates
       _recordTimer?.cancel();
       _recordTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (!mounted) return;
+        if (!mounted || _disposed) return;
         setState(() {});
       });
-      if (mounted) setState(() {});
+      if (mounted && !_disposed) setState(() {});
     }
   }
 
@@ -657,32 +661,26 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _recordTimer?.cancel();
     final file = await _mediaService.stopVoiceRecording();
     if (file != null) {
-      await _mediaService.sendFileMessage(
-        file,
-        forcedType: 'audio',
-        // ✅ Do NOT force content type here. Let classifier decide by extension.
-      );
+      await _mediaService.sendFileMessage(file, forcedType: 'audio');
     }
-    if (mounted) setState(() {});
+    if (mounted && !_disposed) setState(() {});
     _scheduleMarkSeen();
   }
 
   Future<void> _cancelVoiceRecording() async {
     _recordTimer?.cancel();
     _mediaService.cancelVoiceRecording();
-    if (mounted) setState(() {});
+    if (mounted && !_disposed) setState(() {});
   }
 
   // ---------- ATTACHMENT UI ----------
   Future<void> _handleAttachPressed() async {
-    // Don’t allow opening the attach sheet while an upload is in progress
     if (_isUploading) return;
 
-    // ✅ iOS/Android: close keyboard before opening the sheet
     FocusScope.of(context).unfocus();
     FocusManager.instance.primaryFocus?.unfocus();
     await Future<void>.delayed(const Duration(milliseconds: 60));
-    if (!mounted) return;
+    if (!mounted || _disposed) return;
 
     final l10n = AppLocalizations.of(context)!;
 
@@ -702,7 +700,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             constraints: BoxConstraints(maxWidth: maxWidth),
             child: SafeArea(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                padding:
+                const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -734,7 +733,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     const Divider(color: Colors.white10, height: 1),
                     const SizedBox(height: 4),
 
-                    // 📷 From gallery (works on all platforms)
                     ListTile(
                       leading: const Icon(Icons.photo, color: Colors.white70),
                       title: Text(l10n.attachPhotoFromGallery),
@@ -744,7 +742,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       },
                     ),
                     ListTile(
-                      leading: const Icon(Icons.videocam, color: Colors.white70),
+                      leading:
+                      const Icon(Icons.videocam, color: Colors.white70),
                       title: Text(l10n.attachVideoFromGallery),
                       onTap: () {
                         Navigator.of(ctx).pop();
@@ -752,7 +751,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       },
                     ),
 
-                    // 📸 Camera actions → MOBILE ONLY
                     if (!isWeb) ...[
                       ListTile(
                         leading: const Icon(Icons.camera_alt,
@@ -774,7 +772,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       ),
                     ],
 
-                    // 📄 Generic file (works on all platforms)
                     ListTile(
                       leading: const Icon(Icons.insert_drive_file,
                           color: Colors.white70),
@@ -797,6 +794,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Future<void> _sendPlatformFile(PlatformFile? file) async {
     if (file == null) return;
 
+    if (!mounted || _disposed) return;
     setState(() {
       _uploadProgress = 0.0;
     });
@@ -805,24 +803,23 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       await _mediaService.sendFileMessage(
         file,
         onProgress: (p) {
-          if (!mounted) return;
+          if (!mounted || _disposed) return;
           setState(() {
-            _uploadProgress = p; // 0.0 .. 1.0
+            _uploadProgress = p;
           });
         },
       );
 
-      // After sending media, mark seen for state consistency
       _scheduleMarkSeen();
     } finally {
-      if (!mounted) return;
+      if (!mounted || _disposed) return;
       setState(() {
-        _uploadProgress = null; // hide bar when finished / error
+        _uploadProgress = null;
       });
     }
   }
 
-  // ---------- MEDIA PICKERS (delegating to ChatMediaService) ----------
+  // ---------- MEDIA PICKERS ----------
 
   Future<void> _pickImageFromGallery() async {
     final file = await _mediaService.pickImageFromGallery();
@@ -834,17 +831,19 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     await _sendPlatformFile(file);
   }
 
-  Future<void> _captureImageWithCamera({CameraDevice camera = CameraDevice.rear}) async {
+  Future<void> _captureImageWithCamera(
+      {CameraDevice camera = CameraDevice.rear}) async {
     final file =
     await _mediaService.captureImageWithCamera(preferredCamera: camera);
-    if (file == null) return; // user canceled
+    if (file == null) return;
     await _sendPlatformFile(file);
   }
 
-  Future<void> _captureVideoWithCamera({CameraDevice camera = CameraDevice.rear}) async {
+  Future<void> _captureVideoWithCamera(
+      {CameraDevice camera = CameraDevice.rear}) async {
     final file =
     await _mediaService.captureVideoWithCamera(preferredCamera: camera);
-    if (file == null) return; // user canceled
+    if (file == null) return;
     await _sendPlatformFile(file);
   }
 
@@ -871,21 +870,26 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _disposed = true;
+
     WidgetsBinding.instance.removeObserver(this);
 
     _seenDebounce?.cancel();
+    _typingDebounce?.cancel();
+    _recordTimer?.cancel();
+
+    // best-effort: clear typing flag (no await)
+    _updateMyTyping(false);
+
     _msgController.dispose();
     _roomSub?.cancel();
     _blockSub?.cancel();
     _otherUserSub?.cancel();
-    _friendSub?.cancel();
     _messagesSub?.cancel();
+
     _friendshipService.dispose();
-    _typingDebounce?.cancel();
-    _recordTimer?.cancel();
     _mediaService.dispose();
 
-    _updateMyTyping(false); // best-effort
     CurrentChatTracker.instance.leaveRoom();
     super.dispose();
   }
@@ -895,7 +899,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       return const SizedBox.shrink();
     }
 
-    // Not friends yet, no doc: show "Send request" banner.
     if (_friendStatus == null) {
       return Container(
         margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
@@ -927,7 +930,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
 
     if (_hasIncomingFriendRequest) {
-      // Incoming request: show Accept / Decline
       return Container(
         margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -961,7 +963,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
 
     if (_hasOutgoingFriendRequest) {
-      // Outgoing request: info only
       return Container(
         margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -985,7 +986,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       );
     }
 
-    // Accepted: no banner.
     return const SizedBox.shrink();
   }
 
@@ -1018,7 +1018,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       return l10n.friendshipCannotSendNotFriends;
     }
 
-    // Build the bottom area in a single, consistent way (prevents iOS padding/keyboard glitches)
     Widget bottomArea;
     if (_isAnyBlock) {
       bottomArea = Padding(
@@ -1030,7 +1029,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         ),
       );
     } else if (_canSendMessages) {
-      // IMPORTANT: do NOT wrap ChatInputBar in extra padding
       bottomArea = ChatInputBar(
         key: ValueKey('chat_input_${widget.roomId}'),
         controller: _msgController,
@@ -1039,8 +1037,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         onAttach: _handleAttachPressed,
         onSend: _sendMessage,
         onTextChanged: _onComposerChanged,
-
-        // Voice note hooks (state from ChatMediaService)
         isRecording: _mediaService.isRecording,
         recordDuration: _mediaService.recordDuration,
         onMicLongPressStart: _startVoiceRecording,
@@ -1076,9 +1072,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       body: MwBackground(
         child: Column(
           children: [
-            // Friend request banner (if any)
             _buildFriendshipBanner(l10n),
-
             Expanded(
               child: _isLoadingBlock
                   ? const Center(child: CircularProgressIndicator())
@@ -1089,8 +1083,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 isBlocked: _isAnyBlock,
               ),
             ),
-
-            // Typing indicator (only when not blocked)
             if (!_isAnyBlock)
               AnimatedSize(
                 duration: const Duration(milliseconds: 180),
@@ -1103,7 +1095,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 )
                     : const SizedBox(height: 0),
               ),
-            // Bottom area (input / blocked / cannot-send)
             bottomArea,
           ],
         ),

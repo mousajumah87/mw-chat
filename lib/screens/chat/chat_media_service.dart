@@ -2,7 +2,6 @@
 
 import 'dart:async';
 import 'dart:typed_data';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -13,6 +12,8 @@ import 'package:path/path.dart' as p;
 import 'package:record/record.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image/image.dart' as img;
+
+import '../../utils/io_compat.dart';
 
 class ChatMediaService {
   final String roomId;
@@ -108,9 +109,9 @@ class ChatMediaService {
       deviceUsed: preferredCamera,
     );
 
-    // Overwrite local file safely (optional)
+    // ✅ Overwrite local file safely (mobile/desktop only via io_compat)
     try {
-      await File(picked.path).writeAsBytes(fixedBytes, flush: true);
+      await writeFileBytes(picked.path, fixedBytes);
     } catch (_) {}
 
     return PlatformFile(
@@ -173,29 +174,22 @@ class ChatMediaService {
             lowerName.contains('record') ||
             lowerName.contains('audio_message');
 
-    // ✅ IMPORTANT: Web voice notes are very often .webm (opus).
-    // But sometimes the filename isn't "voice_message".
-    // If extension is webm AND it looks like a voice note -> audio/webm.
+    // ✅ Web voice notes are often .webm (opus)
     if (ext == 'webm' && looksLikeVoice) {
       return ('audio', 'audio/webm');
     }
 
     // Images
     if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic'].contains(ext)) {
-      // heic is not officially "image/heic" everywhere; but keeping it is OK.
-      // If you want maximum compatibility: use image/heic for heic, image/jpeg for jpg/jpeg.
       return ('image', 'image/$ext');
     }
 
     // Videos
     if (['mp4', 'mov', 'mkv', 'avi'].contains(ext)) {
-      // Most platforms handle mp4 container mime best.
-      // If you later want higher accuracy:
-      // mov -> video/quicktime, mkv -> video/x-matroska, avi -> video/x-msvideo
       return ('video', 'video/mp4');
     }
 
-    // ✅ Keep webm as video ONLY when not a voice-note
+    // webm as video ONLY when not a voice-note
     if (ext == 'webm') {
       return ('video', 'video/webm');
     }
@@ -235,33 +229,21 @@ class ChatMediaService {
     final (autoType, autoContentType) = classifyFile(file);
     final msgType = forcedType ?? autoType;
 
-    // ✅ Compute extension safely (used for mime fixes)
     String ext = (file.extension ?? '').trim();
     if (ext.isEmpty) {
       ext = p.extension(file.name).replaceFirst('.', '');
     }
     ext = ext.toLowerCase();
 
-    // ✅ Decide final contentType
-    // - Prefer forcedContentType ONLY if caller explicitly passed it.
-    // - Otherwise use autoContentType from classifyFile (best).
     String contentType = forcedContentType ?? autoContentType;
 
-    // ✅ Critical safety for VOICE:
-    // If caller forces msgType=audio but contentType is video/* (e.g. webm),
-    // correct it so iOS/Web players don’t hang.
+    // ✅ Safety: force audio/* if msgType is audio
     if (msgType == 'audio' && contentType.startsWith('video/')) {
-      // web voice notes are typically opus in webm
       contentType = 'audio/webm';
     }
-
-    // ✅ iOS best practice for m4a: use audio/mp4
-    // (Many players treat m4a as mp4 container)
     if (msgType == 'audio' && ext == 'm4a') {
       contentType = 'audio/mp4';
     }
-
-    // ✅ If it's a voice webm and somehow still mismatched, fix it
     if (msgType == 'audio' && ext == 'webm' && !contentType.startsWith('audio/')) {
       contentType = 'audio/webm';
     }
@@ -272,7 +254,6 @@ class ChatMediaService {
         .child(roomId)
         .child('${DateTime.now().millisecondsSinceEpoch}_${file.name}');
 
-    // ✅ Correct contentType is VERY important for iOS/Web playback
     final metadata = SettableMetadata(contentType: contentType);
     final uploadTask = storageRef.putData(bytes, metadata);
 
@@ -285,6 +266,7 @@ class ChatMediaService {
 
     final snap = await uploadTask;
     final downloadUrl = await snap.ref.getDownloadURL();
+    final storagePath = snap.ref.fullPath;
 
     final userDoc =
     await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
@@ -295,16 +277,18 @@ class ChatMediaService {
     if (otherUserId == null) return uploadTask;
 
     final batch = FirebaseFirestore.instance.batch();
-    final roomRef = FirebaseFirestore.instance.collection('privateChats').doc(roomId);
+    final roomRef =
+    FirebaseFirestore.instance.collection('privateChats').doc(roomId);
     final msgRef = roomRef.collection('messages').doc();
 
     batch.set(msgRef, {
-      'type': msgType, // 'audio' / 'image' / etc
+      'type': msgType,
       'text': '',
       'fileName': file.name,
       'fileUrl': downloadUrl,
+      'storagePath': storagePath,
       'fileSize': file.size,
-      'mimeType': contentType, // ✅ keep for debugging + future players
+      'mimeType': contentType,
       'senderId': user.uid,
       'senderEmail': user.email,
       'profileUrl': profileUrl,
@@ -340,9 +324,8 @@ class ChatMediaService {
 
   DateTime? _recordStartAt;
 
-  // You can tweak these safely:
-  static const int _minRecordMs = 700; // prevent “empty send”
-  static const int _minBytes = 2048;   // 2KB
+  static const int _minRecordMs = 700;
+  static const int _minBytes = 2048;
 
   Future<bool> startVoiceRecording() async {
     if (isRecording) return false;
@@ -355,10 +338,8 @@ class ChatMediaService {
 
     try {
       if (kIsWeb) {
-        // Web will typically produce .webm
         await _audioRecorder.start();
       } else {
-        // Mobile: AAC-LC (usually ends up as m4a depending on platform)
         await _audioRecorder.start(
           encoder: AudioEncoder.aacLc,
           bitRate: 128000,
@@ -376,7 +357,6 @@ class ChatMediaService {
 
     recordTimer?.cancel();
     recordTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      // This timer is only for UI. Actual duration check happens on stop.
       recordDuration = Duration(seconds: recordDuration.inSeconds + 1);
     });
 
@@ -411,18 +391,13 @@ class ChatMediaService {
     final normalizedPath =
     path.startsWith('file://') ? path.replaceFirst('file://', '') : path;
 
-    // ✅ Validate duration (prevents “empty voice” sends)
     if (startedAt != null) {
       final ms = DateTime.now().difference(startedAt).inMilliseconds;
       if (ms < _minRecordMs) {
         debugPrint('🛑 Recording too short (${ms}ms) — ignoring');
-        // best-effort delete
-        if (!kIsWeb) {
-          try {
-            final f = File(normalizedPath);
-            if (await f.exists()) await f.delete();
-          } catch (_) {}
-        }
+        try {
+          await deleteFileIfExists(normalizedPath);
+        } catch (_) {}
         return null;
       }
     }
@@ -431,24 +406,17 @@ class ChatMediaService {
       final bytes = await XFile(normalizedPath).readAsBytes();
       if (bytes.isEmpty || bytes.length < _minBytes) {
         debugPrint('🛑 Recording bytes too small (${bytes.length}) — ignoring');
-        if (!kIsWeb) {
-          try {
-            final f = File(normalizedPath);
-            if (await f.exists()) await f.delete();
-          } catch (_) {}
-        }
+        try {
+          await deleteFileIfExists(normalizedPath);
+        } catch (_) {}
         return null;
       }
 
-      // ✅ Ensure filename has correct extension for classification & MIME
-      // Web → record package usually produces .webm
-      // Mobile → typically .m4a (AAC) but we keep whatever basename gives
       String name;
       if (kIsWeb) {
         name = 'voice_message.webm';
       } else {
         name = p.basename(normalizedPath);
-        // If for some reason the recorder returns no extension, add one
         if (!name.contains('.')) {
           name = '$name.m4a';
         }
@@ -465,7 +433,6 @@ class ChatMediaService {
       return null;
     }
   }
-
 
   Future<void> cancelVoiceRecording() async {
     if (!isRecording) return;

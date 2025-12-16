@@ -570,6 +570,15 @@ class AppLocalizationsAr extends AppLocalizations {
   String get reasonOther => 'أخرى';
 
   @override
+  String get deleteMessageSuccess => 'تم حذف الرسالة';
+
+  @override
+  String get deleteMessageFailed => 'تعذر حذف الرسالة';
+
+  @override
+  String get deletedForMe => 'تم الحذف لدي';
+
+  @override
   String get deletingAccount => 'جاري حذف الحساب...';
 
   @override
@@ -784,4 +793,7 @@ class AppLocalizationsAr extends AppLocalizations {
 
   @override
   String get send => 'إرسال';
+
+  @override
+  String get ok => 'موافق';
 }

@@ -8,6 +8,10 @@ import '../profile/profile_screen.dart';
 import '../home/user_profile_screen.dart';
 import '../../l10n/app_localizations.dart';
 
+// ✅ Reuse shared dialogs/helpers (no duplication)
+import '../../widgets/safety/report_user_dialog.dart';
+import '../../widgets/ui/mw_feedback.dart';
+
 class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
   final String title;
   final String currentUserId;
@@ -36,6 +40,16 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
     if (!rawIsOnline || lastSeen == null) return false;
     final diffSeconds = DateTime.now().difference(lastSeen.toDate()).inSeconds;
     return diffSeconds <= _onlineTtlSeconds;
+  }
+
+  Future<void> _toastSuccess(BuildContext context, String message) async {
+    if (!context.mounted) return;
+    await MwFeedback.success(context, message: message);
+  }
+
+  Future<void> _toastError(BuildContext context, String message) async {
+    if (!context.mounted) return;
+    await MwFeedback.error(context, message: message);
   }
 
   Widget _buildOtherAvatar({
@@ -91,8 +105,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
           builder: (context, mySnap) {
             final myData = mySnap.data?.data() ?? {};
 
-            final myBlockedListDynamic =
-                (myData['blockedUserIds'] as List<dynamic>?) ?? const [];
+            final myBlockedListDynamic = (myData['blockedUserIds'] as List<dynamic>?) ?? const [];
             final myBlockedList = myBlockedListDynamic.map((e) => e.toString()).toList();
             final bool isBlockedByMe = myBlockedList.contains(otherUserId);
 
@@ -109,9 +122,8 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
 
             final isActive = otherData['isActive'] != false;
             final rawIsOnline = (otherData['isOnline'] == true) && isActive;
-            final lastSeen = otherData['lastSeen'] is Timestamp
-                ? otherData['lastSeen'] as Timestamp
-                : null;
+            final lastSeen =
+            otherData['lastSeen'] is Timestamp ? otherData['lastSeen'] as Timestamp : null;
 
             final effectiveOnline = isBlockedRelationship
                 ? false
@@ -211,126 +223,6 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
     );
   }
 
-  Future<void> _showReportDialog(BuildContext context) async {
-    if (otherUserId == null) return;
-
-    final l10n = AppLocalizations.of(context)!;
-    final reasonController = TextEditingController();
-
-    final List<String> reasonCategories = <String>[
-      l10n.reasonHarassment,
-      l10n.reasonSpam,
-      l10n.reasonHate,
-      l10n.reasonSexual,
-      l10n.reasonOther,
-    ];
-
-    await showDialog<void>(
-      context: context,
-      useRootNavigator: true, // ✅ important when called from bottom-sheet flow
-      builder: (dialogContext) {
-        String? selectedCategory;
-
-        return StatefulBuilder(
-          builder: (context, setState) {
-            final bool canSave = selectedCategory != null;
-
-            return AlertDialog(
-              title: Text(l10n.reportUserTitle),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  DropdownButtonFormField<String>(
-                    value: selectedCategory,
-                    isExpanded: true,
-                    decoration: InputDecoration(
-                      labelText: l10n.reportUserReasonLabel,
-                      border: const OutlineInputBorder(),
-                    ),
-                    items: reasonCategories
-                        .map((r) => DropdownMenuItem<String>(
-                      value: r,
-                      child: Text(r),
-                    ))
-                        .toList(),
-                    onChanged: (val) => setState(() => selectedCategory = val),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: reasonController,
-                    maxLines: 4,
-                    decoration: InputDecoration(
-                      hintText: l10n.reportUserHint,
-                      border: const OutlineInputBorder(),
-                    ),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: Text(l10n.cancel),
-                ),
-                TextButton(
-                  onPressed: !canSave
-                      ? null
-                      : () async {
-                    final user = FirebaseAuth.instance.currentUser;
-                    if (user == null || selectedCategory == null) {
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(l10n.generalErrorMessage)),
-                        );
-                      }
-                    } else {
-                      final details = reasonController.text.trim().isEmpty
-                          ? null
-                          : reasonController.text.trim();
-                      try {
-                        await FirebaseFirestore.instance.collection('userReports').add({
-                          'reporterId': user.uid,
-                          'reportedUserId': otherUserId,
-                          'reasonCategory': selectedCategory,
-                          'reasonDetails': details,
-                          'createdAt': FieldValue.serverTimestamp(),
-                          'status': 'open',
-                        });
-                      } catch (_) {
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text(l10n.generalErrorMessage)),
-                          );
-                        }
-                      }
-                    }
-
-                    if (dialogContext.mounted) {
-                      Navigator.of(dialogContext).pop();
-                    }
-
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(l10n.reportSubmitted)),
-                      );
-                    }
-                  },
-                  child: Text(
-                    l10n.save,
-                    style: TextStyle(
-                      color: canSave
-                          ? Theme.of(context).colorScheme.primary
-                          : Theme.of(context).colorScheme.primary.withOpacity(0.4),
-                    ),
-                  ),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
   Future<void> _confirmToggleBlockUser(
       BuildContext context, {
         required bool isCurrentlyBlocked,
@@ -338,7 +230,6 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
     if (otherUserId == null) return;
 
     final l10n = AppLocalizations.of(context)!;
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
 
     final title = isCurrentlyBlocked ? l10n.unblockUserTitle : l10n.blockUserTitle;
     final description =
@@ -347,7 +238,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
 
     final shouldProceed = await showDialog<bool>(
       context: context,
-      useRootNavigator: true, // ✅
+      useRootNavigator: true,
       builder: (dialogContext) => AlertDialog(
         title: Text(title),
         content: Text(description),
@@ -358,10 +249,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
           ),
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(
-              confirmLabel,
-              style: const TextStyle(color: Colors.redAccent),
-            ),
+            child: Text(confirmLabel, style: const TextStyle(color: Colors.redAccent)),
           ),
         ],
       ),
@@ -372,11 +260,11 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
 
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      scaffoldMessenger.showSnackBar(SnackBar(content: Text(l10n.generalErrorMessage)));
+      await _toastError(context, l10n.generalErrorMessage);
       return;
     }
 
-    showDialog(
+    showDialog<void>(
       context: context,
       useRootNavigator: true,
       barrierDismissible: false,
@@ -395,15 +283,13 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
 
       if (context.mounted) {
         Navigator.of(context, rootNavigator: true).pop();
-        scaffoldMessenger.showSnackBar(
-          SnackBar(content: Text(isCurrentlyBlocked ? l10n.userUnblocked : l10n.userBlocked)),
-        );
       }
+      await _toastSuccess(context, isCurrentlyBlocked ? l10n.userUnblocked : l10n.userBlocked);
     } catch (_) {
       if (context.mounted) {
         Navigator.of(context, rootNavigator: true).pop();
-        scaffoldMessenger.showSnackBar(SnackBar(content: Text(l10n.generalErrorMessage)));
       }
+      await _toastError(context, l10n.generalErrorMessage);
     }
   }
 
@@ -427,10 +313,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
           ),
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(
-              l10n.removeFriendConfirm,
-              style: const TextStyle(color: Colors.redAccent),
-            ),
+            child: Text(l10n.removeFriendConfirm, style: const TextStyle(color: Colors.redAccent)),
           ),
         ],
       ),
@@ -458,12 +341,10 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
 
     try {
       await batch.commit();
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.friendRemoved)),
-        );
-      }
-    } catch (_) {}
+      await _toastSuccess(context, l10n.friendRemoved);
+    } catch (_) {
+      await _toastError(context, l10n.generalErrorMessage);
+    }
   }
 
   Future<void> _confirmCancelFriendRequest(BuildContext context) async {
@@ -517,16 +398,13 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
 
     try {
       await batch.commit();
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.friendRequestCancelled)),
-        );
-      }
-    } catch (_) {}
+      await _toastSuccess(context, l10n.friendRequestCancelled);
+    } catch (_) {
+      await _toastError(context, l10n.generalErrorMessage);
+    }
   }
 
   Future<void> _openMenu(BuildContext context) async {
-    // ✅ This is the ONLY safe context to use for dialogs/navigation after closing the sheet.
     final BuildContext parentContext = context;
 
     final l10n = AppLocalizations.of(parentContext)!;
@@ -578,7 +456,6 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
         final media = MediaQuery.of(sheetContext);
         final maxH = media.size.height * 0.78;
 
-        // ✅ helper to close sheet then run action safely on parent context
         void closeThen(VoidCallback action) {
           Navigator.of(sheetContext).pop();
           Future.microtask(() {
@@ -602,10 +479,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.all(14),
                   child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                    stream: FirebaseFirestore.instance
-                        .collection('users')
-                        .doc(currentUserId)
-                        .snapshots(),
+                    stream: FirebaseFirestore.instance.collection('users').doc(currentUserId).snapshots(),
                     builder: (sheetBuildContext, mySnap) {
                       final myData = mySnap.data?.data() ?? {};
                       final blockedListDynamic =
@@ -613,8 +487,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
                       final blockedList = blockedListDynamic.map((e) => e.toString()).toList();
                       final bool isBlocked = hasOther && blockedList.contains(otherUserId);
 
-                      final blockLabel =
-                      isBlocked ? l10n.unblockUserTitle : l10n.blockUserTitle;
+                      final blockLabel = isBlocked ? l10n.unblockUserTitle : l10n.blockUserTitle;
 
                       return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
                         stream: hasOther
@@ -673,12 +546,18 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
                                 ),
                               if (hasOther) const SizedBox(height: 10),
 
+                              // ✅ Reuse the shared ReportUserDialog everywhere
                               if (hasOther)
                                 buildItem(
                                   icon: Icons.flag_outlined,
                                   label: l10n.reportUserTitle,
                                   color: Colors.redAccent,
-                                  onTap: () => closeThen(() => _showReportDialog(parentContext)),
+                                  onTap: () => closeThen(() {
+                                    ReportUserDialog.open(
+                                      parentContext,
+                                      reportedUserId: otherUserId!,
+                                    );
+                                  }),
                                 ),
                               if (hasOther) const SizedBox(height: 10),
 
@@ -711,8 +590,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
                                   icon: Icons.undo_rounded,
                                   label: l10n.cancelFriendRequestTitle,
                                   color: Colors.redAccent,
-                                  onTap: () =>
-                                      closeThen(() => _confirmCancelFriendRequest(parentContext)),
+                                  onTap: () => closeThen(() => _confirmCancelFriendRequest(parentContext)),
                                 ),
                               ],
 

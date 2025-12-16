@@ -1,12 +1,13 @@
-// lib/widgets/chat/message_bubble.dart
 import 'dart:async';
+import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:video_player/video_player.dart';
 import 'package:url_launcher/url_launcher.dart';
+
 import '../../l10n/app_localizations.dart';
+import '../../theme/app_theme.dart';
 
 class MessageBubble extends StatefulWidget {
   final String text;
@@ -46,20 +47,20 @@ class _MessageBubbleState extends State<MessageBubble> {
   bool _isPlaying = false;
   bool _isAudioLoading = false;
 
-  bool _audioReady = false; // source prepared at least once
+  bool _audioReady = false;
   bool _audioError = false;
 
   Duration _audioDuration = Duration.zero;
   Duration _audioPosition = Duration.zero;
 
-  String? _preparedUrl; // track current prepared url
+  String? _preparedUrl;
 
   // ===== VIDEO =====
   VideoPlayerController? _videoController;
   bool _videoInitialized = false;
   bool _videoInitError = false;
 
-  static const double _mediaSize = 220; // SAME SIZE for image & video
+  static const double _mediaSize = 220; // image & video
 
   bool get hasAttachment => widget.fileUrl?.isNotEmpty == true;
 
@@ -81,8 +82,36 @@ class _MessageBubbleState extends State<MessageBubble> {
   bool get isGenericFile => hasAttachment && !isImage && !isVideo && !isAudio;
 
   static const double _bubbleRadius = 16.0;
-  static const Color _myBubbleColor = Color(0xFF2563EB);
-  static const Color _theirBubbleColor = Color(0xFF1E1E1E);
+
+  // ========= STYLE HELPERS =========
+
+  Color _tint(Color base, Color tint, double amount) {
+    return Color.lerp(base, tint, amount.clamp(0.0, 1.0)) ?? base;
+  }
+
+  /// ✅ Dark glass bubbles:
+  /// - "Me": dark glass with a *very subtle* gold tint
+  /// - "Other": dark glass only
+  Color get _bubbleColor {
+    final base = kSurfaceAltColor; // dark
+    if (!widget.isMe) {
+      return base.withOpacity(0.62);
+    }
+    final tinted = _tint(base, kGoldDeep, 0.10); // tiny warm tint
+    return tinted.withOpacity(0.70); // more transparent than before
+  }
+
+  /// ✅ Text colors now always readable on dark glass
+  Color get _onBubblePrimary => kTextPrimary;
+  Color get _onBubbleSecondary => kTextSecondary.withOpacity(0.90);
+
+  /// ✅ Border becomes subtle (no heavy gold frame)
+  Border? get _bubbleBorder {
+    final c = widget.isMe
+        ? kGoldDeep.withOpacity(0.18)
+        : kBorderColor.withOpacity(0.45);
+    return Border.all(color: c, width: 1);
+  }
 
   // ---------------- VIDEO ----------------
 
@@ -94,7 +123,13 @@ class _MessageBubbleState extends State<MessageBubble> {
 
     _disposeVideo();
 
-    final controller = VideoPlayerController.networkUrl(Uri.parse(widget.fileUrl!));
+    final uri = Uri.tryParse(widget.fileUrl!);
+    if (uri == null) {
+      _videoInitError = true;
+      return;
+    }
+
+    final controller = VideoPlayerController.networkUrl(uri);
     _videoController = controller;
 
     controller.initialize().then((_) {
@@ -124,39 +159,30 @@ class _MessageBubbleState extends State<MessageBubble> {
 
     _playerStateSub = _audioPlayer.onPlayerStateChanged.listen((state) {
       if (!mounted) return;
-
       final playing = state == PlayerState.playing;
-      if (playing != _isPlaying) {
-        setState(() => _isPlaying = playing);
-      }
+      if (playing != _isPlaying) setState(() => _isPlaying = playing);
     });
 
     _posSub = _audioPlayer.onPositionChanged.listen((pos) {
       if (!mounted) return;
-
-      // Avoid rebuild storms
       if ((pos - _audioPosition).inMilliseconds.abs() < 120) return;
 
       final d = _audioDuration;
-      if (d != Duration.zero && pos > d) {
-        pos = d;
-      }
+      if (d != Duration.zero && pos > d) pos = d;
       setState(() => _audioPosition = pos);
     });
 
     _durSub = _audioPlayer.onDurationChanged.listen((dur) {
       if (!mounted) return;
-      if (dur != _audioDuration) {
-        setState(() => _audioDuration = dur);
-      }
+      if (dur != _audioDuration) setState(() => _audioDuration = dur);
     });
 
     _completeSub = _audioPlayer.onPlayerComplete.listen((_) {
       if (!mounted) return;
       setState(() {
         _isPlaying = false;
-        // Keep at end visually; replay must reset/seek(0)
-        _audioPosition = _audioDuration == Duration.zero ? Duration.zero : _audioDuration;
+        _audioPosition =
+        _audioDuration == Duration.zero ? Duration.zero : _audioDuration;
       });
     });
   }
@@ -187,34 +213,24 @@ class _MessageBubbleState extends State<MessageBubble> {
     return '$minutes:$seconds';
   }
 
-  /// ✅ Prepare source reliably (iOS/Web safer).
-  /// Also re-prepares if URL changed.
   Future<bool> _ensureAudioSourceReady() async {
     final url = widget.fileUrl;
     if (url == null || url.isEmpty) return false;
 
-    // If already prepared for this URL and no error → ok
     if (_audioReady && !_audioError && _preparedUrl == url) return true;
 
     try {
-      // release mode STOP makes replay more deterministic across platforms
       await _audioPlayer.setReleaseMode(ReleaseMode.stop);
-
-      // Prepare source (timeout prevents "loading forever")
-      await _audioPlayer
-          .setSourceUrl(url)
-          .timeout(const Duration(seconds: 6));
+      await _audioPlayer.setSourceUrl(url).timeout(const Duration(seconds: 6));
 
       _preparedUrl = url;
       _audioReady = true;
       _audioError = false;
 
-      // Try to fetch duration (may be null on web until playback starts; that's ok)
       final d = await _audioPlayer.getDuration();
       if (d != null && d != Duration.zero && mounted) {
         setState(() => _audioDuration = d);
       }
-
       return true;
     } catch (_) {
       _audioReady = false;
@@ -226,7 +242,6 @@ class _MessageBubbleState extends State<MessageBubble> {
   Future<void> _toggleAudio() async {
     final url = widget.fileUrl;
     if (url == null || url.isEmpty) return;
-
     if (_isAudioLoading) return;
 
     try {
@@ -251,23 +266,18 @@ class _MessageBubbleState extends State<MessageBubble> {
         return;
       }
 
-      // ✅ Replay fix:
-      // If at/near end OR player was completed, force seek(0) before starting again.
       final d = _audioDuration;
-      final atEnd = d != Duration.zero &&
-          _audioPosition >= d - const Duration(milliseconds: 400);
+      final atEnd =
+          d != Duration.zero && _audioPosition >= d - const Duration(milliseconds: 400);
 
       if (atEnd) {
         await _audioPlayer.seek(Duration.zero);
         if (mounted) setState(() => _audioPosition = Duration.zero);
       }
 
-      // Web sometimes needs "play" instead of "resume" after completion.
-      // We try resume first; if it stalls, fall back to play(UrlSource).
       try {
         await _audioPlayer.resume().timeout(const Duration(seconds: 5));
       } catch (_) {
-        // Fallback path (very important for Chrome replay reliability)
         await _audioPlayer.stop().catchError((_) {});
         await _audioPlayer.play(UrlSource(url)).timeout(const Duration(seconds: 6));
       }
@@ -296,7 +306,6 @@ class _MessageBubbleState extends State<MessageBubble> {
     } catch (_) {}
   }
 
-  /// ✅ Perfect back/forward behavior (paused OR playing)
   Future<void> _jumpAudio(int seconds) async {
     final next = _audioPosition + Duration(seconds: seconds);
     await _seekAudio(next);
@@ -306,7 +315,9 @@ class _MessageBubbleState extends State<MessageBubble> {
   Future<void> _openFile() async {
     final url = widget.fileUrl;
     if (url == null || url.isEmpty) return;
-    final uri = Uri.parse(url);
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
@@ -339,9 +350,9 @@ class _MessageBubbleState extends State<MessageBubble> {
                 top: MediaQuery.of(context).padding.top + 12,
                 right: 12,
                 child: CircleAvatar(
-                  backgroundColor: Colors.black54,
+                  backgroundColor: kSurfaceAltColor.withOpacity(0.65),
                   child: IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white),
+                    icon: const Icon(Icons.close, color: kTextPrimary),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                 ),
@@ -381,17 +392,22 @@ class _MessageBubbleState extends State<MessageBubble> {
             fit: BoxFit.cover,
             loadingBuilder: (_, child, progress) {
               if (progress == null) return child;
-              return const SizedBox(
+              return SizedBox(
                 width: _mediaSize,
                 height: _mediaSize,
-                child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                child: Center(
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
               );
             },
-            errorBuilder: (_, __, ___) => const SizedBox(
+            errorBuilder: (_, __, ___) => SizedBox(
               width: _mediaSize,
               height: _mediaSize,
               child: Center(
-                child: Icon(Icons.broken_image, color: Colors.white54),
+                child: Icon(Icons.broken_image, color: kTextSecondary.withOpacity(0.8)),
               ),
             ),
           ),
@@ -405,18 +421,25 @@ class _MessageBubbleState extends State<MessageBubble> {
     final c = _videoController;
 
     if (_videoInitError) {
-      return const SizedBox(
+      return SizedBox(
         width: _mediaSize,
         height: _mediaSize,
-        child: Center(child: Icon(Icons.broken_image, color: Colors.white54)),
+        child: Center(
+          child: Icon(Icons.broken_image, color: kTextSecondary.withOpacity(0.8)),
+        ),
       );
     }
 
     if (!_videoInitialized || c == null || !c.value.isInitialized) {
-      return const SizedBox(
+      return SizedBox(
         width: _mediaSize,
         height: _mediaSize,
-        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+        child: Center(
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+        ),
       );
     }
 
@@ -440,18 +463,34 @@ class _MessageBubbleState extends State<MessageBubble> {
               ),
             ),
           ),
-          const CircleAvatar(
-            backgroundColor: Colors.black54,
-            child: Icon(Icons.play_arrow, color: Colors.white),
+          CircleAvatar(
+            backgroundColor: Colors.black.withOpacity(0.55),
+            child: const Icon(Icons.play_arrow, color: kTextPrimary),
           ),
         ],
       ),
     );
   }
 
-  // AUDIO BUBBLE (seek + progress + back/forward)
+  // ================= WHATSAPP-STYLE AUDIO BUBBLE + WAVEFORM =================
+
+  List<double> _waveformHeights(String seed, int count) {
+    final int hash = seed.codeUnits.fold<int>(0, (p, c) => (p * 31 + c) & 0x7fffffff);
+    final rnd = math.Random(hash);
+    final List<double> bars = List<double>.generate(count, (_) {
+      final v = 0.25 + rnd.nextDouble() * 0.75;
+      return v;
+    });
+
+    for (int i = 1; i < bars.length - 1; i++) {
+      bars[i] = (bars[i - 1] + bars[i] + bars[i + 1]) / 3.0;
+    }
+    return bars;
+  }
+
   Widget _buildAudioBubble() {
     final l10n = AppLocalizations.of(context)!;
+    final isRtl = Directionality.of(context) == TextDirection.rtl;
 
     final duration = _audioDuration;
     final position = _clampToDuration(_audioPosition, duration);
@@ -459,117 +498,160 @@ class _MessageBubbleState extends State<MessageBubble> {
     final totalMs = duration.inMilliseconds;
     final posMs = position.inMilliseconds.clamp(0, totalMs == 0 ? 0 : totalMs);
 
-    final sliderMax = totalMs == 0 ? 1.0 : totalMs.toDouble();
-    final sliderValue = totalMs == 0 ? 0.0 : posMs.toDouble();
+    final progress = (totalMs == 0) ? 0.0 : (posMs / totalMs).clamp(0.0, 1.0);
+
+    final seed = widget.fileUrl ?? '${widget.timeLabel}_${widget.isMe}';
+    final bars = _waveformHeights(seed, 42);
+
+    Future<void> seekByRatio(double ratio) async {
+      if (totalMs == 0) return;
+      final r = ratio.clamp(0.0, 1.0);
+      final ms = (r * totalMs).round();
+      await _seekAudio(Duration(milliseconds: ms));
+    }
+
+    Widget waveform = LayoutBuilder(
+      builder: (context, constraints) {
+        return GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTapDown: (d) async {
+            final w = constraints.maxWidth;
+            if (w <= 0) return;
+            final dx = d.localPosition.dx.clamp(0.0, w);
+            final ratio = isRtl ? (1.0 - dx / w) : (dx / w);
+            await seekByRatio(ratio);
+          },
+          child: CustomPaint(
+            size: Size(constraints.maxWidth, 28),
+            painter: _WaveformPainter(
+              bars: bars,
+              progress: progress,
+              isMe: widget.isMe,
+              isRtl: isRtl,
+            ),
+          ),
+        );
+      },
+    );
+
+    final backBtn = IconButton(
+      visualDensity: VisualDensity.compact,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+      onPressed: _isAudioLoading ? null : () => _jumpAudio(-10),
+      icon: Icon(Icons.replay_10, color: kTextPrimary.withOpacity(0.92)),
+      tooltip: 'Back 10s',
+    );
+
+    final fwdBtn = IconButton(
+      visualDensity: VisualDensity.compact,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+      onPressed: _isAudioLoading ? null : () => _jumpAudio(10),
+      icon: Icon(Icons.forward_10, color: kTextPrimary.withOpacity(0.92)),
+      tooltip: 'Forward 10s',
+    );
+
+    final playBtn = InkWell(
+      onTap: _isAudioLoading ? null : _toggleAudio,
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: kSurfaceAltColor.withOpacity(0.55),
+          shape: BoxShape.circle,
+          border: Border.all(color: kBorderColor.withOpacity(0.50)),
+        ),
+        child: Center(
+          child: _isAudioLoading
+              ? SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          )
+              : Icon(
+            _isPlaying ? Icons.pause : Icons.play_arrow,
+            color: kTextPrimary,
+            size: 26,
+          ),
+        ),
+      ),
+    );
+
+    final leftTime = Text(
+      _formatTime(position),
+      style: TextStyle(color: kTextSecondary.withOpacity(0.9), fontSize: 11),
+    );
+
+    final rightTime = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          duration == Duration.zero ? '--:--' : _formatTime(duration),
+          style: TextStyle(color: kTextSecondary.withOpacity(0.9), fontSize: 11),
+        ),
+        if (_audioError) ...[
+          const SizedBox(width: 6),
+          const Icon(Icons.error_outline, size: 14, color: kErrorColor),
+        ],
+      ],
+    );
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.25),
+        // ✅ slightly darker + more transparent
+        color: kSurfaceAltColor.withOpacity(0.48),
         borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: kBorderColor.withOpacity(0.45)),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Play/Pause
-              InkWell(
-                onTap: _isAudioLoading ? null : _toggleAudio,
-                borderRadius: BorderRadius.circular(999),
-                child: Padding(
-                  padding: const EdgeInsets.all(2),
-                  child: _isAudioLoading
-                      ? const SizedBox(
-                    width: 26,
-                    height: 26,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                      : Icon(
-                    _isPlaying
-                        ? Icons.pause_circle_filled
-                        : Icons.play_circle_fill,
-                    color: Colors.white,
-                    size: 28,
+      child: Directionality(
+        textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            playBtn,
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    l10n.voiceMessageLabel,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: kTextPrimary,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 6),
+                  SizedBox(height: 28, child: waveform),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      leftTime,
+                      const Spacer(),
+                      rightTime,
+                    ],
+                  ),
+                ],
               ),
-              const SizedBox(width: 10),
-
-              // Title + times
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      l10n.voiceMessageLabel,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Text(
-                          _formatTime(position),
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 11,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          duration == Duration.zero ? '--:--' : _formatTime(duration),
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 11,
-                          ),
-                        ),
-                        if (_audioError) ...[
-                          const SizedBox(width: 10),
-                          const Icon(Icons.error_outline,
-                              size: 14, color: Colors.redAccent),
-                        ],
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-
-              // Back/Forward 10
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                onPressed: _isAudioLoading ? null : () => _jumpAudio(-10),
-                icon: const Icon(Icons.replay_10, color: Colors.white),
-                tooltip: 'Back 10s',
-              ),
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                onPressed: _isAudioLoading ? null : () => _jumpAudio(10),
-                icon: const Icon(Icons.forward_10, color: Colors.white),
-                tooltip: 'Forward 10s',
-              ),
-            ],
-          ),
-
-          // Slider seek
-          Slider(
-            value: sliderValue,
-            min: 0.0,
-            max: sliderMax,
-            onChanged: (v) {
-              if (!mounted) return;
-              setState(() {
-                _audioPosition = Duration(milliseconds: v.round());
-              });
-            },
-            onChangeEnd: (v) async {
-              await _seekAudio(Duration(milliseconds: v.round()));
-            },
-          ),
-        ],
+            ),
+            const SizedBox(width: 10),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                backBtn,
+                fwdBtn,
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -582,19 +664,20 @@ class _MessageBubbleState extends State<MessageBubble> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.22),
+          color: kSurfaceAltColor.withOpacity(0.50),
           borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: kBorderColor.withOpacity(0.45)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.insert_drive_file, color: Colors.white70),
+            Icon(Icons.insert_drive_file, color: kTextSecondary.withOpacity(0.9)),
             const SizedBox(width: 8),
             Flexible(
               child: Text(
                 widget.fileName ?? l10n.genericFileLabel,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Colors.white),
+                style: const TextStyle(color: kTextPrimary),
               ),
             ),
           ],
@@ -606,10 +689,7 @@ class _MessageBubbleState extends State<MessageBubble> {
   @override
   void initState() {
     super.initState();
-
-    // helps some platform edge cases (web replay)
     _audioPlayer.setReleaseMode(ReleaseMode.stop);
-
     _initVideoIfNeeded();
     _initAudioStreams();
   }
@@ -619,19 +699,22 @@ class _MessageBubbleState extends State<MessageBubble> {
     super.didUpdateWidget(oldWidget);
 
     final bool urlChanged = oldWidget.fileUrl != widget.fileUrl;
-    final bool typeChanged = (oldWidget.fileType ?? '').toLowerCase() !=
-        (widget.fileType ?? '').toLowerCase();
+    final bool typeChanged =
+        (oldWidget.fileType ?? '').toLowerCase() != (widget.fileType ?? '').toLowerCase();
 
-    // Video: recreate controller on url/type changes
     if (urlChanged || typeChanged) {
       _disposeVideo();
       _initVideoIfNeeded();
     }
 
-    // Audio: if URL changed, stop and reset UI
     if (urlChanged && isAudio) {
       _audioPlayer.stop().catchError((_) {});
       if (mounted) setState(_resetAudioUi);
+    }
+
+    if (typeChanged && !isAudio) {
+      _audioPlayer.stop().catchError((_) {});
+      _resetAudioUi();
     }
   }
 
@@ -659,8 +742,17 @@ class _MessageBubbleState extends State<MessageBubble> {
         padding: const EdgeInsets.all(10),
         margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
         decoration: BoxDecoration(
-          color: widget.isMe ? _myBubbleColor : _theirBubbleColor,
+          color: _bubbleColor,
           borderRadius: BorderRadius.circular(_bubbleRadius),
+          border: _bubbleBorder,
+          // ✅ remove heavy glow; keep super subtle depth
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.22),
+              blurRadius: 10,
+              offset: const Offset(0, 6),
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment:
@@ -675,21 +767,18 @@ class _MessageBubbleState extends State<MessageBubble> {
                 padding: const EdgeInsets.only(top: 6),
                 child: Text(
                   widget.text,
-                  style: const TextStyle(color: Colors.white),
+                  style: TextStyle(color: _onBubblePrimary),
                 ),
               ),
             if (widget.showTimestamp)
               Padding(
-                padding: const EdgeInsets.only(top: 4),
+                padding: const EdgeInsets.only(top: 6),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
                       widget.timeLabel,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 10,
-                      ),
+                      style: TextStyle(color: _onBubbleSecondary, fontSize: 10),
                     ),
                     if (widget.isMe)
                       Padding(
@@ -697,9 +786,10 @@ class _MessageBubbleState extends State<MessageBubble> {
                         child: Icon(
                           widget.isSeen ? Icons.done_all : Icons.done,
                           size: 12,
+                          // ✅ gold accent on dark bubble (not black)
                           color: widget.isSeen
-                              ? Colors.lightBlueAccent
-                              : Colors.white60,
+                              ? kPrimaryGold.withOpacity(0.92)
+                              : kPrimaryGold.withOpacity(0.55),
                         ),
                       ),
                   ],
@@ -709,6 +799,77 @@ class _MessageBubbleState extends State<MessageBubble> {
         ),
       ),
     );
+  }
+}
+
+class _WaveformPainter extends CustomPainter {
+  final List<double> bars; // 0..1
+  final double progress; // 0..1
+  final bool isMe;
+  final bool isRtl;
+
+  _WaveformPainter({
+    required this.bars,
+    required this.progress,
+    required this.isMe,
+    required this.isRtl,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paintBase = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = 3;
+
+    final paintPlayed = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = 3;
+
+    paintPlayed.color = (isMe ? kPrimaryGold : kOffWhite).withOpacity(0.92);
+    paintBase.color = kTextSecondary.withOpacity(isMe ? 0.36 : 0.26);
+
+    final w = size.width;
+    final h = size.height;
+    final mid = h / 2;
+
+    final count = bars.length;
+    if (count == 0 || w <= 0) return;
+
+    final playedCount = (progress * count).clamp(0.0, count.toDouble());
+
+    for (int i = 0; i < count; i++) {
+      final idx = isRtl ? (count - 1 - i) : i;
+
+      final x = (i + 0.5) * (w / count);
+      final amp = (bars[idx]).clamp(0.15, 1.0);
+      final barH = (amp * (h * 0.85)).clamp(6.0, h);
+
+      final y1 = mid - barH / 2;
+      final y2 = mid + barH / 2;
+
+      final isPlayed = isRtl ? (i >= (count - playedCount)) : (i < playedCount);
+      final p = isPlayed ? paintPlayed : paintBase;
+
+      canvas.drawLine(Offset(x, y1), Offset(x, y2), p);
+    }
+
+    final headX = isRtl ? (w * (1.0 - progress)) : (w * progress);
+    final headPaint = Paint()
+      ..color = (isMe ? kPrimaryGold : kOffWhite).withOpacity(0.85)
+      ..strokeWidth = 4
+      ..strokeCap = StrokeCap.round;
+
+    canvas.drawLine(Offset(headX, mid - 12), Offset(headX, mid + 12), headPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _WaveformPainter oldDelegate) {
+    return oldDelegate.progress != progress ||
+        oldDelegate.isMe != isMe ||
+        oldDelegate.isRtl != isRtl ||
+        oldDelegate.bars != bars;
   }
 }
 
@@ -731,7 +892,14 @@ class _FullScreenVideoPageState extends State<_FullScreenVideoPage> {
   @override
   void initState() {
     super.initState();
-    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl))
+
+    final uri = Uri.tryParse(widget.videoUrl);
+    if (uri == null) {
+      _error = true;
+      return;
+    }
+
+    _controller = VideoPlayerController.networkUrl(uri)
       ..initialize().then((_) {
         if (!mounted) return;
         setState(() => _initialized = true);
@@ -744,7 +912,7 @@ class _FullScreenVideoPageState extends State<_FullScreenVideoPage> {
 
   @override
   void dispose() {
-    _controller.dispose();
+    if (!_error) _controller.dispose();
     super.dispose();
   }
 
@@ -754,13 +922,15 @@ class _FullScreenVideoPageState extends State<_FullScreenVideoPage> {
       backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: Colors.black,
-        leading: const BackButton(color: Colors.white),
+        leading: const BackButton(color: kTextPrimary),
       ),
       body: Center(
         child: _error
-            ? const Icon(Icons.broken_image, color: Colors.white54)
+            ? Icon(Icons.broken_image, color: kTextSecondary.withOpacity(0.8))
             : !_initialized
-            ? const CircularProgressIndicator()
+            ? CircularProgressIndicator(
+          color: Theme.of(context).colorScheme.primary,
+        )
             : AspectRatio(
           aspectRatio: _controller.value.aspectRatio,
           child: VideoPlayer(_controller),

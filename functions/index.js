@@ -94,3 +94,103 @@ exports.onPrivateMessageCreate = functions
         console.log("✅ FCM send result:", JSON.stringify(response, null, 2));
         return null;
     });
+
+
+/**
+ Callable: purgeChatRoom
+ * Deletes Storage objects by exact paths (Admin SDK), and optionally deletes leftover messages.
+ *
+ * Expected payload:
+ *  { roomId: string, paths?: string[] }
+ */
+exports.purgeChatRoom = functions
+    .region("us-central1")
+    .https.onCall(async (data, context) => {
+        try {
+            const uid =
+                context &&
+                context.auth &&
+                typeof context.auth.uid === "string" &&
+                context.auth.uid.length
+                    ? context.auth.uid
+                    : null;
+
+            if (!uid) {
+                throw new functions.https.HttpsError(
+                    "unauthenticated",
+                    "You must be signed in."
+                );
+            }
+
+            const roomId =
+                data && typeof data.roomId === "string" ? data.roomId.trim() : "";
+
+            if (!roomId) {
+                throw new functions.https.HttpsError(
+                    "invalid-argument",
+                    "roomId is required."
+                );
+            }
+
+            // ✅ Verify user is participant
+            const db = admin.firestore();
+            const roomRef = db.doc("privateChats/" + roomId);
+            const roomSnap = await roomRef.get();
+
+            if (!roomSnap.exists) {
+                return { ok: true, deleted: 0, skipped: 0, reason: "room_missing" };
+            }
+
+            const roomData = roomSnap.data() || {};
+            const participants = Array.isArray(roomData.participants)
+                ? roomData.participants
+                : [];
+
+            if (participants.indexOf(uid) === -1) {
+                throw new functions.https.HttpsError(
+                    "permission-denied",
+                    "You are not a participant in this room."
+                );
+            }
+
+            // ✅ Delete by exact object paths
+            const inputPaths = data && Array.isArray(data.paths) ? data.paths : [];
+            const paths = inputPaths
+                .map((p) => (typeof p === "string" ? p.trim() : ""))
+                .filter((p) => p.length > 0);
+
+            const bucket = admin.storage().bucket();
+            let deleted = 0;
+            let skipped = 0;
+
+            const chunkSize = 50;
+            for (let i = 0; i < paths.length; i += chunkSize) {
+                const slice = paths.slice(i, i + chunkSize);
+                await Promise.all(
+                    slice.map(async (p) => {
+                        try {
+                            await bucket.file(p).delete({ ignoreNotFound: true });
+                            deleted += 1;
+                        } catch (e) {
+                            skipped += 1;
+                            const msg = e && e.message ? e.message : String(e);
+                            console.log("Storage delete failed:", p, msg);
+                        }
+                    })
+                );
+            }
+
+            return { ok: true, deleted, skipped };
+        } catch (e) {
+            console.error("purgeChatRoom failed:", e);
+
+            // If it's already an HttpsError, rethrow it
+            if (e && e.code && e.message) {
+                throw e;
+            }
+
+            const msg = e && e.message ? e.message : "Failed";
+            throw new functions.https.HttpsError("internal", msg);
+        }
+    });
+

@@ -172,7 +172,7 @@ Future<void> _initPushNotifications() async {
           children: [
             const Icon(Icons.notifications_active_rounded, size: 18),
             const SizedBox(width: 10),
-            Expanded(
+            Flexible(
               child: Text(
                 safeTitle,
                 maxLines: 2,

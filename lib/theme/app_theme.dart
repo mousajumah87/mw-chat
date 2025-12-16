@@ -31,6 +31,11 @@ const kTypingBg = Color(0xFF121212); // slightly lifted from bg
 const kTypingBorder = Color(0xFF2C2C2C);
 const kTypingGlow = kGoldDeep;
 
+// === Chat Input Bar (NEW shared tokens) ===
+const Color kChatInputBarBg = Color(0xFF0B0B0B);          // matches kBgColor
+const Color kChatInputBarBorder = Color(0xFF2C2C2C);      // matches kBorderColor
+const Color kChatInputFieldBg = Color(0xFF141414);        // matches kSurfaceColor
+
 // === Gradient and Glow ===
 final LinearGradient mwGradient = LinearGradient(
   begin: Alignment.topLeft,
@@ -129,31 +134,25 @@ ThemeData buildAppTheme({bool isArabic = false}) {
           }
           return kPrimaryGold;
         }),
-
-        // ✅ BLACK TEXT (important)
         foregroundColor: MaterialStateProperty.all(Colors.black),
-
         shadowColor: MaterialStateProperty.all(
           kGoldDeep.withOpacity(0.35),
         ),
         elevation: MaterialStateProperty.all(3),
-
         shape: MaterialStateProperty.all(
           RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),
         ),
-
         padding: MaterialStateProperty.all(
           const EdgeInsets.symmetric(vertical: 14, horizontal: 26),
         ),
-
         textStyle: MaterialStateProperty.all(
           const TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w700,
             letterSpacing: 0.4,
-            color: Colors.black, // 🔒 force
+            color: Colors.black,
           ),
         ),
       ),
@@ -187,7 +186,8 @@ ThemeData buildAppTheme({bool isArabic = false}) {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: const BorderRadius.all(Radius.circular(12)),
-        borderSide: BorderSide(color: kPrimaryGold.withOpacity(0.95), width: 1.3),
+        borderSide:
+        BorderSide(color: kPrimaryGold.withOpacity(0.95), width: 1.3),
       ),
       errorBorder: const OutlineInputBorder(
         borderRadius: BorderRadius.all(Radius.circular(12)),

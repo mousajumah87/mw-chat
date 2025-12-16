@@ -248,6 +248,10 @@
     "reasonHate": "Hate or abusive content",
     "reasonSexual": "Sexual or inappropriate content",
     "reasonOther": "Other",
+    "deleteMessageSuccess": "Message deleted",
+    "deleteMessageFailed": "Failed to delete message",
+    "deletedForMe": "Deleted for me",
+
 
     "deletingAccount": "Deleting account...",
     "deleteMyAccount": "Delete my account",
@@ -328,7 +332,7 @@
     "resetEmailSent": "Password reset email sent. Check your inbox.",
     "resetEmailIfExists": "If this email exists, you will receive a reset link.",
     "tooManyRequests": "Too many attempts. Please try again later.",
-    "send": "Send"
-
+    "send": "Send",
+    "ok": "OK"
 
 }

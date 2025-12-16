@@ -1157,6 +1157,24 @@ abstract class AppLocalizations {
   /// **'Other'**
   String get reasonOther;
 
+  /// No description provided for @deleteMessageSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Message deleted'**
+  String get deleteMessageSuccess;
+
+  /// No description provided for @deleteMessageFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to delete message'**
+  String get deleteMessageFailed;
+
+  /// No description provided for @deletedForMe.
+  ///
+  /// In en, this message translates to:
+  /// **'Deleted for me'**
+  String get deletedForMe;
+
   /// No description provided for @deletingAccount.
   ///
   /// In en, this message translates to:
@@ -1588,6 +1606,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Send'**
   String get send;
+
+  /// No description provided for @ok.
+  ///
+  /// In en, this message translates to:
+  /// **'OK'**
+  String get ok;
 }
 
 class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> {
