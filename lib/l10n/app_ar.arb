@@ -301,6 +301,7 @@
     "deleteMessageSuccess": "تم حذف الرسالة",
     "deleteMessageFailed": "تعذر حذف الرسالة",
     "deletedForMe": "تم الحذف لدي",
+    "loadMore": "عرض المزيد",
 
     "profileSafetyToolsSectionTitle": "أدوات السلامة",
     "profileBlockedUserHintLimitedVisibility": "قام هذا المستخدم بتقييد ما يمكنك رؤيته.",
@@ -323,6 +324,9 @@
     "profileReportSnackbarSuccess": "تم إرسال البلاغ. سنقوم بمراجعته.",
     "profileReportSnackbarError": "فشل إرسال البلاغ. يرجى المحاولة مرة أخرى.",
     "generalErrorMessage": "حدث خطأ ما. يُرجى المحاولة مرة أخرى.",
+    "downloadOnAppStore": "حمّل من متجر آبل",
+    "getItOnGooglePlay": "احصل عليه من متجر Google Play",
+    "shareAppLink": "مشاركة رابط التطبيق",
 
     "forgotPassword": "نسيت كلمة المرور؟",
     "resetPasswordTitle": "إعادة تعيين كلمة المرور",

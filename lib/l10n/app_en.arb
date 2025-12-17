@@ -302,6 +302,7 @@
     "socialFacebook": "Facebook",
     "socialInstagram": "Instagram",
     "socialX": "X / Twitter",
+    "loadMore": "Load more",
 
     "appBrandingBeta": "MW Chat 2025 beta",
 
@@ -326,6 +327,9 @@
     "profileReportSnackbarSuccess": "Report submitted. We will review it.",
     "profileReportSnackbarError": "Failed to submit report. Please try again.",
     "generalErrorMessage": "Something went wrong. Please try again.",
+    "downloadOnAppStore": "Download on the App Store",
+    "getItOnGooglePlay": "Get it on Google Play",
+    "shareAppLink": "Share app link",
 
     "forgotPassword": "Forgot password?",
     "resetPasswordTitle": "Reset password",

@@ -5,12 +5,13 @@ import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../l10n/app_localizations.dart';
+import '../../theme/app_theme.dart';
 import '../../widgets/ui/mw_background.dart';
 import '../../widgets/ui/mw_app_header.dart';
-import 'mw_friends_tab.dart';
-import 'invite_friends_tab.dart';
-import '../../l10n/app_localizations.dart';
 import '../legal/terms_of_use_screen.dart';
+import 'invite_friends_tab.dart';
+import 'mw_friends_tab.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -43,18 +44,13 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Future<void> _openMwWebsite() async {
-    final uri = Uri.parse(_websiteUrl);
+    final uri = Uri.tryParse(_websiteUrl);
+    if (uri == null) return;
 
-    // ✅ Better cross-platform behavior (Web/iOS/Android)
     final ok = await launchUrl(uri, mode: LaunchMode.platformDefault);
-    if (!ok) {
-      debugPrint('Could not launch $_websiteUrl');
-    }
+    if (!ok) debugPrint('Could not launch $_websiteUrl');
   }
 
-  /// Ensure the logged-in user has accepted Terms of Use.
-  /// - If `hasAcceptedTerms != true`, we show the TermsOfUseScreen.
-  /// - If they dismiss without accepting, we sign them out.
   Future<void> _ensureUserAcceptedTerms() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
@@ -76,7 +72,6 @@ class _HomeScreenState extends State<HomeScreen>
           ),
         );
 
-        // ✅ If user navigated away while Terms screen was open
         if (!mounted) return;
 
         if (accepted == true) {
@@ -88,7 +83,6 @@ class _HomeScreenState extends State<HomeScreen>
             SetOptions(merge: true),
           );
         } else {
-          // If the user did NOT explicitly accept, log them out
           await FirebaseAuth.instance.signOut();
         }
       }
@@ -103,52 +97,78 @@ class _HomeScreenState extends State<HomeScreen>
     final media = MediaQuery.of(context);
     final width = media.size.width;
     final isWide = width >= 900;
+
     final l10n = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: kBgColor,
       body: MwBackground(
         child: SafeArea(
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 900),
               child: Column(
-                mainAxisSize: MainAxisSize.max,
                 children: [
-                  MwAppHeader(
-                    title: l10n.mainTitle,
-                    showTabs: true,
-                    tabBar: _buildFixedTabBar(l10n, theme),
+                  RepaintBoundary(
+                    child: MwAppHeader(
+                      title: l10n.mainTitle,
+                      showTabs: true,
+                      tabBar: _buildFixedTabBar(l10n),
+                    ),
                   ),
                   const SizedBox(height: 12),
+
                   Expanded(
-                    child: Container(
-                      margin: EdgeInsets.symmetric(
-                        horizontal: isWide ? 16 : 12,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.65),
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(
-                          color: Colors.white.withOpacity(0.08),
+                    child: RepaintBoundary(
+                      child: Container(
+                        margin: EdgeInsets.symmetric(
+                          horizontal: isWide ? 16 : 12,
+                          vertical: 4,
                         ),
-                      ),
-                      child: TabBarView(
-                        controller: _tabController,
-                        physics: const BouncingScrollPhysics(),
-                        children: [
-                          _KeepAlive(
-                            child: MwFriendsTab(currentUser: currentUser),
+                        decoration: BoxDecoration(
+                          color: kSurfaceAltColor.withOpacity(0.55),
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(
+                            color: kBorderColor.withOpacity(0.70),
+                            width: 1,
                           ),
-                          const _KeepAlive(child: InviteFriendsTab()),
-                        ],
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.55),
+                              blurRadius: 30,
+                              offset: const Offset(0, 16),
+                            ),
+                            BoxShadow(
+                              color: kGoldDeep.withOpacity(0.08),
+                              blurRadius: 20,
+                              offset: const Offset(0, 10),
+                            ),
+                          ],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(24),
+                          child: TabBarView(
+                            controller: _tabController,
+
+                            // ✅ This feels smoother cross-platform than Bouncing.
+                            // iOS still supports swipe smoothly; Android feels less "rubbery".
+                            physics: const ClampingScrollPhysics(),
+
+                            children: [
+                              _KeepAlive(
+                                child: MwFriendsTab(currentUser: currentUser),
+                              ),
+                              const _KeepAlive(child: InviteFriendsTab()),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ),
+
                   const SizedBox(height: 6),
-                  _buildFooter(context, l10n, isWide: isWide),
+                  _buildFooter(context, l10n, theme, isWide: isWide),
                 ],
               ),
             ),
@@ -160,16 +180,19 @@ class _HomeScreenState extends State<HomeScreen>
 
   Widget _buildFooter(
       BuildContext context,
-      AppLocalizations l10n, {
+      AppLocalizations l10n,
+      ThemeData theme, {
         required bool isWide,
       }) {
-    final theme = Theme.of(context);
     final textStyle = theme.textTheme.bodySmall?.copyWith(
-      color: Colors.white70,
+      color: kTextSecondary.withOpacity(0.85),
       fontSize: 11,
+      fontWeight: FontWeight.w600,
     );
+
     final versionStyle = textStyle?.copyWith(
-      color: Colors.white38,
+      color: kTextSecondary.withOpacity(0.55),
+      fontWeight: FontWeight.w500,
     );
 
     return Padding(
@@ -183,16 +206,8 @@ class _HomeScreenState extends State<HomeScreen>
         alignment: WrapAlignment.center,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          Text(
-            l10n.appBrandingBeta,
-            style: textStyle,
-            textAlign: TextAlign.center,
-          ),
-          Text(
-            _appVersion,
-            style: versionStyle,
-            textAlign: TextAlign.center,
-          ),
+          Text(l10n.appBrandingBeta, style: textStyle),
+          Text(_appVersion, style: versionStyle),
           InkWell(
             onTap: _openMwWebsite,
             borderRadius: BorderRadius.circular(16),
@@ -202,9 +217,9 @@ class _HomeScreenState extends State<HomeScreen>
                 'mwchats.com',
                 style: textStyle?.copyWith(
                   decoration: TextDecoration.underline,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: FontWeight.w800,
+                  color: kPrimaryGold.withOpacity(0.90),
                 ),
-                textAlign: TextAlign.center,
               ),
             ),
           ),
@@ -213,36 +228,73 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  TabBar _buildFixedTabBar(AppLocalizations l10n, ThemeData theme) {
-    final isDark = theme.brightness == Brightness.dark;
+  TabBar _buildFixedTabBar(AppLocalizations l10n) {
+    final radius = BorderRadius.circular(999);
 
     return TabBar(
       controller: _tabController,
       isScrollable: false,
-      labelColor: isDark ? Colors.black : Colors.black,
-      unselectedLabelColor: Colors.white.withOpacity(0.78),
+
+      // Smooth + consistent animation
+      indicatorAnimation: TabIndicatorAnimation.linear,
+
+      // Selected / unselected colors (also affect icons automatically)
+      labelColor: Colors.black,
+      unselectedLabelColor: kOffWhite.withOpacity(0.82),
+
+      // Gold pill indicator
       indicator: BoxDecoration(
-        color: Colors.white.withOpacity(0.96),
-        borderRadius: BorderRadius.circular(999),
+        borderRadius: radius,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            kPrimaryGold.withOpacity(0.98),
+            kGoldDeep.withOpacity(0.92),
+          ],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: kGoldDeep.withOpacity(0.18),
+            blurRadius: 16,
+            offset: const Offset(0, 10),
+          ),
+        ],
       ),
       indicatorSize: TabBarIndicatorSize.tab,
+      dividerColor: Colors.transparent,
+
+      // No blue splash/overlay
+      overlayColor: MaterialStateProperty.resolveWith((states) {
+        if (states.contains(MaterialState.pressed)) {
+          return kPrimaryGold.withOpacity(0.10);
+        }
+        if (states.contains(MaterialState.hovered)) {
+          return kPrimaryGold.withOpacity(0.06);
+        }
+        return Colors.transparent;
+      }),
+
       labelStyle: const TextStyle(
-        fontWeight: FontWeight.w600,
-        fontSize: 14,
+        fontWeight: FontWeight.w800,
+        fontSize: 13.5,
+        letterSpacing: 0.15,
       ),
       unselectedLabelStyle: const TextStyle(
-        fontWeight: FontWeight.w500,
+        fontWeight: FontWeight.w600,
         fontSize: 13,
+        letterSpacing: 0.10,
       ),
+
       tabs: [
         Tab(
           iconMargin: const EdgeInsets.only(bottom: 2),
-          icon: const Icon(Icons.people_alt_outlined, size: 22),
+          icon: const Icon(Icons.people_alt_outlined, size: 20),
           text: l10n.usersTitle,
         ),
         Tab(
           iconMargin: const EdgeInsets.only(bottom: 2),
-          icon: const Icon(Icons.person_add_alt_1_outlined, size: 22),
+          icon: const Icon(Icons.person_add_alt_1_outlined, size: 20),
           text: l10n.inviteFriendsTitle,
         ),
       ],

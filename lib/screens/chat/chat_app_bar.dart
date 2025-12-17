@@ -1,5 +1,3 @@
-// lib/screens/chat/chat_app_bar.dart
-
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -11,6 +9,9 @@ import '../../l10n/app_localizations.dart';
 // ✅ Reuse shared dialogs/helpers (no duplication)
 import '../../widgets/safety/report_user_dialog.dart';
 import '../../widgets/ui/mw_feedback.dart';
+
+// ✅ NEW shared avatar widget
+import '../../widgets/ui/mw_avatar.dart';
 
 class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
   final String title;
@@ -57,25 +58,15 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
     required String? avatarType,
     required bool hideRealAvatar,
   }) {
-    final String? effectiveProfileUrl =
-    hideRealAvatar ? null : (profileUrl?.isNotEmpty == true ? profileUrl : null);
+    // If blocked, we always show bear (per your old logic)
     final String effectiveAvatarType = hideRealAvatar ? 'bear' : (avatarType ?? 'bear');
 
-    if (effectiveProfileUrl != null) {
-      return CircleAvatar(
-        radius: 18,
-        backgroundImage: NetworkImage(effectiveProfileUrl),
-      );
-    }
-
-    final emoji = effectiveAvatarType == 'smurf' ? '🧜‍♀️' : '🐻';
-    return CircleAvatar(
+    return MwAvatar(
       radius: 18,
+      avatarType: effectiveAvatarType,
+      profileUrl: profileUrl,
+      hideRealAvatar: hideRealAvatar,
       backgroundColor: Colors.white10,
-      child: Text(
-        emoji,
-        style: const TextStyle(fontSize: 18, color: Colors.white),
-      ),
     );
   }
 
@@ -546,7 +537,6 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
                                 ),
                               if (hasOther) const SizedBox(height: 10),
 
-                              // ✅ Reuse the shared ReportUserDialog everywhere
                               if (hasOther)
                                 buildItem(
                                   icon: Icons.flag_outlined,

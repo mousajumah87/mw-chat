@@ -122,7 +122,7 @@ class _AuthScreenState extends State<AuthScreen> {
             return AlertDialog(
               title: Text(l10n.resetPasswordTitle),
 
-              // ✅ keyboard + small screens safe (iPhone mini, etc.)
+              // keyboard + small screens safe (iPhone mini, etc.)
               content: SingleChildScrollView(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 420),
@@ -138,7 +138,7 @@ class _AuthScreenState extends State<AuthScreen> {
                         decoration: InputDecoration(
                           labelText: l10n.email,
                           hintText: 'name@example.com',
-                          errorText: inlineError, // ✅ inline error under field
+                          errorText: inlineError, // inline error under field
                         ),
                         onChanged: (_) {
                           if (inlineError != null) {
@@ -146,7 +146,7 @@ class _AuthScreenState extends State<AuthScreen> {
                           }
                         },
                         onSubmitted: (_) =>
-                            sending ? null : submit(setLocalState),
+                        sending ? null : submit(setLocalState),
                       ),
                       if (sending) ...[
                         const SizedBox(height: 14),
@@ -187,12 +187,12 @@ class _AuthScreenState extends State<AuthScreen> {
       case 'invalid-email':
         return l10n.invalidEmail;
       case 'user-not-found':
-        // privacy-friendly:
-        return l10n.resetEmailIfExists; // ✅ add key
+      // privacy-friendly:
+        return l10n.resetEmailIfExists;
       case 'missing-email':
         return l10n.requiredField;
       case 'too-many-requests':
-        return l10n.tooManyRequests; // ✅ add key
+        return l10n.tooManyRequests;
       default:
         return e.message ?? l10n.authError;
     }
@@ -215,30 +215,21 @@ class _AuthScreenState extends State<AuthScreen> {
 
       if (picked == null) return;
 
-      if (kIsWeb) {
-        final bytes = await picked.readAsBytes();
-        setState(() {
-          _imageBytes = bytes;
-        });
-      } else {
-        final bytes = await picked.readAsBytes();
-        setState(() {
-          _imageBytes = bytes;
-        });
-      }
+      final bytes = await picked.readAsBytes();
+      setState(() {
+        _imageBytes = bytes;
+      });
     } on PlatformException catch (e, st) {
       debugPrint('[AuthScreen] _pickImage PlatformException: $e\n$st');
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(l10n.authError)));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(l10n.authError)));
       }
     } catch (e, st) {
       debugPrint('[AuthScreen] _pickImage error: $e\n$st');
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(l10n.authError)));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(l10n.authError)));
       }
     } finally {
       if (mounted) setState(() => _pickingImage = false);
@@ -270,9 +261,8 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   Future<void> _openTerms() async {
-    final accepted = await Navigator.of(
-      context,
-    ).push<bool>(MaterialPageRoute(builder: (_) => const TermsOfUseScreen()));
+    final accepted = await Navigator.of(context)
+        .push<bool>(MaterialPageRoute(builder: (_) => const TermsOfUseScreen()));
 
     if (accepted == true) {
       setState(() {
@@ -336,9 +326,8 @@ class _AuthScreenState extends State<AuthScreen> {
       String? profileUrl;
 
       if (_imageBytes != null) {
-        final ref = FirebaseStorage.instance.ref().child(
-          'profile_pics/${user.uid}',
-        );
+        final ref =
+        FirebaseStorage.instance.ref().child('profile_pics/${user.uid}');
         final metadata = SettableMetadata(contentType: 'image/jpeg');
 
         setState(() {
@@ -432,15 +421,7 @@ class _AuthScreenState extends State<AuthScreen> {
       body: MwBackground(
         child: Stack(
           children: [
-            Positioned(
-              top: 32,
-              left: 0,
-              right: 0,
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: const MwLanguageButton(),
-              ),
-            ),
+            // ✅ Main content FIRST (behind)
             Center(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(24),
@@ -489,7 +470,7 @@ class _AuthScreenState extends State<AuthScreen> {
                                 onRemoveImage: _removeImage,
                                 onPickBirthday: _pickBirthday,
                                 onGenderChanged: (v) =>
-                                    _genderNotifier.value = v,
+                                _genderNotifier.value = v,
                                 agreedToTerms: _agreedToTerms,
                                 onAgreeChanged: (bool v) {
                                   setState(() {
@@ -510,8 +491,9 @@ class _AuthScreenState extends State<AuthScreen> {
                               prefixIcon: const Icon(Icons.email_outlined),
                             ),
                             validator: (v) {
-                              if (v == null || v.isEmpty)
+                              if (v == null || v.isEmpty) {
                                 return l10n.requiredField;
+                              }
                               if (!v.contains('@')) return l10n.invalidEmail;
                               return null;
                             },
@@ -537,8 +519,9 @@ class _AuthScreenState extends State<AuthScreen> {
                               ),
                             ),
                             validator: (v) {
-                              if (v == null || v.isEmpty)
+                              if (v == null || v.isEmpty) {
                                 return l10n.requiredField;
+                              }
                               if (v.length < 6) return l10n.minPassword;
                               return null;
                             },
@@ -592,21 +575,21 @@ class _AuthScreenState extends State<AuthScreen> {
                               duration: const Duration(milliseconds: 250),
                               child: _submitting
                                   ? const SizedBox(
-                                      width: 22,
-                                      height: 22,
-                                      child: CircularProgressIndicator(
-                                        color: Colors.black,
-                                        strokeWidth: 2,
-                                      ),
-                                    )
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  color: Colors.black,
+                                  strokeWidth: 2,
+                                ),
+                              )
                                   : Text(
-                                      isRegister ? l10n.register : l10n.login,
-                                      style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w700,
-                                        color: Colors.black,
-                                      ),
-                                    ),
+                                isRegister ? l10n.register : l10n.login,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.black,
+                                ),
+                              ),
                             ),
                           ),
 
@@ -636,6 +619,17 @@ class _AuthScreenState extends State<AuthScreen> {
                       ),
                     ),
                   ),
+                ),
+              ),
+            ),
+
+            // ✅ Language toggle LAST (always on top + clickable)
+            SafeArea(
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: MwLanguageButton(),
                 ),
               ),
             ),

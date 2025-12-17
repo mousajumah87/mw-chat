@@ -9,6 +9,7 @@ import 'package:vibration/vibration.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../utils/chat_utils.dart';
+import '../../widgets/ui/mw_avatar.dart';
 import '../chat/chat_screen.dart';
 
 class MwFriendsTab extends StatefulWidget {
@@ -36,6 +37,15 @@ class _MwFriendsTabState extends State<MwFriendsTab>
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _userDocSub;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _friendsSub;
 
+  // ✅ Pagination (Load More)
+  static const int _pageSize = 40;
+  int _currentLimit = _pageSize;
+  bool _isLoadingMore = false;
+  bool _hasMore = true;
+
+  final ScrollController _scrollController = ScrollController();
+  Timer? _loadMoreDebounce;
+
   @override
   bool get wantKeepAlive => true;
 
@@ -46,6 +56,33 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     _listenUnreadCounts();
     _listenBlockedUsers();
     _listenFriends();
+
+    _scrollController.addListener(_onScrollLoadMore);
+  }
+
+  void _onScrollLoadMore() {
+    if (!_hasMore || _isLoadingMore) return;
+    if (!_scrollController.hasClients) return;
+
+    final pos = _scrollController.position;
+    // Near bottom → auto "Load more"
+    if (pos.pixels >= (pos.maxScrollExtent - 260)) {
+      _requestLoadMore();
+    }
+  }
+
+  void _requestLoadMore() {
+    if (_isLoadingMore || !_hasMore) return;
+
+    // small debounce to avoid rapid triggers on fast scroll
+    if (_loadMoreDebounce?.isActive ?? false) return;
+    _loadMoreDebounce = Timer(const Duration(milliseconds: 200), () {
+      if (!mounted) return;
+      setState(() {
+        _isLoadingMore = true;
+        _currentLimit += _pageSize;
+      });
+    });
   }
 
   /// 🔹 Real-time unread count listener for all chats involving this user.
@@ -152,6 +189,8 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     _chatStreamSub?.cancel();
     _userDocSub?.cancel();
     _friendsSub?.cancel();
+    _loadMoreDebounce?.cancel();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -340,18 +379,13 @@ class _MwFriendsTabState extends State<MwFriendsTab>
 
     return Stack(
       children: [
-        CircleAvatar(
+        // ✅ Use shared asset avatar / network avatar
+        MwAvatar(
           radius: 26,
+          avatarType: effectiveAvatarType,
+          profileUrl: effectiveProfileUrl,
+          hideRealAvatar: hideRealAvatar,
           backgroundColor: Colors.white,
-          backgroundImage: (effectiveProfileUrl?.isNotEmpty ?? false)
-              ? NetworkImage(effectiveProfileUrl!)
-              : null,
-          child: (effectiveProfileUrl == null || effectiveProfileUrl.isEmpty)
-              ? Text(
-            effectiveAvatarType == 'smurf' ? '🧜‍♀️' : '🐻',
-            style: const TextStyle(fontSize: 20),
-          )
-              : null,
         ),
         Positioned(
           bottom: 2,
@@ -389,8 +423,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     // If there is a block relationship, we never show them as online.
     final bool rawIsOnline = isActive && data['isOnline'] == true;
     final bool isBlockedRelationship = isBlockedByMe || hasBlockedMe;
-    final bool isOnlineForDisplay =
-    isBlockedRelationship ? false : rawIsOnline;
+    final bool isOnlineForDisplay = isBlockedRelationship ? false : rawIsOnline;
 
     final Timestamp? lastSeen =
     data['lastSeen'] is Timestamp ? data['lastSeen'] : null;
@@ -513,8 +546,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
             side: BorderSide(
-              color:
-              hasUnread ? Colors.white.withOpacity(0.4) : Colors.white24,
+              color: hasUnread ? Colors.white.withOpacity(0.4) : Colors.white24,
             ),
           ),
           child: InkWell(
@@ -524,9 +556,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
               if (await Vibration.hasVibrator() ?? false) {
                 Vibration.vibrate(duration: 40);
               }
-
-              // NOTE: we still allow opening chat with anyone.
-              // ChatScreen will handle gating send/receive based on friend status.
 
               // Reset unread count immediately on open.
               try {
@@ -591,18 +620,14 @@ class _MwFriendsTabState extends State<MwFriendsTab>
 
   /// Decide if a user should be treated as "online" for sorting purposes.
   /// If there is any block relationship, we always treat them as offline.
-  bool _isOnlineForSorting(
-      Map<String, dynamic> data,
-      String userId,
-      ) {
+  bool _isOnlineForSorting(Map<String, dynamic> data, String userId) {
     final bool isActive = data['isActive'] != false;
     final bool rawOnline = isActive && data['isOnline'] == true;
 
     if (!rawOnline) return false;
 
     final bool isBlockedByMe = _blockedUserIds.contains(userId);
-    final List<dynamic>? theirBlocked =
-    data['blockedUserIds'] as List<dynamic>?;
+    final List<dynamic>? theirBlocked = data['blockedUserIds'] as List<dynamic>?;
     final bool hasBlockedMe =
         theirBlocked?.whereType<String>().contains(_currentUid) ?? false;
 
@@ -619,8 +644,11 @@ class _MwFriendsTabState extends State<MwFriendsTab>
   /// - Inactive users
   Widget _buildSectionedUserList(
       BuildContext context,
-      List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
-      ) {
+      List<QueryDocumentSnapshot<Map<String, dynamic>>> docs, {
+        required bool showLoadMore,
+        required bool isLoadingMore,
+        required VoidCallback onLoadMore,
+      }) {
     final l10n = AppLocalizations.of(context)!;
 
     if (docs.isEmpty) {
@@ -703,9 +731,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
                     const SizedBox(width: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
+                          horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
                         color: Colors.white12,
                         borderRadius: BorderRadius.circular(999),
@@ -771,7 +797,48 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     addSection(l10n.friendSectionAllUsers, otherDocs);
     addSection(l10n.friendSectionInactiveUsers, inactiveDocs);
 
+    // ✅ Load more footer
+    if (showLoadMore || isLoadingMore) {
+      children.add(
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
+          child: Center(
+            child: SizedBox(
+              width: 220,
+              child: OutlinedButton(
+                onPressed: isLoadingMore ? null : onLoadMore,
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Colors.white24),
+                  foregroundColor: Colors.white,
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+                child: isLoadingMore
+                    ? Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: const [
+                    SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    SizedBox(width: 10),
+                    Text('Loading...'),
+                  ],
+                )
+                    : Text(l10n.loadMore),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return ListView(
+      controller: _scrollController,
       padding: const EdgeInsets.fromLTRB(8, 8, 8, 24),
       physics: const BouncingScrollPhysics(),
       children: children,
@@ -782,9 +849,16 @@ class _MwFriendsTabState extends State<MwFriendsTab>
   Widget build(BuildContext context) {
     super.build(context);
 
+    // ✅ Stream uses an increasing limit (simple + reliable pagination)
+    final usersStream = FirebaseFirestore.instance
+        .collection('users')
+        .orderBy(FieldPath.documentId)
+        .limit(_currentLimit)
+        .snapshots();
+
     return SafeArea(
       child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: FirebaseFirestore.instance.collection('users').snapshots(),
+        stream: usersStream,
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
             return const Center(
@@ -792,8 +866,25 @@ class _MwFriendsTabState extends State<MwFriendsTab>
             );
           }
 
+          final rawDocs = snapshot.data!.docs;
+
+          // Determine whether we can load more.
+          final bool newHasMore = rawDocs.length >= _currentLimit;
+
+          // Apply client-side filter (don’t show current user)
           final docs =
-          snapshot.data!.docs.where((d) => d.id != _currentUid).toList();
+          rawDocs.where((d) => d.id != _currentUid).toList(growable: false);
+
+          // Update flags safely (avoid setState during build)
+          if (newHasMore != _hasMore || _isLoadingMore) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              setState(() {
+                _hasMore = newHasMore;
+                _isLoadingMore = false;
+              });
+            });
+          }
 
           // Centered layout with max width for all platforms (mobile, tablet, web).
           return Center(
@@ -804,7 +895,13 @@ class _MwFriendsTabState extends State<MwFriendsTab>
                   scrollbars: false,
                   physics: const BouncingScrollPhysics(),
                 ),
-                child: _buildSectionedUserList(context, docs),
+                child: _buildSectionedUserList(
+                  context,
+                  docs,
+                  showLoadMore: _hasMore,
+                  isLoadingMore: _isLoadingMore,
+                  onLoadMore: _requestLoadMore,
+                ),
               ),
             ),
           );

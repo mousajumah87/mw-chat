@@ -15,6 +15,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/ui/mw_avatar.dart';
 import '../../widgets/ui/mw_background.dart';
 import '../legal/terms_of_use_screen.dart';
 
@@ -136,10 +137,10 @@ class _ProfileScreenState extends State<ProfileScreen>
 
       if (!mounted) return;
       setState(() {
-        _currentUrl = data['profileUrl'] ?? '';
-        _avatarType = data['avatarType'] ?? 'bear';
-        _firstNameCtrl.text = data['firstName'] ?? '';
-        _lastNameCtrl.text = data['lastName'] ?? '';
+        _currentUrl = (data['profileUrl'] ?? '').toString();
+        _avatarType = (data['avatarType'] ?? 'bear').toString();
+        _firstNameCtrl.text = (data['firstName'] ?? '').toString();
+        _lastNameCtrl.text = (data['lastName'] ?? '').toString();
 
         final rawGender = data['gender'];
         if (rawGender == 'male' || rawGender == 'female') {
@@ -424,16 +425,20 @@ class _ProfileScreenState extends State<ProfileScreen>
   Future<void> _deleteUserData(FirebaseFirestore db, String uid) async {
     await db.collection('users').doc(uid).delete();
 
-    final chatsSnap =
-    await db.collection('privateChats').where('participants', arrayContains: uid).get();
+    final chatsSnap = await db
+        .collection('privateChats')
+        .where('participants', arrayContains: uid)
+        .get();
 
     for (final chatDoc in chatsSnap.docs) {
       final messagesRef = chatDoc.reference.collection('messages');
 
       const batchSize = 50;
       while (true) {
-        final msgSnap =
-        await messagesRef.where('senderId', isEqualTo: uid).limit(batchSize).get();
+        final msgSnap = await messagesRef
+            .where('senderId', isEqualTo: uid)
+            .limit(batchSize)
+            .get();
 
         if (msgSnap.docs.isEmpty) break;
 
@@ -478,15 +483,51 @@ class _ProfileScreenState extends State<ProfileScreen>
         ? (_imageBytes != null ? MemoryImage(_imageBytes!) : null)
         : (_imageFile != null ? FileImage(_imageFile!) : null);
 
-    // Network URL (if exists)
-    final bool hasNetwork = (_currentUrl?.isNotEmpty ?? false);
+    final bool hasNetwork = (_currentUrl?.trim().isNotEmpty ?? false);
 
-    // Stable hero tag
+    // Stable hero tag (keeps hero animation consistent everywhere)
     const heroTag = 'my_profile_photo';
 
-    // Tap provider (for the viewer). For network, we pass a CachedNetworkImageProvider.
+    // Tap provider (viewer)
     final ImageProvider? tapProvider = localProvider ??
         (hasNetwork ? CachedNetworkImageProvider(_currentUrl!) : null);
+
+    // Avatar size used previously
+    const double avatarRadius = 60; // => 120px
+
+    Widget avatarCore;
+
+    // If user picked a local image, show it (so they preview before saving)
+    if (localProvider != null) {
+      avatarCore = Hero(
+        tag: heroTag,
+        child: ClipOval(
+          child: SizedBox(
+            width: avatarRadius * 2,
+            height: avatarRadius * 2,
+            child: Image(
+              image: localProvider,
+              fit: BoxFit.cover,
+              filterQuality: FilterQuality.high,
+            ),
+          ),
+        ),
+      );
+    } else {
+      // Otherwise: use MwAvatar (network + fallback asset + ring/hero if supported)
+      avatarCore = MwAvatar(
+        heroTag: heroTag,
+        radius: avatarRadius,
+        avatarType: _avatarType,
+        profileUrl: _currentUrl,
+        hideRealAvatar: false,
+        showRing: true,
+        showOnlineDot: false,
+        showOnlineGlow: false,
+        // Keep cache policy normal for profile page; it updates after upload anyway.
+        cachePolicy: MwAvatarCachePolicy.normal,
+      );
+    }
 
     return ScaleTransition(
       scale: _scale,
@@ -494,65 +535,29 @@ class _ProfileScreenState extends State<ProfileScreen>
         children: [
           GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: tapProvider == null ? null : () => _openAvatarFullScreen(provider: tapProvider, heroTag: heroTag),
+            onTap: tapProvider == null
+                ? null
+                : () => _openAvatarFullScreen(
+              provider: tapProvider,
+              heroTag: heroTag,
+            ),
             child: Stack(
               alignment: Alignment.center,
               children: [
-                Hero(
-                  tag: heroTag,
-                  child: Container(
-                    width: 120,
-                    height: 120,
-                    decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: kSurfaceAltColor,
-                    ),
-                    clipBehavior: Clip.antiAlias,
-                    child: () {
-                      // Local picked image (fast path)
-                      if (localProvider != null) {
-                        return Image(
-                          image: localProvider,
-                          fit: BoxFit.cover,
-                          filterQuality: FilterQuality.high,
-                        );
-                      }
-
-                      // Network image -> CachedNetworkImage
-                      if (hasNetwork) {
-                        return CachedNetworkImage(
-                          imageUrl: _currentUrl!,
-                          fit: BoxFit.cover,
-                          filterQuality: FilterQuality.high,
-                          placeholder: (context, url) => const Center(
-                            child: SizedBox(
-                              width: 22,
-                              height: 22,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white70,
-                              ),
-                            ),
-                          ),
-                          errorWidget: (context, url, error) => Center(
-                            child: Text(
-                              _avatarType == 'smurf' ? '🧜‍♀️' : '🐻',
-                              style: const TextStyle(fontSize: 40),
-                            ),
-                          ),
-                        );
-                      }
-
-                      // No image -> emoji
-                      return Center(
-                        child: Text(
-                          _avatarType == 'smurf' ? '🧜‍♀️' : '🐻',
-                          style: const TextStyle(fontSize: 40),
-                        ),
-                      );
-                    }(),
+                // Subtle background circle (keeps prior feel, avoids “damaged” look on some devices)
+                Container(
+                  width: avatarRadius * 2 + 8,
+                  height: avatarRadius * 2 + 8,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: kSurfaceAltColor.withOpacity(0.9),
+                    border: Border.all(color: Colors.white.withOpacity(0.10)),
                   ),
                 ),
+
+                // Actual avatar
+                avatarCore,
+
                 if (tapProvider != null && !_uploadingImage)
                   Positioned(
                     bottom: 2,
@@ -580,7 +585,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             LinearProgressIndicator(value: _uploadProgress),
           ],
 
-          // Keep your existing "remove photo" behavior, but only show if there's something to remove.
+          // Keep your existing "remove photo" behavior
           if ((localProvider != null || hasNetwork) && !_uploadingImage) ...[
             const SizedBox(height: 6),
             TextButton.icon(
@@ -698,7 +703,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                 mainAxisSize: MainAxisSize.max,
                 children: [
                   const SizedBox(height: 12),
-
                   Expanded(
                     child: Container(
                       margin: EdgeInsets.symmetric(
@@ -768,7 +772,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                                   ],
                                 ),
                                 const SizedBox(height: 20),
-
                                 Align(
                                   alignment: isRtl ? Alignment.centerRight : Alignment.centerLeft,
                                   child: Text(
@@ -778,7 +781,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                                   ),
                                 ),
                                 const SizedBox(height: 6),
-
                                 OutlinedButton(
                                   onPressed: _saving ? null : _pickBirthday,
                                   style: OutlinedButton.styleFrom(
@@ -807,9 +809,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                                     ],
                                   ),
                                 ),
-
                                 const SizedBox(height: 22),
-
                                 Align(
                                   alignment: isRtl ? Alignment.centerRight : Alignment.centerLeft,
                                   child: Text(
@@ -819,7 +819,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                                   ),
                                 ),
                                 const SizedBox(height: 8),
-
                                 Builder(
                                   builder: (_) {
                                     final maleChip = ChoiceChip(
@@ -871,7 +870,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                                   },
                                 ),
                                 const SizedBox(height: 30),
-
                                 ElevatedButton.icon(
                                   onPressed: _saving ? null : _saveProfile,
                                   icon: _saving
@@ -897,10 +895,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                                     ),
                                   ),
                                 ),
-
                                 const SizedBox(height: 32),
                                 const Divider(height: 32),
-
                                 Align(
                                   alignment: isRtl ? Alignment.centerRight : Alignment.centerLeft,
                                   child: Text(
@@ -912,7 +908,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                                   ),
                                 ),
                                 const SizedBox(height: 12),
-
                                 Container(
                                   decoration: BoxDecoration(
                                     color: kSurfaceColor,
@@ -935,9 +930,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                                     },
                                   ),
                                 ),
-
                                 const SizedBox(height: 12),
-
                                 Container(
                                   decoration: BoxDecoration(
                                     color: kSurfaceColor,
@@ -952,14 +945,15 @@ class _ProfileScreenState extends State<ProfileScreen>
                                     ),
                                     subtitle: Text(
                                       l10n.contactSupportSubtitle,
-                                      style: const TextStyle(color: Colors.white70, fontSize: 12),
+                                      style: const TextStyle(
+                                        color: Colors.white70,
+                                        fontSize: 12,
+                                      ),
                                     ),
                                   ),
                                 ),
-
                                 const SizedBox(height: 40),
                                 const Divider(height: 32),
-
                                 Align(
                                   alignment: isRtl ? Alignment.centerRight : Alignment.centerLeft,
                                   child: Text(
@@ -986,7 +980,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                                   child: OutlinedButton.icon(
                                     icon: const Icon(Icons.delete_forever),
                                     label: Text(
-                                      _deletingAccount ? l10n.deletingAccount : l10n.deleteMyAccount,
+                                      _deletingAccount
+                                          ? l10n.deletingAccount
+                                          : l10n.deleteMyAccount,
                                     ),
                                     style: OutlinedButton.styleFrom(
                                       foregroundColor: Colors.red,
@@ -996,7 +992,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                                         horizontal: 16,
                                       ),
                                     ),
-                                    onPressed: _deletingAccount ? null : _confirmDeleteAccount,
+                                    onPressed:
+                                    _deletingAccount ? null : _confirmDeleteAccount,
                                   ),
                                 ),
                               ],
@@ -1006,7 +1003,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                       ),
                     ),
                   ),
-
                   const SizedBox(height: 6),
                   _buildFooter(context, l10n, isWide: isWide),
                 ],

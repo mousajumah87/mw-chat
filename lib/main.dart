@@ -2,6 +2,8 @@
 // Copyright © 2025 Mousa Abu Hilal.
 // lib/main.dart
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint, kDebugMode;
 import 'package:firebase_core/firebase_core.dart';
@@ -38,6 +40,75 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   debugPrint('🔔 DATA: ${message.data}');
 }
 
+/// ------------------------------
+/// FCM Token Sync (deduped)
+/// ------------------------------
+/// We store token only when it changes, and never from widget build() to avoid spam.
+String? _lastStoredFcmToken;
+String? _lastStoredUid;
+
+StreamSubscription<User?>? _authTokenSyncSub;
+StreamSubscription<String>? _tokenRefreshSub;
+
+Future<void> _storeTokenForUserIfChanged({
+  required String uid,
+  required String token,
+}) async {
+  if (token.isEmpty) return;
+
+  // ✅ Dedup within process lifetime (prevents spam logs + extra writes)
+  if (_lastStoredUid == uid && _lastStoredFcmToken == token) return;
+  _lastStoredUid = uid;
+  _lastStoredFcmToken = token;
+
+  await FirebaseFirestore.instance.collection('users').doc(uid).set(
+    {
+      'fcmToken': token,
+      'fcmUpdatedAt': FieldValue.serverTimestamp(),
+    },
+    SetOptions(merge: true),
+  );
+
+  debugPrint('✅ Stored FCM token for user $uid');
+}
+
+Future<void> _syncCurrentTokenIfPossible() async {
+  if (kIsWeb) return;
+
+  final user = FirebaseAuth.instance.currentUser;
+  if (user == null) return;
+
+  try {
+    final token = await FirebaseMessaging.instance.getToken();
+    if (token == null || token.isEmpty) return;
+
+    await _storeTokenForUserIfChanged(uid: user.uid, token: token);
+  } on FirebaseException catch (e) {
+    if (e.code == 'apns-token-not-set') {
+      debugPrint(
+        '⏳ APNs token not ready yet, will rely on onTokenRefresh.',
+      );
+    } else {
+      debugPrint('⚠️ FCM getToken failed: ${e.code} ${e.message}');
+    }
+  } catch (e) {
+    debugPrint('⚠️ FCM getToken failed: $e');
+  }
+}
+
+/// Listen for auth changes: when user logs in, we sync token once.
+/// This prevents calling token sync from build() and spamming.
+void _setupAuthDrivenTokenSync() {
+  if (kIsWeb) return;
+
+  _authTokenSyncSub?.cancel();
+  _authTokenSyncSub = FirebaseAuth.instance.authStateChanges().listen((user) {
+    if (user == null) return;
+    // Fire-and-forget; safe and deduped.
+    unawaited(_syncCurrentTokenIfPossible());
+  });
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -48,9 +119,7 @@ Future<void> main() async {
 
   // Register background handler (NOT on web)
   if (!kIsWeb) {
-    FirebaseMessaging.onBackgroundMessage(
-      _firebaseMessagingBackgroundHandler,
-    );
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
   }
 
   // App Check (NOT on web)
@@ -68,6 +137,7 @@ Future<void> main() async {
   // Initialize Push Notifications (NOT on web)
   if (!kIsWeb) {
     await _initPushNotifications();
+    _setupAuthDrivenTokenSync();
   }
 
   // Presence tracking (safe for web)
@@ -79,7 +149,6 @@ Future<void> main() async {
         ChangeNotifierProvider<LocaleProvider>(
           create: (_) => LocaleProvider(),
         ),
-        // Provide currentChatTracker instance to the widget tree
         ChangeNotifierProvider<CurrentChatTracker>.value(
           value: currentChatTracker,
         ),
@@ -92,7 +161,6 @@ Future<void> main() async {
 /// FULL SAFE FCM INITIALIZATION (MOBILE ONLY)
 Future<void> _initPushNotifications() async {
   if (kIsWeb) {
-    // Extra safety guard
     debugPrint('🌐 Web build → skipping _initPushNotifications');
     return;
   }
@@ -111,36 +179,26 @@ Future<void> _initPushNotifications() async {
 
   debugPrint('🔔 Notification permission: ${settings.authorizationStatus}');
 
-  // ❌ Do NOT show OS notification UI when app is in foreground.
-  // We'll handle foreground behavior ourselves.
+  // Do NOT show OS notification UI in foreground (we show our own banner)
   await messaging.setForegroundNotificationPresentationOptions(
     alert: false,
     badge: false,
     sound: false,
   );
 
-  // Token Refresh
-  FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
-    debugPrint('🔁 TOKEN REFRESHED: $newToken');
-    await _storeTokenSafely(newToken);
-  });
+  // Token Refresh (subscribe once)
+  await _tokenRefreshSub?.cancel();
+  _tokenRefreshSub = FirebaseMessaging.instance.onTokenRefresh.listen(
+        (newToken) async {
+      debugPrint('🔁 TOKEN REFRESHED');
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+      await _storeTokenForUserIfChanged(uid: user.uid, token: newToken);
+    },
+  );
 
-  // Try to get initial token
-  try {
-    final token = await messaging.getToken();
-    debugPrint('🔑 Initial FCM TOKEN: $token');
-    if (token != null) {
-      await _storeTokenSafely(token);
-    }
-  } on FirebaseException catch (e) {
-    if (e.code == 'apns-token-not-set') {
-      debugPrint(
-        '⏳ APNs token not ready yet, will wait for onTokenRefresh callback.',
-      );
-    } else {
-      rethrow;
-    }
-  }
+  // Try to get initial token (deduped)
+  await _syncCurrentTokenIfPossible();
 
   // ✅ FOREGROUND MESSAGE → conditional SnackBar
   FirebaseMessaging.onMessage.listen((RemoteMessage message) {
@@ -151,7 +209,7 @@ Future<void> _initPushNotifications() async {
       '🔔 FOREGROUND MESSAGE | activeRoom=$activeRoomId, pushRoom=$roomIdFromPush',
     );
 
-    // 1) If push is for the chat the user is currently viewing → suppress UI
+    // If push is for the chat the user is currently viewing → suppress UI
     if (roomIdFromPush != null &&
         roomIdFromPush.isNotEmpty &&
         roomIdFromPush == activeRoomId) {
@@ -159,13 +217,10 @@ Future<void> _initPushNotifications() async {
       return;
     }
 
-    //final body = message.notification?.body ?? '';
-    //content: Text('$title\n$body'),
-
-    // 2) Otherwise, show a small in-app banner (SnackBar)
     final title = message.notification?.title?.trim();
     final safeTitle = (title == null || title.isEmpty) ? 'MW Chat' : title;
 
+    rootScaffoldMessengerKey.currentState?.hideCurrentSnackBar();
     rootScaffoldMessengerKey.currentState?.showSnackBar(
       SnackBar(
         content: Row(
@@ -185,73 +240,19 @@ Future<void> _initPushNotifications() async {
         duration: const Duration(seconds: 3),
       ),
     );
-
   });
 
   // BACKGROUND → APP OPENED
   FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
     debugPrint('🔔 OPENED FROM NOTIFICATION');
-    // (Optional) you can navigate to message.data['roomId'] here
+    // Optional: navigate to message.data['roomId']
   });
 
   // TERMINATED LAUNCH
   final initial = await FirebaseMessaging.instance.getInitialMessage();
   if (initial != null) {
     debugPrint('🔔 APP OPENED FROM TERMINATED PUSH');
-    // (Optional) navigate based on initial.data['roomId']
-  }
-}
-
-/// SAFELY STORE TOKEN EVEN IF USER LOGS IN LATER
-Future<void> _storeTokenSafely(String token) async {
-  if (kIsWeb) {
-    debugPrint('🌐 Web build → skipping _storeTokenSafely');
-    return;
-  }
-
-  final auth = FirebaseAuth.instance;
-  final user = auth.currentUser;
-
-  if (user != null) {
-    await FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .set({'fcmToken': token}, SetOptions(merge: true));
-    debugPrint('✅ Stored FCM token for user ${user.uid}');
-  } else {
-    debugPrint('ℹ️ User not logged in, token cached only in memory.');
-  }
-}
-
-/// Ensure the current logged-in user has a token stored in Firestore
-Future<void> syncFcmTokenForCurrentUser() async {
-  if (kIsWeb) {
-    // ❗ No FCM token / service worker on web for now.
-    debugPrint('🌐 Web build → skipping syncFcmTokenForCurrentUser');
-    return;
-  }
-
-  final user = FirebaseAuth.instance.currentUser;
-  if (user == null) return;
-
-  try {
-    final token = await FirebaseMessaging.instance.getToken();
-    if (token == null) return;
-
-    await FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .set({'fcmToken': token}, SetOptions(merge: true));
-
-    debugPrint('✅ Synced FCM token for user ${user.uid}');
-  } on FirebaseException catch (e) {
-    if (e.code == 'apns-token-not-set') {
-      debugPrint(
-        '⏳ syncFcmTokenForCurrentUser: APNs token not ready yet, will rely on onTokenRefresh.',
-      );
-    } else {
-      rethrow;
-    }
+    // Optional: navigate based on initial.data['roomId']
   }
 }
 
@@ -260,25 +261,25 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-  final localeProvider = context.watch<LocaleProvider>();
-  final locale = localeProvider.locale;
-  final bool isArabic = locale.languageCode == 'ar';
+    final localeProvider = context.watch<LocaleProvider>();
+    final locale = localeProvider.locale;
+    final bool isArabic = locale.languageCode == 'ar';
 
-  return MaterialApp(
-  scaffoldMessengerKey: rootScaffoldMessengerKey,
-  debugShowCheckedModeBanner: false,
-  theme: buildAppTheme(isArabic: isArabic),
-  locale: localeProvider.locale,
-  localizationsDelegates: AppLocalizations.localizationsDelegates,
-  supportedLocales: AppLocalizations.supportedLocales,
-  onGenerateTitle: (ctx) =>
-  AppLocalizations.of(ctx)?.mainTitle ?? 'MW Chat',
-  home: const AuthGate(),
-  );
+    return MaterialApp(
+      scaffoldMessengerKey: rootScaffoldMessengerKey,
+      debugShowCheckedModeBanner: false,
+      theme: buildAppTheme(isArabic: isArabic),
+      locale: localeProvider.locale,
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      onGenerateTitle: (ctx) =>
+      AppLocalizations.of(ctx)?.mainTitle ?? 'MW Chat',
+      home: const AuthGate(),
+    );
   }
 }
 
-/// AUTH GATE — FIXED (prevents "not active" flash for active users)
+/// AUTH GATE — prevents "not active" flash for active users
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
 
@@ -298,8 +299,7 @@ class AuthGate extends StatelessWidget {
         final user = authSnap.data;
         if (user == null) return const AuthScreen();
 
-        // ✅ 1) Confirm activation from SERVER once
-        // This prevents showing the inactive screen for active users due to cache/old snapshot.
+        // Confirm activation from SERVER once
         return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
           future: FirebaseFirestore.instance
               .collection('users')
@@ -335,7 +335,6 @@ class AuthGate extends StatelessWidget {
             }
 
             final serverDoc = serverSnap.data;
-
             if (serverDoc == null || !serverDoc.exists) {
               return Scaffold(
                 body: Center(child: Text(l10n.settingUpProfile)),
@@ -345,15 +344,12 @@ class AuthGate extends StatelessWidget {
             final serverData = serverDoc.data() ?? {};
             final serverIsActive = serverData['isActive'] == true;
 
-            // ✅ If server says ACTIVE → go directly Home (no inactive flash)
+            // If server says ACTIVE → go directly Home (no inactive flash)
             if (serverIsActive) {
-              if (!kIsWeb) {
-                syncFcmTokenForCurrentUser();
-              }
               return const HomeScreen();
             }
 
-            // ✅ If server says NOT active → show pending screen + keep listening for activation
+            // If server says NOT active → keep listening for activation
             return _UserDocStreamGate(userId: user.uid);
           },
         );
@@ -372,10 +368,8 @@ class _UserDocStreamGate extends StatelessWidget {
     final l10n = AppLocalizations.of(context)!;
 
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance
-          .collection('users')
-          .doc(userId)
-          .snapshots(includeMetadataChanges: true),
+      // ✅ Less noise than includeMetadataChanges:true
+      stream: FirebaseFirestore.instance.collection('users').doc(userId).snapshots(),
       builder: (context, userSnap) {
         if (!userSnap.hasData || !userSnap.data!.exists) {
           return Scaffold(
@@ -385,15 +379,6 @@ class _UserDocStreamGate extends StatelessWidget {
 
         final snap = userSnap.data!;
         final data = snap.data() ?? {};
-
-        // ✅ If snapshot is from cache, don't show "not active"
-        // (prevents rare edge-cases flicker). Show a small loader instead.
-        if (snap.metadata.isFromCache) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
-        }
-
         final isActive = data['isActive'] == true;
 
         if (!isActive) {
@@ -411,10 +396,6 @@ class _UserDocStreamGate extends StatelessWidget {
           );
         }
 
-        // ✅ Active
-        if (!kIsWeb) {
-          syncFcmTokenForCurrentUser();
-        }
         return const HomeScreen();
       },
     );
@@ -486,7 +467,6 @@ class _PendingActivationScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 22),
-
               ElevatedButton.icon(
                 onPressed: () => onCheckAgain(),
                 icon: const Icon(Icons.refresh_rounded, color: Colors.black),
@@ -510,7 +490,6 @@ class _PendingActivationScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 12),
-
               OutlinedButton.icon(
                 onPressed: () => onLogout(),
                 icon: const Icon(Icons.logout, color: kTextSecondary),

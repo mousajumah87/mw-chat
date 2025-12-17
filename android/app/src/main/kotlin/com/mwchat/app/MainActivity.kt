@@ -1,4 +1,4 @@
-package com.example.mw
+package com.mwchat.app
 
 import io.flutter.embedding.android.FlutterActivity
 

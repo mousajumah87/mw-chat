@@ -1,3 +1,4 @@
+// lib/widgets/ui/mw_app_header.dart
 import 'dart:ui';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -13,6 +14,9 @@ import '../../screens/about/about_screen.dart';
 import '../../screens/profile/profile_screen.dart';
 import 'mw_language_button.dart';
 
+// ✅ shared avatar widget (bear/smurf assets)
+import 'mw_avatar.dart';
+
 class MwAppHeader extends StatefulWidget implements PreferredSizeWidget {
   final String? title; // kept for compatibility (not displayed)
   final bool showTabs;
@@ -26,7 +30,7 @@ class MwAppHeader extends StatefulWidget implements PreferredSizeWidget {
   });
 
   @override
-  Size get preferredSize => Size.fromHeight(showTabs ? 112 : 76);
+  Size get preferredSize => Size.fromHeight(showTabs ? 118 : 78);
 
   @override
   State<MwAppHeader> createState() => _MwAppHeaderState();
@@ -40,8 +44,6 @@ class _MwAppHeaderState extends State<MwAppHeader>
   late final Animation<Offset> _slide;
 
   bool _isMenuOpen = false;
-
-  // ✅ Prevent setState during dispose/unmount
   bool _isDisposing = false;
 
   @override
@@ -51,13 +53,12 @@ class _MwAppHeaderState extends State<MwAppHeader>
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 220),
-      reverseDuration: const Duration(milliseconds: 180),
+      reverseDuration: const Duration(milliseconds: 170),
     );
 
     _fade = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
-
     _slide = Tween<Offset>(
-      begin: const Offset(0, -0.06),
+      begin: const Offset(0, -0.05),
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
   }
@@ -65,10 +66,7 @@ class _MwAppHeaderState extends State<MwAppHeader>
   @override
   void dispose() {
     _isDisposing = true;
-
-    // ✅ Remove overlay WITHOUT calling setState in dispose
     _removeMenu(immediate: true, updateState: false);
-
     _controller.dispose();
     super.dispose();
   }
@@ -95,27 +93,28 @@ class _MwAppHeaderState extends State<MwAppHeader>
       builder: (ctx) {
         final media = MediaQuery.of(ctx);
         final topPadding = media.padding.top;
-        final headerHeight = widget.showTabs ? 112.0 : 76.0;
+        final headerHeight = widget.showTabs ? 118.0 : 78.0;
 
         final screenW = media.size.width;
         final maxPanelW = screenW < 420 ? screenW - 24 : 420.0;
 
         return Stack(
           children: [
+            // dim + blur background
             Positioned.fill(
               child: GestureDetector(
                 behavior: HitTestBehavior.translucent,
                 onTap: _removeMenu,
                 child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-                  child: Container(color: Colors.black.withOpacity(0.25)),
+                  filter: ImageFilter.blur(sigmaX: 7, sigmaY: 7),
+                  child: Container(color: Colors.black.withOpacity(0.28)),
                 ),
               ),
             ),
 
-            // ✅ Position based on START side (LTR=left, RTL=right)
+            // menu panel
             PositionedDirectional(
-              top: topPadding + headerHeight + 8,
+              top: topPadding + headerHeight + 10,
               start: 12,
               child: ConstrainedBox(
                 constraints: BoxConstraints(maxWidth: maxPanelW),
@@ -123,10 +122,7 @@ class _MwAppHeaderState extends State<MwAppHeader>
                   position: _slide,
                   child: FadeTransition(
                     opacity: _fade,
-                    child: _MenuPanel(
-                      // ✅ pass a closer that UPDATES the header state
-                      onClose: _removeMenu,
-                    ),
+                    child: _MenuPanel(onClose: _removeMenu),
                   ),
                 ),
               ),
@@ -137,7 +133,6 @@ class _MwAppHeaderState extends State<MwAppHeader>
     );
 
     overlay.insert(_menuEntry!);
-
     if (!_isDisposing) {
       _controller.forward(from: 0);
     }
@@ -152,19 +147,14 @@ class _MwAppHeaderState extends State<MwAppHeader>
     if (!immediate) {
       try {
         await _controller.reverse();
-      } catch (_) {
-        // ignore animation cancellation / disposed controller race
-      }
+      } catch (_) {}
     }
 
     try {
       _menuEntry?.remove();
-    } catch (_) {
-      // ignore overlay removal races
-    }
+    } catch (_) {}
     _menuEntry = null;
 
-    // ✅ Update state while mounted so hamburger/X updates correctly
     if (updateState && mounted && !_isDisposing) {
       setState(() => _isMenuOpen = false);
     } else {
@@ -174,46 +164,77 @@ class _MwAppHeaderState extends State<MwAppHeader>
 
   @override
   Widget build(BuildContext context) {
+    final tabBar = widget.tabBar;
+
     return SafeArea(
       bottom: false,
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.9),
-          borderRadius: const BorderRadius.vertical(bottom: Radius.circular(18)),
-          border: Border.all(color: Colors.white12, width: 0.6),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              child: Row(
-                children: [
-                  _HamburgerButton(isOpen: _isMenuOpen, onTap: _toggleMenu),
-                  Expanded(child: Center(child: _FloatingBrandLogo())),
-                  const SizedBox(width: 44),
-                ],
+      child: RepaintBoundary(
+        child: Container(
+          decoration: BoxDecoration(
+            color: kBgColor.withOpacity(0.92),
+            borderRadius: const BorderRadius.vertical(bottom: Radius.circular(18)),
+            border: Border.all(color: kBorderColor.withOpacity(0.60), width: 1),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.50),
+                blurRadius: 24,
+                offset: const Offset(0, 12),
               ),
-            ),
-            if (widget.showTabs && widget.tabBar != null)
+              BoxShadow(
+                color: kGoldDeep.withOpacity(0.06),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(18, 4, 18, 10),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: Colors.white.withOpacity(0.1),
-                      width: 1,
-                    ),
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(14),
-                    child: widget.tabBar,
-                  ),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Row(
+                  children: [
+                    _HamburgerButton(isOpen: _isMenuOpen, onTap: _toggleMenu),
+                    const Expanded(child: Center(child: _FloatingBrandLogo())),
+                    const SizedBox(width: 44),
+                  ],
                 ),
               ),
-          ],
+
+              if (widget.showTabs && tabBar != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 4, 14, 12),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: kSurfaceAltColor.withOpacity(0.58),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: kBorderColor.withOpacity(0.70),
+                        width: 1,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.35),
+                          blurRadius: 16,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: Theme(
+                        // ✅ ensures NO default blue splash/highlight in TabBar
+                        data: Theme.of(context).copyWith(
+                          splashColor: Colors.transparent,
+                          highlightColor: Colors.transparent,
+                        ),
+                        child: tabBar,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -221,14 +242,18 @@ class _MwAppHeaderState extends State<MwAppHeader>
 }
 
 class _FloatingBrandLogo extends StatelessWidget {
+  const _FloatingBrandLogo();
+
   @override
   Widget build(BuildContext context) {
-    return Image.asset(
-      'assets/logo/mw_mark_transparent.png',
-      width: 70,
-      height: 70,
-      fit: BoxFit.contain,
-      filterQuality: FilterQuality.high,
+    return RepaintBoundary(
+      child: Image.asset(
+        'assets/logo/mw_mark_transparent.png',
+        width: 56,
+        height: 56,
+        fit: BoxFit.contain,
+        filterQuality: FilterQuality.high,
+      ),
     );
   }
 }
@@ -244,13 +269,22 @@ class _HamburgerButton extends StatelessWidget {
     return InkResponse(
       onTap: onTap,
       radius: 28,
+      splashColor: kPrimaryGold.withOpacity(0.10),
+      highlightColor: kPrimaryGold.withOpacity(0.06),
       child: Container(
         width: 44,
         height: 44,
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.08),
+          color: kSurfaceAltColor.withOpacity(0.55),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.white12, width: 0.8),
+          border: Border.all(color: kBorderColor.withOpacity(0.70), width: 1),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.35),
+              blurRadius: 14,
+              offset: const Offset(0, 8),
+            ),
+          ],
         ),
         child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 180),
@@ -259,7 +293,7 @@ class _HamburgerButton extends StatelessWidget {
           child: Icon(
             isOpen ? Icons.close_rounded : Icons.menu_rounded,
             key: ValueKey(isOpen),
-            color: Colors.white,
+            color: kOffWhite.withOpacity(0.92),
           ),
         ),
       ),
@@ -280,12 +314,8 @@ class _MenuPanel extends StatelessWidget {
     final locale = context.watch<LocaleProvider>().locale;
     final isArabic = locale.languageCode.toLowerCase() == 'ar';
 
-    Future<void> _closeThen(VoidCallback action) async {
-      // ✅ IMPORTANT FIX:
-      // Close overlay AND update header state so icon returns to hamburger
+    Future<void> closeThen(VoidCallback action) async {
       await onClose(immediate: true, updateState: true);
-
-      // Run action after overlay is gone
       Future.microtask(() {
         if (!context.mounted) return;
         action();
@@ -295,15 +325,20 @@ class _MenuPanel extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(vertical: 10),
         decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.88),
+          color: kSurfaceAltColor.withOpacity(0.72),
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: Colors.white12, width: 0.8),
+          border: Border.all(color: kBorderColor.withOpacity(0.75), width: 1),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.35),
-              blurRadius: 18,
+              color: Colors.black.withOpacity(0.45),
+              blurRadius: 22,
+              offset: const Offset(0, 12),
+            ),
+            BoxShadow(
+              color: kGoldDeep.withOpacity(0.10),
+              blurRadius: 20,
               offset: const Offset(0, 10),
             ),
           ],
@@ -312,75 +347,66 @@ class _MenuPanel extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10),
               child: _MenuTile(
-                leading: const Icon(Icons.language_rounded, color: Colors.white),
+                leading: Icon(Icons.language_rounded, color: kOffWhite.withOpacity(0.92)),
                 title: l10n?.languageLabel ?? (isArabic ? 'اللغة' : 'Language'),
-
-                // ✅ Reuse your premium language widget + close menu after change
                 trailing: Directionality(
                   textDirection: TextDirection.ltr,
                   child: Transform.scale(
-                    scale: 0.82, // ✅ fits nicely in the tile on small phones
+                    scale: 0.82,
                     alignment: Alignment.centerRight,
                     child: MwLanguageButton(
                       onChanged: () {
-                        // Close overlay after changing language
                         Future.microtask(() => onClose(immediate: true, updateState: true));
                       },
                     ),
                   ),
                 ),
-
-                // Optional: keep tap-to-toggle
                 onTap: () {
                   Future.microtask(() => onClose(immediate: true, updateState: true));
-                  context
-                      .read<LocaleProvider>()
-                      .setLocale(Locale(isArabic ? 'en' : 'ar'));
+                  context.read<LocaleProvider>().setLocale(Locale(isArabic ? 'en' : 'ar'));
                 },
               ),
             ),
 
             if (currentUser != null)
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 10),
                 child: _ProfileTile(
                   currentUser: currentUser,
                   onTap: () {
-                    _closeThen(() {
+                    closeThen(() {
                       Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const ProfileScreen(),
-                        ),
+                        MaterialPageRoute(builder: (_) => const ProfileScreen()),
                       );
                     });
                   },
                 ),
               ),
+
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10),
               child: _MenuTile(
-                leading: const Icon(Icons.info_outline_rounded, color: Colors.white),
+                leading: Icon(Icons.info_outline_rounded, color: kOffWhite.withOpacity(0.92)),
                 title: l10n?.aboutTitle ?? 'About MW Chat',
                 onTap: () {
-                  _closeThen(() {
+                  closeThen(() {
                     Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const AboutScreen(),
-                      ),
+                      MaterialPageRoute(builder: (_) => const AboutScreen()),
                     );
                   });
                 },
               ),
             ),
+
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10),
               child: _MenuTile(
-                leading: const Icon(Icons.logout_rounded, color: Colors.white),
+                leading: Icon(Icons.logout_rounded, color: kOffWhite.withOpacity(0.92)),
                 title: l10n?.logout ?? 'Logout',
                 onTap: () {
-                  _closeThen(() async {
+                  closeThen(() async {
                     await PresenceService.instance.markOffline();
                     await FirebaseAuth.instance.signOut();
                     if (context.mounted) {
@@ -403,32 +429,20 @@ class _MenuTile extends StatelessWidget {
   final Widget? trailing;
   final VoidCallback? onTap;
 
-  final bool showChevron;
-
   const _MenuTile({
     required this.leading,
     required this.title,
     this.trailing,
     this.onTap,
-    this.showChevron = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    final isRtl = Directionality.of(context) == TextDirection.rtl;
-
-    Widget? resolvedTrailing = trailing;
-
-    if (resolvedTrailing == null && showChevron) {
-      resolvedTrailing = Icon(
-        isRtl ? Icons.chevron_left_rounded : Icons.chevron_right_rounded,
-        color: Colors.white.withOpacity(0.7),
-      );
-    }
-
     return InkWell(
       borderRadius: BorderRadius.circular(14),
       onTap: onTap,
+      splashColor: kPrimaryGold.withOpacity(0.10),
+      highlightColor: kPrimaryGold.withOpacity(0.06),
       child: Padding(
         padding: const EdgeInsetsDirectional.fromSTEB(10, 10, 10, 10),
         child: Row(
@@ -438,14 +452,14 @@ class _MenuTile extends StatelessWidget {
             Expanded(
               child: Text(
                 title,
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: kOffWhite.withOpacity(0.92),
                   fontSize: 15,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ),
-            if (resolvedTrailing != null) resolvedTrailing,
+            if (trailing != null) trailing!,
           ],
         ),
       ),
@@ -475,35 +489,32 @@ class _ProfileTile extends StatelessWidget {
       builder: (context, snapshot) {
         final data = snapshot.data;
         final profileUrl = data?['profileUrl'] as String?;
-        final avatarType = data?['avatarType'] as String?;
-
-        final emoji = (avatarType == 'smurf') ? '🧜‍♀️' : '🐻';
+        final avatarType = (data?['avatarType'] as String?) ?? 'bear';
 
         return InkWell(
           borderRadius: BorderRadius.circular(14),
           onTap: onTap,
+          splashColor: kPrimaryGold.withOpacity(0.10),
+          highlightColor: kPrimaryGold.withOpacity(0.06),
           child: Padding(
             padding: const EdgeInsetsDirectional.fromSTEB(10, 10, 10, 10),
             child: Row(
               children: [
-                CircleAvatar(
+                MwAvatar(
                   radius: 16,
-                  backgroundColor: Colors.white,
-                  backgroundImage: (profileUrl != null && profileUrl.isNotEmpty)
-                      ? NetworkImage(profileUrl)
-                      : null,
-                  child: (profileUrl == null || profileUrl.isEmpty)
-                      ? Text(emoji, style: const TextStyle(fontSize: 14))
-                      : null,
+                  avatarType: avatarType,
+                  profileUrl: profileUrl,
+                  hideRealAvatar: false,
+                  backgroundColor: kOffWhite,
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     l10n?.profileTitle ?? 'Profile',
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: kOffWhite.withOpacity(0.92),
                       fontSize: 15,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),
@@ -512,48 +523,6 @@ class _ProfileTile extends StatelessWidget {
           ),
         );
       },
-    );
-  }
-}
-
-class _LangChip extends StatelessWidget {
-  final String text;
-  final bool active;
-  final VoidCallback onTap;
-
-  const _LangChip({
-    required this.text,
-    required this.active,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(999),
-      onTap: active ? null : onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: active ? kPrimaryGold.withOpacity(0.18) : Colors.transparent,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-            color: active
-                ? kPrimaryGold.withOpacity(0.55)
-                : Colors.white.withOpacity(0.16),
-          ),
-        ),
-        child: Text(
-          text,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0.4,
-            color: active ? kPrimaryGold : Colors.white.withOpacity(0.70),
-          ),
-        ),
-      ),
     );
   }
 }

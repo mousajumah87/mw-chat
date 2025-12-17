@@ -711,6 +711,9 @@ class AppLocalizationsAr extends AppLocalizations {
   String get socialX => 'إكس / تويتر';
 
   @override
+  String get loadMore => 'عرض المزيد';
+
+  @override
   String get appBrandingBeta => 'MW شات 2025 نسخة تجريبية';
 
   @override
@@ -775,6 +778,15 @@ class AppLocalizationsAr extends AppLocalizations {
 
   @override
   String get generalErrorMessage => 'حدث خطأ ما. يُرجى المحاولة مرة أخرى.';
+
+  @override
+  String get downloadOnAppStore => 'حمّل من متجر آبل';
+
+  @override
+  String get getItOnGooglePlay => 'احصل عليه من متجر Google Play';
+
+  @override
+  String get shareAppLink => 'مشاركة رابط التطبيق';
 
   @override
   String get forgotPassword => 'نسيت كلمة المرور؟';

@@ -711,6 +711,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get socialX => 'X / Twitter';
 
   @override
+  String get loadMore => 'Load more';
+
+  @override
   String get appBrandingBeta => 'MW Chat 2025 beta';
 
   @override
@@ -775,6 +778,15 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get generalErrorMessage => 'Something went wrong. Please try again.';
+
+  @override
+  String get downloadOnAppStore => 'Download on the App Store';
+
+  @override
+  String get getItOnGooglePlay => 'Get it on Google Play';
+
+  @override
+  String get shareAppLink => 'Share app link';
 
   @override
   String get forgotPassword => 'Forgot password?';

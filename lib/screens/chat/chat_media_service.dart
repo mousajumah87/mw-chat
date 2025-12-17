@@ -12,6 +12,7 @@ import 'package:path/path.dart' as p;
 import 'package:record/record.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image/image.dart' as img;
+import 'package:path_provider/path_provider.dart';
 
 import '../../utils/io_compat.dart';
 
@@ -314,9 +315,10 @@ class ChatMediaService {
     return uploadTask;
   }
 
-  // ================= VOICE RECORDING (MORE RELIABLE) =================
+  // ================= VOICE RECORDING (record v6+; iOS + Android safe) =================
 
-  final Record _audioRecorder = Record();
+  // record v6: Record -> AudioRecorder, start requires RecordConfig + path (IO platforms)
+  final AudioRecorder _audioRecorder = AudioRecorder();
 
   bool isRecording = false;
   Timer? recordTimer;
@@ -326,6 +328,13 @@ class ChatMediaService {
 
   static const int _minRecordMs = 700;
   static const int _minBytes = 2048;
+
+  Future<String> _newVoiceTempPath() async {
+    // iOS/Android safe temp directory
+    final dir = await getTemporaryDirectory();
+    final fileName = 'voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+    return p.join(dir.path, fileName);
+  }
 
   Future<bool> startVoiceRecording() async {
     if (isRecording) return false;
@@ -338,12 +347,24 @@ class ChatMediaService {
 
     try {
       if (kIsWeb) {
-        await _audioRecorder.start();
-      } else {
+        // On web: pass empty string to start (no temp file generation)
         await _audioRecorder.start(
-          encoder: AudioEncoder.aacLc,
-          bitRate: 128000,
-          samplingRate: 44100,
+          const RecordConfig(
+            encoder: AudioEncoder.opus, // typically webm/opus
+            bitRate: 128000,
+            sampleRate: 48000,
+          ),
+          path: '',
+        );
+      } else {
+        final outPath = await _newVoiceTempPath();
+        await _audioRecorder.start(
+          const RecordConfig(
+            encoder: AudioEncoder.aacLc, // ✅ best for iOS + Android voice notes
+            bitRate: 128000,
+            sampleRate: 44100,
+          ),
+          path: outPath,
         );
       }
     } catch (e) {
@@ -388,16 +409,20 @@ class ChatMediaService {
       return null;
     }
 
-    final normalizedPath =
-    path.startsWith('file://') ? path.replaceFirst('file://', '') : path;
+    // Only strip file:// on non-web platforms
+    final normalizedPath = (!kIsWeb && path.startsWith('file://'))
+        ? path.replaceFirst('file://', '')
+        : path;
 
     if (startedAt != null) {
       final ms = DateTime.now().difference(startedAt).inMilliseconds;
       if (ms < _minRecordMs) {
         debugPrint('🛑 Recording too short (${ms}ms) — ignoring');
-        try {
-          await deleteFileIfExists(normalizedPath);
-        } catch (_) {}
+        if (!kIsWeb) {
+          try {
+            await deleteFileIfExists(normalizedPath);
+          } catch (_) {}
+        }
         return null;
       }
     }
@@ -406,14 +431,17 @@ class ChatMediaService {
       final bytes = await XFile(normalizedPath).readAsBytes();
       if (bytes.isEmpty || bytes.length < _minBytes) {
         debugPrint('🛑 Recording bytes too small (${bytes.length}) — ignoring');
-        try {
-          await deleteFileIfExists(normalizedPath);
-        } catch (_) {}
+        if (!kIsWeb) {
+          try {
+            await deleteFileIfExists(normalizedPath);
+          } catch (_) {}
+        }
         return null;
       }
 
       String name;
       if (kIsWeb) {
+        // Most browsers give a blob url; we standardize the name for your classifier
         name = 'voice_message.webm';
       } else {
         name = p.basename(normalizedPath);
@@ -443,12 +471,18 @@ class ChatMediaService {
     recordDuration = Duration.zero;
 
     try {
+      // If cancel() exists on your record version, it's ideal. Otherwise stop().
+      // ignore: invalid_use_of_protected_member
       await _audioRecorder.stop();
     } catch (_) {}
   }
 
+  /// Keep signature as `void dispose()` to avoid breaking callers.
+  /// We still properly release the recorder (async) without blocking UI.
   void dispose() {
     recordTimer?.cancel();
-    _audioRecorder.dispose();
+    try {
+      unawaited(_audioRecorder.dispose());
+    } catch (_) {}
   }
 }

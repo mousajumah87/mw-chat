@@ -1439,6 +1439,12 @@ abstract class AppLocalizations {
   /// **'X / Twitter'**
   String get socialX;
 
+  /// No description provided for @loadMore.
+  ///
+  /// In en, this message translates to:
+  /// **'Load more'**
+  String get loadMore;
+
   /// No description provided for @appBrandingBeta.
   ///
   /// In en, this message translates to:
@@ -1570,6 +1576,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Something went wrong. Please try again.'**
   String get generalErrorMessage;
+
+  /// No description provided for @downloadOnAppStore.
+  ///
+  /// In en, this message translates to:
+  /// **'Download on the App Store'**
+  String get downloadOnAppStore;
+
+  /// No description provided for @getItOnGooglePlay.
+  ///
+  /// In en, this message translates to:
+  /// **'Get it on Google Play'**
+  String get getItOnGooglePlay;
+
+  /// No description provided for @shareAppLink.
+  ///
+  /// In en, this message translates to:
+  /// **'Share app link'**
+  String get shareAppLink;
 
   /// No description provided for @forgotPassword.
   ///

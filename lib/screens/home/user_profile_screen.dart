@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/ui/mw_avatar.dart';
 import '../../widgets/ui/mw_background.dart';
 import '../../widgets/ui/mw_feedback.dart';
 import '../../widgets/safety/report_user_dialog.dart';
@@ -331,20 +332,22 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                           final firstName = data['firstName'] ?? '';
                           final lastName = data['lastName'] ?? '';
                           final fullName = '$firstName $lastName'.trim();
-                          final avatarType = data['avatarType'] ?? 'bear';
+                          final avatarType = (data['avatarType'] ?? 'bear').toString();
                           final profileUrl = (data['profileUrl'] ?? '').toString();
-                          final gender = data['gender'] ?? '';
+                          final gender = (data['gender'] ?? '').toString();
                           final isActive = data['isActive'] != false;
 
                           final theirBlockedDynamic =
                               (data['blockedUserIds'] as List<dynamic>?) ?? const [];
-                          final theirBlocked = theirBlockedDynamic.whereType<String>().toList();
+                          final theirBlocked =
+                          theirBlockedDynamic.whereType<String>().toList();
                           final hasBlockedMe =
                               currentUid != null && theirBlocked.contains(currentUid);
 
                           final rawIsOnline = data['isOnline'] == true && isActive;
-                          final lastSeen =
-                          data['lastSeen'] is Timestamp ? data['lastSeen'] as Timestamp : null;
+                          final lastSeen = data['lastSeen'] is Timestamp
+                              ? data['lastSeen'] as Timestamp
+                              : null;
 
                           final effectiveOnline = !hasBlockedMe &&
                               _isOnlineWithTtl(
@@ -368,8 +371,10 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                               ? DateFormat.yMMMd(l10n.localeName).format(dob)
                               : l10n.unknown;
 
+                          // ✅ Keep the same hero tag so it matches full screen viewer
                           final heroTag = 'profile_photo_${widget.userId}';
 
+                          // ✅ Use MwAvatar (keeps old glow animation + tap-to-view behavior)
                           final avatar = GestureDetector(
                             behavior: HitTestBehavior.opaque,
                             onTap: profileUrl.isEmpty
@@ -402,49 +407,27 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                                     );
                                   },
                                 ),
-                                Hero(
-                                  tag: heroTag,
-                                  child: Container(
-                                    width: 116,
-                                    height: 116,
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      color: kSurfaceAltColor,
-                                      border: Border.all(
-                                        color: Colors.white.withOpacity(0.10),
-                                      ),
-                                    ),
-                                    clipBehavior: Clip.antiAlias,
-                                    child: profileUrl.isEmpty
-                                        ? Center(
-                                      child: Text(
-                                        avatarType == 'smurf' ? '🧜‍♀️' : '🐻',
-                                        style: const TextStyle(fontSize: 42),
-                                      ),
-                                    )
-                                        : CachedNetworkImage(
-                                      imageUrl: profileUrl,
-                                      fit: BoxFit.cover,
-                                      filterQuality: FilterQuality.high,
-                                      placeholder: (context, url) => const Center(
-                                        child: SizedBox(
-                                          width: 22,
-                                          height: 22,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            color: Colors.white70,
-                                          ),
-                                        ),
-                                      ),
-                                      errorWidget: (context, url, error) => Center(
-                                        child: Text(
-                                          avatarType == 'smurf' ? '🧜‍♀️' : '🐻',
-                                          style: const TextStyle(fontSize: 42),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
+
+                                // ✅ MwAvatar is responsible for:
+                                // - network image
+                                // - fallback asset
+                                // - safe fallback icon
+                                // - ring/glow/dot/hero if you want
+                                MwAvatar(
+                                  heroTag: heroTag,
+                                  radius: 58, // ~116px diameter (same as before)
+                                  avatarType: avatarType,
+                                  profileUrl: profileUrl,
+                                  hideRealAvatar: false, // profile screen should show it
+                                  showRing: true,
+                                  // Do NOT show online dot on the big profile photo; status chip already shows it.
+                                  showOnlineDot: false,
+                                  // Optional: keep it clean; the outer animated glow already exists.
+                                  showOnlineGlow: false,
+                                  // Cache: keep default. If you have an updatedAt field, you can switch to refresh.
+                                  cachePolicy: MwAvatarCachePolicy.normal,
                                 ),
+
                                 if (profileUrl.isNotEmpty)
                                   Positioned(
                                     bottom: 2,
@@ -493,11 +476,16 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                                     const SizedBox(height: 12),
                                     AnimatedContainer(
                                       duration: const Duration(milliseconds: 400),
-                                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 14,
+                                        vertical: 6,
+                                      ),
                                       decoration: BoxDecoration(
                                         color: presenceColor.withOpacity(0.20),
                                         borderRadius: BorderRadius.circular(20),
-                                        border: Border.all(color: presenceColor.withOpacity(0.8)),
+                                        border: Border.all(
+                                          color: presenceColor.withOpacity(0.8),
+                                        ),
                                         boxShadow: [
                                           BoxShadow(
                                             color: presenceColor.withOpacity(0.35),
@@ -578,7 +566,8 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                                         builder: (context, mySnap) {
                                           final myData = mySnap.data?.data() ?? {};
                                           final myBlockedDynamic =
-                                              (myData['blockedUserIds'] as List<dynamic>?) ?? const [];
+                                              (myData['blockedUserIds'] as List<dynamic>?) ??
+                                                  const [];
                                           final myBlocked =
                                           myBlockedDynamic.map((e) => e.toString()).toList();
                                           final isBlocked = myBlocked.contains(widget.userId);
@@ -630,7 +619,10 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                                                   label: Text(l10n.profileReportButtonLabel),
                                                   style: OutlinedButton.styleFrom(
                                                     foregroundColor: kGoldDeep,
-                                                    side: const BorderSide(color: kGoldDeep, width: 1.4),
+                                                    side: const BorderSide(
+                                                      color: kGoldDeep,
+                                                      width: 1.4,
+                                                    ),
                                                     padding: const EdgeInsets.symmetric(vertical: 12),
                                                     shape: RoundedRectangleBorder(
                                                       borderRadius: BorderRadius.circular(24),
@@ -684,7 +676,10 @@ class _InfoRow extends StatelessWidget {
         const SizedBox(width: 10),
         Text(
           label,
-          style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white70, fontSize: 14),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: Colors.white70,
+            fontSize: 14,
+          ),
         ),
         const Spacer(),
         Text(
