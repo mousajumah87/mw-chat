@@ -1,3 +1,5 @@
+//lib/screens/chat/chat_app_bar.dart
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -12,6 +14,9 @@ import '../../widgets/ui/mw_feedback.dart';
 
 // ✅ NEW shared avatar widget
 import '../../widgets/ui/mw_avatar.dart';
+
+// ✅ Friendship helpers/status constants
+import 'chat_friendship_service.dart';
 
 class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
   final String title;
@@ -34,6 +39,59 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   static const int _onlineTtlSeconds = 300;
 
+  // ✅ Presence privacy values
+  static const String _presenceFriends = 'friends';
+  static const String _presenceNobody = 'nobody';
+
+  // ✅ Profile visibility values (align with privacy changes)
+  static const String _profileEveryone = 'everyone';
+  static const String _profileFriends = 'friends';
+  static const String _profileNobody = 'nobody';
+
+  // ---- tiny helpers (safe for old users / mixed schema) ----
+
+  List<String> _asStringList(dynamic raw) {
+    final list = (raw as List?) ?? const [];
+    return list.map((e) => e.toString()).where((s) => s.trim().isNotEmpty).toList();
+  }
+
+  String? _normalizeFriendStatus(dynamic raw) {
+    final v = (raw ?? '').toString().trim().toLowerCase();
+    if (v.isEmpty) return null;
+
+    // legacy alias supported
+    if (v == ChatFriendshipService.statusRequestReceivedAlias) {
+      return ChatFriendshipService.exposeIncomingAsRequestReceived
+          ? ChatFriendshipService.statusRequestReceivedAlias
+          : ChatFriendshipService.statusIncoming;
+    }
+
+    if (v == ChatFriendshipService.statusRequested) return ChatFriendshipService.statusRequested;
+
+    if (v == ChatFriendshipService.statusIncoming) {
+      return ChatFriendshipService.exposeIncomingAsRequestReceived
+          ? ChatFriendshipService.statusRequestReceivedAlias
+          : ChatFriendshipService.statusIncoming;
+    }
+
+    if (v == ChatFriendshipService.statusAccepted) return ChatFriendshipService.statusAccepted;
+
+    return null;
+  }
+
+  void _toastInfo(BuildContext context, String message) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+  }
+
   bool _isOnlineWithTtl({
     required bool rawIsOnline,
     required Timestamp? lastSeen,
@@ -41,6 +99,52 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
     if (!rawIsOnline || lastSeen == null) return false;
     final diffSeconds = DateTime.now().difference(lastSeen.toDate()).inSeconds;
     return diffSeconds <= _onlineTtlSeconds;
+  }
+
+  String _readPresenceVisibility(Map<String, dynamic> otherData) {
+    final raw = (otherData['presenceVisibility'] as String?)?.trim().toLowerCase();
+    if (raw == _presenceNobody) return _presenceNobody;
+    // privacy-first default
+    return _presenceFriends;
+  }
+
+  String _readProfileVisibility(Map<String, dynamic> otherData) {
+    final raw = (otherData['profileVisibility'] as String?)?.trim().toLowerCase();
+    if (raw == _profileNobody) return _profileNobody;
+    if (raw == _profileFriends) return _profileFriends;
+    if (raw == _profileEveryone) return _profileEveryone;
+
+    // ✅ backward compat default: allow (do not break old users)
+    return _profileEveryone;
+  }
+
+  bool _canSeePresence({
+    required bool isActive,
+    required bool isBlockedRelationship,
+    required String presenceVisibility,
+    required String? friendStatus,
+  }) {
+    if (!isActive) return false;
+    if (isBlockedRelationship) return false;
+    if (presenceVisibility == _presenceNobody) return false;
+    // friends-only
+    return ChatFriendshipService.isFriends(friendStatus);
+  }
+
+  bool _canViewProfile({
+    required bool isActive,
+    required bool isBlockedRelationship,
+    required String profileVisibility,
+    required String? friendStatus,
+  }) {
+    if (!isActive) return false;
+    if (isBlockedRelationship) return false;
+
+    if (profileVisibility == _profileNobody) return false;
+    if (profileVisibility == _profileEveryone) return true;
+
+    // friends-only
+    return ChatFriendshipService.isFriends(friendStatus);
   }
 
   Future<void> _toastSuccess(BuildContext context, String message) async {
@@ -58,7 +162,6 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
     required String? avatarType,
     required bool hideRealAvatar,
   }) {
-    // If blocked, we always show bear (per your old logic)
     final String effectiveAvatarType = hideRealAvatar ? 'bear' : (avatarType ?? 'bear');
 
     return MwAvatar(
@@ -96,117 +199,166 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
           builder: (context, mySnap) {
             final myData = mySnap.data?.data() ?? {};
 
-            final myBlockedListDynamic = (myData['blockedUserIds'] as List<dynamic>?) ?? const [];
-            final myBlockedList = myBlockedListDynamic.map((e) => e.toString()).toList();
+            final myBlockedList = _asStringList(myData['blockedUserIds']);
             final bool isBlockedByMe = myBlockedList.contains(otherUserId);
 
-            final theirBlockedListDynamic = otherData['blockedUserIds'] as List<dynamic>?;
-            final bool hasBlockedMe =
-                theirBlockedListDynamic?.whereType<String>().contains(currentUserId) ?? false;
+            final theirBlockedList = _asStringList(otherData['blockedUserIds']);
+            final bool hasBlockedMe = theirBlockedList.contains(currentUserId);
 
             final bool isBlockedRelationship = isBlockedByMe || hasBlockedMe;
 
-            final firstName = otherData['firstName'] as String? ?? '';
-            final lastName = otherData['lastName'] as String? ?? '';
-            final email = otherData['email'] as String? ?? title;
-            final displayName = (firstName.isNotEmpty ? '$firstName $lastName' : email).trim();
+            // ✅ Get friendship status (my side is enough)
+            return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+              stream: FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(currentUserId)
+                  .collection('friends')
+                  .doc(otherUserId)
+                  .snapshots(),
+              builder: (context, friendSnap) {
+                final friendStatusRaw = friendSnap.data?.data()?['status'];
+                final friendStatus = _normalizeFriendStatus(friendStatusRaw);
 
-            final isActive = otherData['isActive'] != false;
-            final rawIsOnline = (otherData['isOnline'] == true) && isActive;
-            final lastSeen =
-            otherData['lastSeen'] is Timestamp ? otherData['lastSeen'] as Timestamp : null;
+                final firstName = otherData['firstName'] as String? ?? '';
+                final lastName = otherData['lastName'] as String? ?? '';
+                final email = otherData['email'] as String? ?? title;
+                final displayName = (firstName.isNotEmpty ? '$firstName $lastName' : email).trim();
 
-            final effectiveOnline = isBlockedRelationship
-                ? false
-                : _isOnlineWithTtl(rawIsOnline: rawIsOnline, lastSeen: lastSeen);
+                final isActive = otherData['isActive'] != false;
 
-            String subtitle;
-            if (!isActive) {
-              subtitle = l10n.notActivated;
-            } else if (effectiveOnline) {
-              subtitle = l10n.online;
-            } else if (lastSeen != null) {
-              final diff = DateTime.now().difference(lastSeen.toDate());
-              if (diff.inMinutes < 1) {
-                subtitle = l10n.lastSeenJustNow;
-              } else if (diff.inMinutes < 60) {
-                subtitle = l10n.lastSeenMinutes(diff.inMinutes);
-              } else if (diff.inHours < 24) {
-                subtitle = l10n.lastSeenHours(diff.inHours);
-              } else {
-                subtitle = l10n.lastSeenDays(diff.inDays);
-              }
-            } else {
-              subtitle = l10n.offline;
-            }
+                // ✅ Presence privacy
+                final presenceVisibility = _readPresenceVisibility(otherData);
+                final canSeePresence = _canSeePresence(
+                  isActive: isActive,
+                  isBlockedRelationship: isBlockedRelationship,
+                  presenceVisibility: presenceVisibility,
+                  friendStatus: friendStatus,
+                );
 
-            final profileUrl = otherData['profileUrl'] as String?;
-            final avatarType = otherData['avatarType'] as String?;
-            final dotColor =
-            !isActive ? Colors.grey : (effectiveOnline ? Colors.greenAccent : Colors.grey);
+                final rawIsOnline = (otherData['isOnline'] == true) && isActive;
+                final lastSeen =
+                otherData['lastSeen'] is Timestamp ? otherData['lastSeen'] as Timestamp : null;
 
-            return InkWell(
-              borderRadius: BorderRadius.circular(24),
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => UserProfileScreen(userId: otherUserId!),
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Stack(
+                final effectiveOnline = canSeePresence
+                    ? _isOnlineWithTtl(rawIsOnline: rawIsOnline, lastSeen: lastSeen)
+                    : false;
+
+                // ✅ Profile privacy (controls tap + avatar hiding)
+                final profileVisibility = _readProfileVisibility(otherData);
+                final canViewProfile = _canViewProfile(
+                  isActive: isActive,
+                  isBlockedRelationship: isBlockedRelationship,
+                  profileVisibility: profileVisibility,
+                  friendStatus: friendStatus,
+                );
+
+                String subtitle;
+                if (!isActive) {
+                  subtitle = l10n.notActivated;
+                } else if (!canSeePresence) {
+                  subtitle = l10n.offline;
+                } else if (effectiveOnline) {
+                  subtitle = l10n.online;
+                } else if (lastSeen != null) {
+                  final diff = DateTime.now().difference(lastSeen.toDate());
+                  if (diff.inMinutes < 1) {
+                    subtitle = l10n.lastSeenJustNow;
+                  } else if (diff.inMinutes < 60) {
+                    subtitle = l10n.lastSeenMinutes(diff.inMinutes);
+                  } else if (diff.inHours < 24) {
+                    subtitle = l10n.lastSeenHours(diff.inHours);
+                  } else {
+                    subtitle = l10n.lastSeenDays(diff.inDays);
+                  }
+                } else {
+                  subtitle = l10n.offline;
+                }
+
+                final profileUrl = otherData['profileUrl'] as String?;
+                final avatarType = otherData['avatarType'] as String?;
+
+                // Hide avatar if they blocked me OR profile is not viewable
+                final hideRealAvatar = hasBlockedMe || !canViewProfile;
+
+                final dotColor =
+                !isActive ? Colors.grey : (effectiveOnline ? Colors.greenAccent : Colors.grey);
+
+                void openProfile() {
+                  if (!canViewProfile) {
+                    _toastInfo(
+                      context,
+                      l10n.profilePrivate ?? 'This profile is private.',
+                    );
+                    return;
+                  }
+
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => UserProfileScreen(userId: otherUserId!),
+                    ),
+                  );
+                }
+
+                return InkWell(
+                  borderRadius: BorderRadius.circular(24),
+                  onTap: canViewProfile ? openProfile : null, // ✅ not clickable when private
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      _buildOtherAvatar(
-                        profileUrl: profileUrl,
-                        avatarType: avatarType,
-                        hideRealAvatar: hasBlockedMe,
-                      ),
-                      Positioned(
-                        bottom: 0,
-                        right: 0,
-                        child: Container(
-                          width: 10,
-                          height: 10,
-                          decoration: BoxDecoration(
-                            color: dotColor,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.black, width: 1),
+                      Stack(
+                        children: [
+                          _buildOtherAvatar(
+                            profileUrl: profileUrl,
+                            avatarType: avatarType,
+                            hideRealAvatar: hideRealAvatar,
                           ),
+                          Positioned(
+                            bottom: 0,
+                            right: 0,
+                            child: Container(
+                              width: 10,
+                              height: 10,
+                              decoration: BoxDecoration(
+                                color: dotColor,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: Colors.black, width: 1),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(width: 10),
+                      Flexible(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              displayName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 15.5,
+                              ),
+                            ),
+                            Text(
+                              subtitle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(width: 10),
-                  Flexible(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          displayName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 15.5,
-                          ),
-                        ),
-                        Text(
-                          subtitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 11,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+                );
+              },
             );
           },
         );
@@ -473,9 +625,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
                     stream: FirebaseFirestore.instance.collection('users').doc(currentUserId).snapshots(),
                     builder: (sheetBuildContext, mySnap) {
                       final myData = mySnap.data?.data() ?? {};
-                      final blockedListDynamic =
-                          (myData['blockedUserIds'] as List<dynamic>?) ?? const [];
-                      final blockedList = blockedListDynamic.map((e) => e.toString()).toList();
+                      final blockedList = _asStringList(myData['blockedUserIds']);
                       final bool isBlocked = hasOther && blockedList.contains(otherUserId);
 
                       final blockLabel = isBlocked ? l10n.unblockUserTitle : l10n.blockUserTitle;
@@ -491,9 +641,9 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
                             : const Stream.empty(),
                         builder: (sheetBuildContext2, friendSnap) {
                           final friendData = friendSnap.data?.data();
-                          final friendStatus = friendData?['status'] as String?;
-                          final bool isFriendAccepted = friendStatus == 'accepted';
-                          final bool isOutgoingRequested = friendStatus == 'requested';
+                          final friendStatus = _normalizeFriendStatus(friendData?['status']);
+                          final bool isFriendAccepted = ChatFriendshipService.isFriends(friendStatus);
+                          final bool isOutgoingRequested = ChatFriendshipService.isRequested(friendStatus);
 
                           return Column(
                             mainAxisSize: MainAxisSize.min,

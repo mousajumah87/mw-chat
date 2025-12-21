@@ -9,10 +9,8 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
-import 'package:record/record.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image/image.dart' as img;
-import 'package:path_provider/path_provider.dart';
 
 import '../../utils/io_compat.dart';
 
@@ -34,9 +32,11 @@ class ChatMediaService {
     required this.validateMessageContent,
   });
 
-  // ================= PICKERS =================
-
   final ImagePicker _imagePicker = ImagePicker();
+
+  // =========================
+  // Pickers
+  // =========================
 
   Future<PlatformFile?> pickImageFromGallery() async {
     final picked = await _imagePicker.pickImage(
@@ -60,18 +60,31 @@ class ChatMediaService {
     final picked = await _imagePicker.pickVideo(source: ImageSource.gallery);
     if (picked == null) return null;
 
-    final bytes = await picked.readAsBytes();
-    if (bytes.isEmpty) return null;
+    // Video can be big; try bytes, fallback to path on IO platforms.
+    Uint8List bytes = Uint8List(0);
+    try {
+      bytes = await picked.readAsBytes();
+    } catch (_) {
+      bytes = Uint8List(0);
+    }
+
+    if (bytes.isNotEmpty) {
+      return PlatformFile(
+        name: picked.name,
+        size: bytes.length,
+        bytes: bytes,
+        path: kIsWeb ? null : picked.path,
+      );
+    }
 
     return PlatformFile(
       name: picked.name,
-      size: bytes.length,
-      bytes: bytes,
+      size: 0,
+      bytes: null,
       path: kIsWeb ? null : picked.path,
     );
   }
 
-  // ✅ Normalize captured photo bytes (EXIF + optional mirror for front camera)
   Future<Uint8List> _normalizeCapturedPhotoBytes({
     required Uint8List originalBytes,
     required CameraDevice deviceUsed,
@@ -79,10 +92,8 @@ class ChatMediaService {
     final decoded = img.decodeImage(originalBytes);
     if (decoded == null) return originalBytes;
 
-    // Fix EXIF rotation (iOS/Android)
     img.Image fixed = img.bakeOrientation(decoded);
 
-    // Mirror ONLY front camera photos
     if (deviceUsed == CameraDevice.front) {
       fixed = img.flipHorizontal(fixed);
     }
@@ -110,7 +121,7 @@ class ChatMediaService {
       deviceUsed: preferredCamera,
     );
 
-    // ✅ Overwrite local file safely (mobile/desktop only via io_compat)
+    // Save fixed orientation back to disk (IO platforms only)
     try {
       await writeFileBytes(picked.path, fixedBytes);
     } catch (_) {}
@@ -135,23 +146,30 @@ class ChatMediaService {
     );
     if (picked == null) return null;
 
+    // Keep as plain filesystem path (no dart:io in this file)
     final normalizedPath = picked.path.startsWith('file://')
         ? picked.path.replaceFirst('file://', '')
         : picked.path;
 
-    final bytes = await XFile(normalizedPath).readAsBytes();
-    if (bytes.isEmpty) return null;
+    // Try bytes (may fail / be large), but path is enough because sendFileMessage
+    // will read bytes from path on IO platforms.
+    Uint8List bytes = Uint8List(0);
+    try {
+      bytes = await picked.readAsBytes();
+    } catch (_) {
+      bytes = Uint8List(0);
+    }
 
     return PlatformFile(
       name: picked.name,
-      size: bytes.length,
-      bytes: bytes,
+      size: bytes.isNotEmpty ? bytes.length : 0,
+      bytes: bytes.isNotEmpty ? bytes : null,
       path: normalizedPath,
     );
   }
 
-  // ================= FILE PICKER =================
   Future<PlatformFile?> pickFileFromDevice() async {
+    // withData:true ensures Web works (bytes available).
     final result = await FilePicker.platform.pickFiles(
       allowMultiple: false,
       withData: true,
@@ -160,46 +178,44 @@ class ChatMediaService {
     return result.files.first;
   }
 
-  // ================= FILE CLASSIFIER (FIXED MIME TYPES) =================
+  // =========================
+  // Classification
+  // =========================
+
   (String type, String contentType) classifyFile(PlatformFile file) {
     String ext = (file.extension ?? '').trim();
-    if (ext.isEmpty) {
-      ext = p.extension(file.name).replaceFirst('.', '');
-    }
+    if (ext.isEmpty) ext = p.extension(file.name).replaceFirst('.', '');
     ext = ext.toLowerCase();
 
     final lowerName = file.name.toLowerCase();
-    final looksLikeVoice =
-        lowerName.contains('voice_message') ||
-            lowerName.contains('voice') ||
-            lowerName.contains('record') ||
-            lowerName.contains('audio_message');
 
-    // ✅ Web voice notes are often .webm (opus)
+    final looksLikeVoice = lowerName.contains('voice_') ||
+        lowerName.contains('voice-message') ||
+        lowerName.contains('voice_message') ||
+        lowerName.contains('audio_message') ||
+        lowerName.contains('record');
+
     if (ext == 'webm' && looksLikeVoice) {
       return ('audio', 'audio/webm');
     }
 
-    // Images
     if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic'].contains(ext)) {
-      return ('image', 'image/$ext');
+      final mime = (ext == 'jpg' || ext == 'jpeg') ? 'image/jpeg' : 'image/$ext';
+      return ('image', mime);
     }
 
-    // Videos
     if (['mp4', 'mov', 'mkv', 'avi'].contains(ext)) {
       return ('video', 'video/mp4');
     }
 
-    // webm as video ONLY when not a voice-note
     if (ext == 'webm') {
       return ('video', 'video/webm');
     }
 
-    // Audios
     if (['mp3', 'wav', 'm4a', 'aac', 'ogg', 'opus'].contains(ext)) {
       if (ext == 'mp3') return ('audio', 'audio/mpeg');
       if (ext == 'wav') return ('audio', 'audio/wav');
-      if (ext == 'm4a') return ('audio', 'audio/mp4'); // ✅ best for iOS
+      if (ext == 'm4a') return ('audio', 'audio/mp4');
       if (ext == 'aac') return ('audio', 'audio/aac');
       if (ext == 'ogg') return ('audio', 'audio/ogg');
       if (ext == 'opus') return ('audio', 'audio/opus');
@@ -211,7 +227,10 @@ class ChatMediaService {
     return ('file', 'application/octet-stream');
   }
 
-  // ================= SEND FILE MESSAGE =================
+  // =========================
+  // Sending / Upload
+  // =========================
+
   Future<UploadTask?> sendFileMessage(
       PlatformFile file, {
         String? forcedType,
@@ -219,26 +238,25 @@ class ChatMediaService {
         void Function(double progress)? onProgress,
       }) async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null || isBlocked() || !canSendMessages()) return null;
+    if (user == null) return null;
+    if (isBlocked() || !canSendMessages()) return null;
 
     final nameError = validateMessageContent(file.name);
     if (nameError != null) return null;
 
-    final Uint8List? bytes = file.bytes;
-    if (bytes == null || bytes.isEmpty) return null;
+    final other = otherUserId;
+    if (other == null || other.isEmpty) return null;
 
     final (autoType, autoContentType) = classifyFile(file);
     final msgType = forcedType ?? autoType;
 
     String ext = (file.extension ?? '').trim();
-    if (ext.isEmpty) {
-      ext = p.extension(file.name).replaceFirst('.', '');
-    }
+    if (ext.isEmpty) ext = p.extension(file.name).replaceFirst('.', '');
     ext = ext.toLowerCase();
 
     String contentType = forcedContentType ?? autoContentType;
 
-    // ✅ Safety: force audio/* if msgType is audio
+    // Normalize audio edge cases
     if (msgType == 'audio' && contentType.startsWith('video/')) {
       contentType = 'audio/webm';
     }
@@ -249,240 +267,124 @@ class ChatMediaService {
       contentType = 'audio/webm';
     }
 
+    final Uint8List? bytes = file.bytes;
+    final String? rawPath = file.path;
+
+    final bool hasBytes = bytes != null && bytes.isNotEmpty;
+    final bool canUsePath = !kIsWeb && rawPath != null && rawPath.trim().isNotEmpty;
+
+    if (!hasBytes && !canUsePath) {
+      debugPrint('[ChatMediaService] sendFileMessage: no bytes/path for ${file.name}');
+      return null;
+    }
+
+    final safeExt = ext.isNotEmpty ? ext : 'bin';
+    final base = p
+        .basenameWithoutExtension(file.name)
+        .replaceAll(RegExp(r'[^a-zA-Z0-9_\-]+'), '_');
+    final storageName =
+        '${DateTime.now().millisecondsSinceEpoch}_${base.isEmpty ? 'file' : base}.$safeExt';
+
     final storageRef = FirebaseStorage.instance
         .ref()
         .child('chat_uploads')
         .child(roomId)
-        .child('${DateTime.now().millisecondsSinceEpoch}_${file.name}');
+        .child(storageName);
 
     final metadata = SettableMetadata(contentType: contentType);
-    final uploadTask = storageRef.putData(bytes, metadata);
 
-    uploadTask.snapshotEvents.listen((event) {
-      if (onProgress != null && event.totalBytes > 0) {
-        final progress = event.bytesTransferred / event.totalBytes;
-        onProgress(progress);
+    UploadTask uploadTask;
+    StreamSubscription<TaskSnapshot>? sub;
+
+    try {
+      if (hasBytes) {
+        uploadTask = storageRef.putData(bytes!, metadata);
+      } else {
+        // ✅ IO platforms only: read bytes from the path using XFile (web-safe compile)
+        final normalizedPath = rawPath!.startsWith('file://')
+            ? rawPath.replaceFirst('file://', '')
+            : rawPath;
+
+        Uint8List diskBytes = Uint8List(0);
+        try {
+          diskBytes = await XFile(normalizedPath).readAsBytes();
+        } catch (e) {
+          debugPrint('[ChatMediaService] XFile.readAsBytes failed: $e');
+          diskBytes = Uint8List(0);
+        }
+
+        if (diskBytes.isEmpty) {
+          debugPrint('[ChatMediaService] sendFileMessage: could not read bytes from $normalizedPath');
+          return null;
+        }
+
+        uploadTask = storageRef.putData(diskBytes, metadata);
       }
-    });
 
-    final snap = await uploadTask;
-    final downloadUrl = await snap.ref.getDownloadURL();
-    final storagePath = snap.ref.fullPath;
+      sub = uploadTask.snapshotEvents.listen((event) {
+        if (onProgress != null && event.totalBytes > 0) {
+          final progress = event.bytesTransferred / event.totalBytes;
+          onProgress(progress.clamp(0.0, 1.0));
+        }
+      });
 
-    final userDoc =
-    await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
-    final userData = userDoc.data();
-    final profileUrl = userData?['profileUrl'];
-    final avatarType = userData?['avatarType'];
+      final snap = await uploadTask;
+      await sub.cancel();
 
-    if (otherUserId == null) return uploadTask;
+      final downloadUrl = await snap.ref.getDownloadURL();
+      final storagePath = snap.ref.fullPath;
 
-    final batch = FirebaseFirestore.instance.batch();
-    final roomRef =
-    FirebaseFirestore.instance.collection('privateChats').doc(roomId);
-    final msgRef = roomRef.collection('messages').doc();
+      final userDoc =
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      final userData = userDoc.data();
+      final profileUrl = userData?['profileUrl'];
+      final avatarType = userData?['avatarType'];
 
-    batch.set(msgRef, {
-      'type': msgType,
-      'text': '',
-      'fileName': file.name,
-      'fileUrl': downloadUrl,
-      'storagePath': storagePath,
-      'fileSize': file.size,
-      'mimeType': contentType,
-      'senderId': user.uid,
-      'senderEmail': user.email,
-      'profileUrl': profileUrl,
-      'avatarType': avatarType,
-      'createdAt': FieldValue.serverTimestamp(),
-      'seenBy': <String>[],
-    });
+      final roomRef = FirebaseFirestore.instance.collection('privateChats').doc(roomId);
+      final msgRef = roomRef.collection('messages').doc();
 
-    batch.set(
-      roomRef,
-      {
-        'participants': [user.uid, otherUserId],
-        'unreadCounts': {
-          otherUserId!: FieldValue.increment(1),
-          user.uid: 0,
+      final batch = FirebaseFirestore.instance.batch();
+
+      batch.set(msgRef, {
+        'type': msgType,
+        'text': '',
+        'fileName': file.name,
+        'fileUrl': downloadUrl,
+        'storagePath': storagePath,
+        'fileSize': file.size,
+        'mimeType': contentType,
+        'senderId': user.uid,
+        'senderEmail': user.email,
+        'profileUrl': profileUrl,
+        'avatarType': avatarType,
+        'createdAt': FieldValue.serverTimestamp(),
+        'clientCreatedAt': Timestamp.now(),
+        'seenBy': <String>[],
+      });
+
+      batch.set(
+        roomRef,
+        {
+          'participants': [user.uid, other],
+          'unreadCounts': {
+            other: FieldValue.increment(1),
+            user.uid: 0,
+          },
+          'updatedAt': FieldValue.serverTimestamp(),
         },
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
-
-    await batch.commit();
-    return uploadTask;
-  }
-
-  // ================= VOICE RECORDING (record v6+; iOS + Android safe) =================
-
-  // record v6: Record -> AudioRecorder, start requires RecordConfig + path (IO platforms)
-  final AudioRecorder _audioRecorder = AudioRecorder();
-
-  bool isRecording = false;
-  Timer? recordTimer;
-  Duration recordDuration = Duration.zero;
-
-  DateTime? _recordStartAt;
-
-  static const int _minRecordMs = 700;
-  static const int _minBytes = 2048;
-
-  Future<String> _newVoiceTempPath() async {
-    // iOS/Android safe temp directory
-    final dir = await getTemporaryDirectory();
-    final fileName = 'voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
-    return p.join(dir.path, fileName);
-  }
-
-  Future<bool> startVoiceRecording() async {
-    if (isRecording) return false;
-
-    final hasPermission = await _audioRecorder.hasPermission();
-    if (!hasPermission) {
-      debugPrint('❌ Mic permission denied');
-      return false;
-    }
-
-    try {
-      if (kIsWeb) {
-        // On web: pass empty string to start (no temp file generation)
-        await _audioRecorder.start(
-          const RecordConfig(
-            encoder: AudioEncoder.opus, // typically webm/opus
-            bitRate: 128000,
-            sampleRate: 48000,
-          ),
-          path: '',
-        );
-      } else {
-        final outPath = await _newVoiceTempPath();
-        await _audioRecorder.start(
-          const RecordConfig(
-            encoder: AudioEncoder.aacLc, // ✅ best for iOS + Android voice notes
-            bitRate: 128000,
-            sampleRate: 44100,
-          ),
-          path: outPath,
-        );
-      }
-    } catch (e) {
-      debugPrint('❌ start recording failed: $e');
-      return false;
-    }
-
-    isRecording = true;
-    _recordStartAt = DateTime.now();
-    recordDuration = Duration.zero;
-
-    recordTimer?.cancel();
-    recordTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      recordDuration = Duration(seconds: recordDuration.inSeconds + 1);
-    });
-
-    return true;
-  }
-
-  Future<PlatformFile?> stopVoiceRecording() async {
-    if (!isRecording) return null;
-
-    recordTimer?.cancel();
-    isRecording = false;
-
-    final startedAt = _recordStartAt;
-    _recordStartAt = null;
-
-    String? path;
-    try {
-      path = await _audioRecorder.stop();
-    } catch (e) {
-      debugPrint('⚠️ stop() error: $e');
-      recordDuration = Duration.zero;
-      return null;
-    }
-
-    recordDuration = Duration.zero;
-
-    if (path == null || path.isEmpty) {
-      debugPrint('🛑 Recording path is empty');
-      return null;
-    }
-
-    // Only strip file:// on non-web platforms
-    final normalizedPath = (!kIsWeb && path.startsWith('file://'))
-        ? path.replaceFirst('file://', '')
-        : path;
-
-    if (startedAt != null) {
-      final ms = DateTime.now().difference(startedAt).inMilliseconds;
-      if (ms < _minRecordMs) {
-        debugPrint('🛑 Recording too short (${ms}ms) — ignoring');
-        if (!kIsWeb) {
-          try {
-            await deleteFileIfExists(normalizedPath);
-          } catch (_) {}
-        }
-        return null;
-      }
-    }
-
-    try {
-      final bytes = await XFile(normalizedPath).readAsBytes();
-      if (bytes.isEmpty || bytes.length < _minBytes) {
-        debugPrint('🛑 Recording bytes too small (${bytes.length}) — ignoring');
-        if (!kIsWeb) {
-          try {
-            await deleteFileIfExists(normalizedPath);
-          } catch (_) {}
-        }
-        return null;
-      }
-
-      String name;
-      if (kIsWeb) {
-        // Most browsers give a blob url; we standardize the name for your classifier
-        name = 'voice_message.webm';
-      } else {
-        name = p.basename(normalizedPath);
-        if (!name.contains('.')) {
-          name = '$name.m4a';
-        }
-      }
-
-      return PlatformFile(
-        name: name,
-        size: bytes.length,
-        bytes: bytes,
-        path: kIsWeb ? null : normalizedPath,
+        SetOptions(merge: true),
       );
-    } catch (e) {
-      debugPrint('❌ Failed to read recorded file: $e');
+
+      await batch.commit();
+      return uploadTask;
+    } catch (e, st) {
+      debugPrint('[ChatMediaService] sendFileMessage error: $e\n$st');
+      try {
+        await sub?.cancel();
+      } catch (_) {}
       return null;
     }
   }
 
-  Future<void> cancelVoiceRecording() async {
-    if (!isRecording) return;
-
-    recordTimer?.cancel();
-    isRecording = false;
-    _recordStartAt = null;
-    recordDuration = Duration.zero;
-
-    try {
-      // If cancel() exists on your record version, it's ideal. Otherwise stop().
-      // ignore: invalid_use_of_protected_member
-      await _audioRecorder.stop();
-    } catch (_) {}
-  }
-
-  /// Keep signature as `void dispose()` to avoid breaking callers.
-  /// We still properly release the recorder (async) without blocking UI.
-  void dispose() {
-    recordTimer?.cancel();
-    try {
-      unawaited(_audioRecorder.dispose());
-    } catch (_) {}
-  }
+  void dispose() {}
 }

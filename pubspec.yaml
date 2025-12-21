@@ -2,7 +2,7 @@ name: mw
 description: "MW Chat – modern private messaging app. Copyright ©2025 Mousa Abu Hilal."
 publish_to: 'none'
 
-version: 1.0.0+16
+version: 1.0.2+18
 
 environment:
   sdk: ^3.10.0
@@ -39,6 +39,9 @@ dependencies:
   cloud_functions: ^6.0.4
   image: ^4.2.0
   path_provider: ^2.1.0
+  firebase_database: ^12.0.0
+  http: ^1.2.2
+
 
 dev_dependencies:
   flutter_test:
@@ -63,7 +66,8 @@ flutter:
     - assets/images/mw_bg.png
     - assets/images/bear.png
     - assets/images/smurf.png
-    - assets/typing/
+    - assets/typing/bear_keyboard.png
+    - assets/typing/smurf_keyboard.png
 
   # =========================
   # FONT FAMILIES

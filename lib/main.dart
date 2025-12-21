@@ -109,6 +109,16 @@ void _setupAuthDrivenTokenSync() {
   });
 }
 
+Future<void> _configureFirestore() async {
+  if (kIsWeb) {
+    // Prevent Firestore web IndexedDB from getting corrupted during dev/rules changes
+    FirebaseFirestore.instance.settings = const Settings(
+      persistenceEnabled: false,
+      cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+    );
+  }
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -116,6 +126,8 @@ Future<void> main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  await _configureFirestore();
 
   // Register background handler (NOT on web)
   if (!kIsWeb) {

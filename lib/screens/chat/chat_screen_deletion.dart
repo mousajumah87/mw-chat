@@ -14,6 +14,9 @@ import '../../widgets/ui/mw_feedback.dart';
 enum _DeleteMode { me, both, cancel }
 
 class ChatScreenDeletion {
+  // =========================
+  // ✅ Public: clear entire chat
+  // =========================
   static Future<void> confirmAndClearChat({
     required BuildContext context,
     required String roomId,
@@ -112,7 +115,7 @@ class ChatScreenDeletion {
     }
 
     // -------------------------
-    // Extractors
+    // Extractors (shared)
     // -------------------------
     Set<String> extractStoragePaths(Map<String, dynamic> data) {
       final paths = <String>{};
@@ -237,9 +240,6 @@ class ChatScreenDeletion {
         await FirebaseStorage.instance.ref().child(path).delete();
         deletedFilesClientSide++;
       } on FirebaseException catch (e) {
-        // Not an error for your UX:
-        // - object-not-found: already deleted / path stale
-        // - unauthorized: rules blocked it (server cleanup still works)
         if (e.code == 'object-not-found' || e.code == 'unauthorized') {
           debugPrint('[ChatScreenDeletion] Client Storage delete skipped: ${e.code} (path=$path)');
           return;
@@ -321,7 +321,7 @@ class ChatScreenDeletion {
             continue;
           }
 
-          // ✅ For BOTH: collect per-doc paths + urls (NO conditional bug)
+          // ✅ For BOTH: collect per-doc paths + urls (covers video too)
           final p = extractStoragePaths(data);
           final u = extractStorageUrls(data);
 
@@ -341,7 +341,7 @@ class ChatScreenDeletion {
 
         await batch.commit();
 
-        // Best-effort client delete (ok if it fails; server will clean)
+        // Best-effort client delete
         if (mode == _DeleteMode.both) {
           if (pagePaths.isNotEmpty) await deleteStoragePathsClient(pagePaths);
           if (pageUrls.isNotEmpty) await deleteStorageUrlsClient(pageUrls);
@@ -388,6 +388,315 @@ class ChatScreenDeletion {
       if (context.mounted) {
         await MwFeedback.error(context, message: l10n.chatHistoryDeleteFailed);
       }
+    }
+  }
+
+  // =========================
+  // ✅ NEW: delete ONE message (this fixes video delete UX)
+  // =========================
+  static Future<void> confirmAndDeleteMessage({
+    required BuildContext context,
+    required String roomId,
+    required String messageId,
+    required String currentUserId,
+    required String? otherUserId,
+  }) async {
+    final l10n = AppLocalizations.of(context);
+    if (l10n == null) return;
+
+    final mode = await showDialog<_DeleteMode>(
+      context: context,
+      useRootNavigator: true,
+      builder: (dialogContext) {
+        final theme = Theme.of(dialogContext);
+        return AlertDialog(
+          title: Text(l10n.deleteMessageTitle), // make sure this key exists
+          content: Text(l10n.deleteMessageDescription), // make sure this key exists
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(_DeleteMode.cancel),
+              child: Text(l10n.cancel),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(_DeleteMode.me),
+              child: Text(l10n.deleteForMe),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(_DeleteMode.both),
+              style: TextButton.styleFrom(foregroundColor: theme.colorScheme.error),
+              child: Text(l10n.deleteForEveryone),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (mode == null || mode == _DeleteMode.cancel) return;
+
+    final roomRef = FirebaseFirestore.instance.collection('privateChats').doc(roomId);
+    final msgRef = roomRef.collection('messages').doc(messageId);
+
+    // Small in-progress modal (so user sees “loading bar” for video too)
+    final ValueNotifier<bool> inProgress = ValueNotifier<bool>(true);
+
+    showDialog<void>(
+      context: context,
+      useRootNavigator: true,
+      barrierDismissible: false,
+      builder: (_) => PopScope(
+        canPop: false,
+        child: ValueListenableBuilder<bool>(
+          valueListenable: inProgress,
+          builder: (_, __, ___) {
+            return AlertDialog(
+              title: Text(l10n.deletingMessageInProgressTitle),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const LinearProgressIndicator(),
+                  const SizedBox(height: 12),
+                  Text(l10n.pleaseWait),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+
+    void closeProgressDialogIfOpen() {
+      if (!context.mounted) return;
+      final nav = Navigator.of(context, rootNavigator: true);
+      if (nav.canPop()) nav.pop();
+    }
+
+    // ---- extractors (same logic as clear chat; keep consistent)
+    Set<String> extractStoragePaths(Map<String, dynamic> data) {
+      final paths = <String>{};
+
+      void add(dynamic v) {
+        if (v is String && v.trim().isNotEmpty) paths.add(v.trim());
+      }
+
+      add(data['storagePath']);
+      add(data['thumbStoragePath']);
+      add(data['thumbnailStoragePath']);
+
+      final attachments = data['attachments'];
+      if (attachments is List) {
+        for (final item in attachments) {
+          if (item is Map) {
+            add(item['storagePath']);
+            add(item['thumbStoragePath']);
+            add(item['thumbnailStoragePath']);
+          }
+        }
+      }
+
+      final media = data['media'];
+      if (media is Map) {
+        add(media['storagePath']);
+        add(media['thumbStoragePath']);
+        add(media['thumbnailStoragePath']);
+      }
+
+      return paths;
+    }
+
+    Set<String> extractStorageUrls(Map<String, dynamic> data) {
+      final urls = <String>{};
+
+      void add(dynamic v) {
+        if (v is String && v.trim().isNotEmpty) urls.add(v.trim());
+      }
+
+      add(data['fileUrl']);
+      add(data['mediaUrl']);
+      add(data['imageUrl']);
+      add(data['videoUrl']);
+      add(data['audioUrl']);
+      add(data['voiceUrl']);
+      add(data['thumbnailUrl']);
+      add(data['thumbUrl']);
+      add(data['url']);
+
+      final attachments = data['attachments'];
+      if (attachments is List) {
+        for (final item in attachments) {
+          if (item is String) {
+            add(item);
+          } else if (item is Map) {
+            add(item['url']);
+            add(item['fileUrl']);
+            add(item['mediaUrl']);
+            add(item['imageUrl']);
+            add(item['videoUrl']);
+            add(item['audioUrl']);
+            add(item['voiceUrl']);
+            add(item['thumbUrl']);
+            add(item['thumbnailUrl']);
+          }
+        }
+      }
+
+      final media = data['media'];
+      if (media is Map) {
+        add(media['url']);
+        add(media['fileUrl']);
+        add(media['mediaUrl']);
+        add(media['imageUrl']);
+        add(media['videoUrl']);
+        add(media['audioUrl']);
+        add(media['voiceUrl']);
+        add(media['thumbUrl']);
+        add(media['thumbnailUrl']);
+      }
+
+      return urls;
+    }
+
+    String? storagePathFromUrl(String url) {
+      try {
+        final u = Uri.parse(url);
+
+        if (u.scheme == 'gs') {
+          final p = u.path;
+          if (p.isEmpty) return null;
+          return p.startsWith('/') ? p.substring(1) : p;
+        }
+
+        if (u.host.contains('firebasestorage.googleapis.com')) {
+          final seg = u.pathSegments;
+          final oIndex = seg.indexOf('o');
+          if (oIndex != -1 && oIndex + 1 < seg.length) {
+            return Uri.decodeComponent(seg[oIndex + 1]);
+          }
+        }
+
+        if (u.host.contains('storage.googleapis.com')) {
+          final seg = u.pathSegments;
+          final oIndex = seg.indexOf('o');
+          if (oIndex != -1 && oIndex + 1 < seg.length) {
+            return Uri.decodeComponent(seg[oIndex + 1]);
+          }
+        }
+
+        return null;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    Future<void> deleteOneStoragePathClient(String path) async {
+      try {
+        await FirebaseStorage.instance.ref().child(path).delete();
+      } on FirebaseException catch (e) {
+        if (e.code == 'object-not-found' || e.code == 'unauthorized') {
+          debugPrint('[ChatScreenDeletion] Client Storage delete skipped: ${e.code} (path=$path)');
+          return;
+        }
+        debugPrint('[ChatScreenDeletion] Client Storage delete failed: ${e.code} ${e.message} (path=$path)');
+      } catch (e) {
+        debugPrint('[ChatScreenDeletion] Client Storage delete failed: $e (path=$path)');
+      }
+    }
+
+    Future<void> deleteOneStorageUrlClient(String url) async {
+      final path = storagePathFromUrl(url);
+      if (path != null && path.isNotEmpty) {
+        await deleteOneStoragePathClient(path);
+        return;
+      }
+      try {
+        final ref = FirebaseStorage.instance.refFromURL(url);
+        await ref.delete();
+      } catch (e) {
+        debugPrint('[ChatScreenDeletion] Client Storage delete failed: $e (url=$url)');
+      }
+    }
+
+    // ---- main
+    try {
+      final snap = await msgRef.get();
+      if (!snap.exists) {
+        closeProgressDialogIfOpen();
+        if (context.mounted) {
+          await MwFeedback.success(context, message: l10n.messageAlreadyDeleted);
+        }
+        return;
+      }
+
+      final data = (snap.data() as Map<String, dynamic>?) ?? <String, dynamic>{};
+
+      if (mode == _DeleteMode.me) {
+        await msgRef.update({
+          'hiddenFor': FieldValue.arrayUnion([currentUserId]),
+        });
+
+        closeProgressDialogIfOpen();
+        if (context.mounted) {
+          await MwFeedback.success(context, message: l10n.deletedForMeSuccess);
+        }
+        return;
+      }
+
+      // BOTH:
+      final paths = extractStoragePaths(data);
+      final urls = extractStorageUrls(data);
+
+      // serverPaths = paths + derived-from-urls
+      final serverPaths = HashSet<String>()..addAll(paths);
+      for (final u in urls) {
+        final p = storagePathFromUrl(u);
+        if (p != null && p.isNotEmpty) serverPaths.add(p);
+      }
+
+      // delete Firestore doc
+      await msgRef.delete();
+
+      // client best-effort delete (helps your UX)
+      await Future.wait([
+        ...paths.map(deleteOneStoragePathClient),
+        ...urls.map(deleteOneStorageUrlClient),
+      ]);
+
+      // server purge (best)
+      if (serverPaths.isNotEmpty) {
+        try {
+          final fn = FirebaseFunctions.instanceFor(region: 'us-central1')
+              .httpsCallable('purgeChatRoom');
+
+          final res = await fn.call({
+            'roomId': roomId,
+            'paths': serverPaths.toList(growable: false),
+          });
+
+          debugPrint('[ChatScreenDeletion] purgeChatRoom(single) result: ${res.data}');
+        } catch (e) {
+          debugPrint('[ChatScreenDeletion] purgeChatRoom(single) failed (non-fatal): $e');
+        }
+      }
+
+      // Optional: keep unreadCounts sane when deleting for both
+      final Map<String, dynamic> unread = {};
+      if (currentUserId.isNotEmpty) unread[currentUserId] = 0;
+      if (otherUserId != null && otherUserId.isNotEmpty) unread[otherUserId] = 0;
+      if (unread.isNotEmpty) {
+        await roomRef.set({'unreadCounts': unread}, SetOptions(merge: true));
+      }
+
+      closeProgressDialogIfOpen();
+      if (context.mounted) {
+        await MwFeedback.success(context, message: l10n.deletedForEveryoneSuccess);
+      }
+    } catch (e, st) {
+      debugPrint('[ChatScreenDeletion] deleteMessage error: $e\n$st');
+      closeProgressDialogIfOpen();
+      if (context.mounted) {
+        await MwFeedback.error(context, message: l10n.deleteMessageFailed);
+      }
+    } finally {
+      inProgress.value = false;
     }
   }
 }

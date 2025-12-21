@@ -4,25 +4,30 @@ import 'dart:async';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
 
 import '../../widgets/chat/message_bubble.dart';
 import '../../utils/time_utils.dart';
+import '../../utils/chat_attachment_utils.dart';
 import '../../l10n/app_localizations.dart';
 import '../../theme/app_theme.dart';
 
-// reuse shared dialogs/helpers
 import '../../widgets/safety/report_message_dialog.dart';
 import '../../widgets/ui/mw_feedback.dart';
+
+// ✅ Shared friendship logic + normalization
+import 'chat_friendship_service.dart';
+
+// ✅ NEW: use central delete implementation (loading + confirm + storage cleanup)
+import 'chat_screen_deletion.dart';
 
 class ChatMessageList extends StatefulWidget {
   final String roomId;
   final String currentUserId;
   final String? otherUserId;
-
-  /// If true, we show a “blocked” info state instead of streaming messages.
-  /// This means there is a block relationship (you blocked them or they blocked you).
   final bool isBlocked;
+
+  /// ✅ extra padding to reserve space at the bottom (TypingIndicator + composer)
+  final double bottomInset;
 
   const ChatMessageList({
     super.key,
@@ -30,6 +35,7 @@ class ChatMessageList extends StatefulWidget {
     required this.currentUserId,
     required this.otherUserId,
     this.isBlocked = false,
+    this.bottomInset = 0,
   });
 
   @override
@@ -37,22 +43,18 @@ class ChatMessageList extends StatefulWidget {
 }
 
 class _ChatMessageListState extends State<ChatMessageList> {
-  // Seen batching debounce
   Timer? _debounceTimer;
   final Set<String> _seenMessagesCache = {};
   String? _lastSeenScheduleKey;
 
-  // Friend status
   String? _friendStatus;
-  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _friendSub;
 
-  // Pagination + realtime
+  StreamSubscription<String?>? _friendSub;
+  final ChatFriendshipService _friendship = ChatFriendshipService();
+
   final ScrollController _scrollController = ScrollController();
 
-  /// Single source of truth: all loaded docs in a map to prevent duplicates
   final Map<String, DocumentSnapshot<Map<String, dynamic>>> _docMap = {};
-
-  /// For delete race hardening
   final Set<String> _pendingLocalRemovals = {};
 
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _liveSub;
@@ -64,7 +66,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
   static const int _pageSize = 40;
   static const int _liveWindow = 40;
 
-  int _gen = 0; // ignore late callbacks after room change
+  int _gen = 0;
 
   @override
   void initState() {
@@ -75,7 +77,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
 
     if (!widget.isBlocked) {
       _startLiveListener();
-      _loadMoreOlder(); // initial older page
+      _loadMoreOlder();
     }
   }
 
@@ -106,6 +108,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
     _friendSub?.cancel();
     _liveSub?.cancel();
     _scrollController.dispose();
+    _friendship.dispose();
     super.dispose();
   }
 
@@ -150,17 +153,12 @@ class _ChatMessageListState extends State<ChatMessageList> {
       return;
     }
 
-    _friendSub = FirebaseFirestore.instance
-        .collection('users')
-        .doc(myId)
-        .collection('friends')
-        .doc(otherId)
-        .snapshots()
+    _friendSub = _friendship
+        .friendshipStatusStream(me: myId, other: otherId)
         .listen(
-          (snap) {
-        final data = snap.data();
-        final status = data?['status'] as String?;
-        if (mounted) setState(() => _friendStatus = status);
+          (status) {
+        if (!mounted) return;
+        setState(() => _friendStatus = status);
       },
       onError: (e, st) {
         debugPrint('[ChatMessageList] _listenFriendStatus error: $e\n$st');
@@ -185,15 +183,44 @@ class _ChatMessageListState extends State<ChatMessageList> {
     return Timestamp.now();
   }
 
+  String _formatDocTime(DocumentSnapshot<Map<String, dynamic>> d) {
+    final data = d.data();
+    final ts =
+        data?['createdAt'] ?? data?['clientCreatedAt'] ?? data?['localCreatedAt'];
+    return formatTimestamp(ts);
+  }
+
   bool _isVisibleForMe(DocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data() ?? const <String, dynamic>{};
-    final hiddenFor = (data['hiddenFor'] as List?)?.cast<String>() ?? const <String>[];
+    final hiddenFor =
+        (data['hiddenFor'] as List?)?.cast<String>() ?? const <String>[];
     return !hiddenFor.contains(widget.currentUserId);
+  }
+
+  // ✅ Key updates ONLY when meaningful changes happen
+  Key _messageKey(
+      DocumentSnapshot<Map<String, dynamic>> doc,
+      Map<String, dynamic> data,
+      NormalizedAttachment att,
+      ) {
+    final keyStr = [
+      'g=$_gen',
+      'id=${doc.id}',
+      't=${(data['text'] ?? '').toString()}',
+      'u=${att.url ?? ''}',
+      'ty=${att.type ?? ''}',
+      'n=${ChatAttachmentUtils.uiFileNameForAttachment(att) ?? ''}',
+      'h=${(data['hiddenFor'] as List?)?.length ?? 0}',
+      's=${(data['seenBy'] as List?)?.length ?? 0}',
+    ].join('|');
+
+    return ValueKey<String>(keyStr);
   }
 
   // ================= SEEN HANDLING =================
 
-  void _scheduleMarkMessagesAsSeen(List<DocumentSnapshot<Map<String, dynamic>>> docs) {
+  void _scheduleMarkMessagesAsSeen(
+      List<DocumentSnapshot<Map<String, dynamic>>> docs) {
     if (widget.isBlocked) return;
     if (widget.currentUserId.isEmpty) return;
     if (widget.otherUserId == null || widget.otherUserId!.isEmpty) return;
@@ -209,7 +236,8 @@ class _ChatMessageListState extends State<ChatMessageList> {
     });
   }
 
-  Future<void> _markMessagesAsSeen(List<DocumentSnapshot<Map<String, dynamic>>> docs) async {
+  Future<void> _markMessagesAsSeen(
+      List<DocumentSnapshot<Map<String, dynamic>>> docs) async {
     if (widget.isBlocked) return;
     if (widget.currentUserId.isEmpty) return;
     if (widget.otherUserId == null || widget.otherUserId!.isEmpty) return;
@@ -220,7 +248,8 @@ class _ChatMessageListState extends State<ChatMessageList> {
     for (final doc in docs) {
       final data = doc.data() ?? const <String, dynamic>{};
       final senderId = data['senderId'] as String?;
-      final seenBy = (data['seenBy'] as List?)?.cast<String>() ?? const <String>[];
+      final seenBy =
+          (data['seenBy'] as List?)?.cast<String>() ?? const <String>[];
 
       if (senderId == null ||
           senderId == widget.currentUserId ||
@@ -256,49 +285,14 @@ class _ChatMessageListState extends State<ChatMessageList> {
         SetOptions(merge: true),
       );
     } on FirebaseException catch (e) {
-      debugPrint('⚠️ Failed to reset unread count on seen: ${e.code} ${e.message}');
-    }
-  }
-
-  // ================= UNREAD CONSISTENCY =================
-
-  Future<void> _decrementUnreadIfNeeded(DocumentSnapshot<Map<String, dynamic>> messageDoc) async {
-    if (widget.otherUserId == null) return;
-
-    final data = messageDoc.data();
-    if (data == null) return;
-
-    final seenBy = (data['seenBy'] as List?)?.cast<String>() ?? [];
-    if (seenBy.contains(widget.otherUserId)) return;
-
-    final roomRef = FirebaseFirestore.instance.collection('privateChats').doc(widget.roomId);
-
-    try {
-      await FirebaseFirestore.instance.runTransaction((tx) async {
-        final snap = await tx.get(roomRef);
-        final data = snap.data() as Map<String, dynamic>?;
-
-        final unreadCounts = (data?['unreadCounts'] as Map?)?.cast<String, dynamic>() ?? {};
-        final cur = (unreadCounts[widget.otherUserId!] as num?)?.toInt() ?? 0;
-        final next = cur - 1;
-
-        tx.set(
-          roomRef,
-          {
-            'unreadCounts': {widget.otherUserId!: next < 0 ? 0 : next},
-          },
-          SetOptions(merge: true),
-        );
-      });
-    } catch (e) {
-      debugPrint('[ChatMessageList] decrement unread txn failed: $e');
+      debugPrint(
+          '⚠️ Failed to reset unread count on seen: ${e.code} ${e.message}');
     }
   }
 
   // ================= PAGINATION =================
 
   void _onScroll() {
-    // reverse:true means "older side" is maxScrollExtent.
     if (!_scrollController.hasClients) return;
     if (_isLoadingMore || !_hasMore) return;
     if (widget.isBlocked) return;
@@ -309,29 +303,6 @@ class _ChatMessageListState extends State<ChatMessageList> {
     if (offset >= (max - 300)) {
       _loadMoreOlder();
     }
-  }
-
-  void _recomputeOldest() {
-    if (_docMap.isEmpty) {
-      _oldestDoc = null;
-      return;
-    }
-    DocumentSnapshot<Map<String, dynamic>>? oldest;
-    Timestamp? oldestTs;
-
-    for (final d in _docMap.values) {
-      final ts = _effectiveTs(d);
-      if (oldest == null) {
-        oldest = d;
-        oldestTs = ts;
-        continue;
-      }
-      if (ts.compareTo(oldestTs!) < 0) {
-        oldest = d;
-        oldestTs = ts;
-      }
-    }
-    _oldestDoc = oldest;
   }
 
   Future<void> _loadMoreOlder() async {
@@ -349,9 +320,9 @@ class _ChatMessageListState extends State<ChatMessageList> {
           .orderBy('createdAt', descending: true)
           .limit(_pageSize);
 
-      final oldest = _oldestDoc;
-      if (oldest != null) {
-        q = q.startAfterDocument(oldest);
+      final cursor = _oldestDoc;
+      if (cursor != null) {
+        q = q.startAfterDocument(cursor);
       }
 
       final snap = await q.get();
@@ -367,7 +338,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
         _docMap.putIfAbsent(d.id, () => d);
       }
 
-      _recomputeOldest();
+      _oldestDoc = snap.docs.last;
 
       if (snap.docs.length < _pageSize) {
         _hasMore = false;
@@ -413,7 +384,6 @@ class _ChatMessageListState extends State<ChatMessageList> {
         for (final change in snap.docChanges) {
           final doc = change.doc;
 
-          // If we removed locally already, ignore redundant events
           if (_pendingLocalRemovals.contains(doc.id) &&
               change.type != DocumentChangeType.added) {
             if (change.type == DocumentChangeType.removed) {
@@ -427,123 +397,15 @@ class _ChatMessageListState extends State<ChatMessageList> {
             continue;
           }
 
-          // added / modified
           _docMap[doc.id] = doc;
         }
 
-        _recomputeOldest();
         setState(() {});
       },
       onError: (e, st) {
         debugPrint('[ChatMessageList] live listener error: $e\n$st');
       },
     );
-  }
-
-  // ================= STORAGE HELPERS (for deleting message attachments) =================
-
-  Set<String> _extractStoragePathsFromMessage(Map<String, dynamic> data) {
-    final paths = <String>{};
-
-    void add(dynamic v) {
-      if (v is String && v.trim().isNotEmpty) paths.add(v.trim());
-    }
-
-    add(data['storagePath']);
-    add(data['thumbStoragePath']);
-    add(data['thumbnailStoragePath']);
-
-    final attachments = data['attachments'];
-    if (attachments is List) {
-      for (final item in attachments) {
-        if (item is Map) {
-          add(item['storagePath']);
-          add(item['thumbStoragePath']);
-          add(item['thumbnailStoragePath']);
-        }
-      }
-    }
-
-    final media = data['media'];
-    if (media is Map) {
-      add(media['storagePath']);
-      add(media['thumbStoragePath']);
-      add(media['thumbnailStoragePath']);
-    }
-
-    // Back-compat: try parse URLs too
-    final urlFields = [
-      data['fileUrl'],
-      data['mediaUrl'],
-      data['imageUrl'],
-      data['videoUrl'],
-      data['audioUrl'],
-      data['voiceUrl'],
-      data['thumbnailUrl'],
-      data['thumbUrl'],
-      data['url'],
-    ];
-
-    for (final v in urlFields) {
-      if (v is String && v.trim().isNotEmpty) {
-        final p = _storagePathFromUrl(v.trim());
-        if (p != null && p.isNotEmpty) paths.add(p);
-      }
-    }
-
-    return paths;
-  }
-
-  String? _storagePathFromUrl(String url) {
-    try {
-      final u = Uri.parse(url);
-
-      // gs://bucket/path/to/object
-      if (u.scheme == 'gs') {
-        final p = u.path;
-        if (p.isEmpty) return null;
-        return p.startsWith('/') ? p.substring(1) : p;
-      }
-
-      // https://firebasestorage.googleapis.com/v0/b/<bucket>/o/<encodedPath>
-      if (u.host.contains('firebasestorage.googleapis.com')) {
-        final seg = u.pathSegments;
-        final oIndex = seg.indexOf('o');
-        if (oIndex != -1 && oIndex + 1 < seg.length) {
-          return Uri.decodeComponent(seg[oIndex + 1]);
-        }
-      }
-
-      // https://storage.googleapis.com/download/storage/v1/b/<bucket>/o/<encodedPath>
-      if (u.host.contains('storage.googleapis.com')) {
-        final seg = u.pathSegments;
-        final oIndex = seg.indexOf('o');
-        if (oIndex != -1 && oIndex + 1 < seg.length) {
-          return Uri.decodeComponent(seg[oIndex + 1]);
-        }
-      }
-
-      return null;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  Future<void> _purgeStorageForMessagePaths(Set<String> paths) async {
-    if (paths.isEmpty) return;
-
-    try {
-      final fn = FirebaseFunctions.instanceFor(region: 'us-central1')
-          .httpsCallable('purgeChatRoom');
-
-      await fn.call({
-        'roomId': widget.roomId,
-        'paths': paths.toList(growable: false),
-      });
-    } catch (e) {
-      // Non-fatal: message delete should still proceed
-      debugPrint('[ChatMessageList] purgeChatRoom failed (non-fatal): $e');
-    }
   }
 
   // ================= DELETE / REPORT MENU =================
@@ -581,21 +443,15 @@ class _ChatMessageListState extends State<ChatMessageList> {
                 ),
               ),
               const SizedBox(height: 8),
-              if (isMe) ...[
-                ListTile(
-                  leading: Icon(Icons.visibility_off_outlined,
-                      color: kTextSecondary.withOpacity(0.95)),
-                  title: Text(l10n.deleteChatForMe, style: titleStyle),
-                  onTap: () =>
-                      Navigator.of(sheetContext).pop(_MessageAction.deleteForMe),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.delete_outline, color: kErrorColor),
-                  title: Text(l10n.deleteMessageTitle, style: titleStyle),
-                  onTap: () => Navigator.of(sheetContext)
-                      .pop(_MessageAction.deleteForBoth),
-                ),
-              ],
+
+              // ✅ One delete entry (central flow will ask For me / For everyone)
+              ListTile(
+                leading: const Icon(Icons.delete_outline, color: kErrorColor),
+                title: Text(l10n.deleteMessageTitle, style: titleStyle),
+                onTap: () =>
+                    Navigator.of(sheetContext).pop(_MessageAction.delete),
+              ),
+
               ListTile(
                 leading: Icon(Icons.flag_outlined,
                     color: kPrimaryGold.withOpacity(0.95)),
@@ -612,114 +468,34 @@ class _ChatMessageListState extends State<ChatMessageList> {
 
     if (selected == null) return;
 
-    void removeLocalNow(String id) {
-      _pendingLocalRemovals.add(id);
-      _docMap.remove(id);
-      if (mounted) setState(() {});
-    }
-
-    void restoreLocalNow(DocumentSnapshot<Map<String, dynamic>> doc) {
-      _pendingLocalRemovals.remove(doc.id);
-      _docMap[doc.id] = doc;
-      if (mounted) setState(() {});
-    }
-
-    // -------- Delete for me (hide) --------
-    if (selected == _MessageAction.deleteForMe && isMe) {
+    if (selected == _MessageAction.delete) {
+      // ✅ Centralized delete flow:
+      // - shows confirmation (For me / For everyone)
+      // - shows loading bar
+      // - cleans up storage + calls purge function
+      // - shows success/error toasts
       try {
-        await messageDoc.reference.update({
-          'hiddenFor': FieldValue.arrayUnion([widget.currentUserId]),
-        });
-        removeLocalNow(messageDoc.id);
-        await _toastSuccess(l10n.deletedForMe);
-      } on FirebaseException catch (e, st) {
-        debugPrint('[ChatMessageList] deleteForMe failed: ${e.code} ${e.message}\n$st');
-        await _toastError(l10n.chatHistoryDeleteFailed);
+        await ChatScreenDeletion.confirmAndDeleteMessage(
+          context: context,
+          roomId: widget.roomId,
+          messageId: messageDoc.id,
+          currentUserId: widget.currentUserId,
+          otherUserId: widget.otherUserId,
+        );
       } catch (e, st) {
-        debugPrint('[ChatMessageList] deleteForMe failed: $e\n$st');
-        await _toastError(l10n.chatHistoryDeleteFailed);
+        debugPrint('[ChatMessageList] confirmAndDeleteMessage failed: $e\n$st');
+        await _toastError(l10n.deleteMessageFailed);
       }
       return;
     }
 
-    // -------- Delete for both (real delete) --------
-    if (selected == _MessageAction.deleteForBoth && isMe) {
-      final confirmed = await showDialog<bool>(
-        context: context,
-        useRootNavigator: true,
-        builder: (ctx) => AlertDialog(
-          backgroundColor: kSurfaceAltColor,
-          surfaceTintColor: Colors.transparent,
-          title: Text(
-            l10n.deleteMessageTitle,
-            style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
-              color: kTextPrimary,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          content: Text(
-            l10n.deleteMessageConfirm,
-            style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
-              color: kTextSecondary.withOpacity(0.95),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: Text(l10n.cancel),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text(
-                l10n.delete,
-                style: const TextStyle(color: kErrorColor),
-              ),
-            ),
-          ],
-        ),
-      ) ??
-          false;
-
-      if (!confirmed) return;
-
-      // Optimistic UI removal
-      removeLocalNow(messageDoc.id);
-
-      try {
-        // 1) best effort unread decrement
-        try {
-          await _decrementUnreadIfNeeded(messageDoc);
-        } catch (_) {}
-
-        // 2) delete storage files for this message (server-side, secure)
-        final data = messageDoc.data() ?? const <String, dynamic>{};
-        final paths = _extractStoragePathsFromMessage(Map<String, dynamic>.from(data));
-        await _purgeStorageForMessagePaths(paths);
-
-        // 3) delete message doc (source of truth)
-        await messageDoc.reference.delete();
-
-        await _toastSuccess(l10n.deleteMessageSuccess);
-      } on FirebaseException catch (e, st) {
-        debugPrint('[ChatMessageList] deleteForBoth failed: ${e.code} ${e.message}\n$st');
-        restoreLocalNow(messageDoc);
-        await _toastError(l10n.deleteMessageFailed);
-      } catch (e, st) {
-        debugPrint('[ChatMessageList] deleteForBoth failed: $e\n$st');
-        restoreLocalNow(messageDoc);
-        await _toastError(l10n.deleteMessageFailed);
-      }
-
-      return;
-    }
-
-    // -------- Report --------
     if (selected == _MessageAction.report) {
       await ReportMessageDialog.open(
         context,
         roomId: widget.roomId,
         messageDoc: messageDoc,
       );
+      return;
     }
   }
 
@@ -741,7 +517,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
 
     return ListView(
       reverse: true,
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + widget.bottomInset),
       children: [
         const SizedBox(height: 80),
         Center(
@@ -770,11 +546,14 @@ class _ChatMessageListState extends State<ChatMessageList> {
       _scheduleMarkMessagesAsSeen(visibleDocs);
     }
 
+    final listPadding =
+    EdgeInsets.fromLTRB(12, 12, 12, 12 + widget.bottomInset);
+
     if (visibleDocs.isEmpty) {
       return ListView(
         controller: _scrollController,
         reverse: true,
-        padding: const EdgeInsets.all(12),
+        padding: listPadding,
         children: [
           const SizedBox(height: 12),
           Center(
@@ -823,7 +602,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
     return ListView.builder(
       controller: _scrollController,
       reverse: true,
-      padding: const EdgeInsets.all(12),
+      padding: listPadding,
       itemCount: visibleDocs.length + extraItems.length,
       itemBuilder: (context, index) {
         if (index < visibleDocs.length) {
@@ -833,26 +612,38 @@ class _ChatMessageListState extends State<ChatMessageList> {
           final senderId = data['senderId'] as String?;
           final isMe = senderId == widget.currentUserId;
 
-          final seenBy = (data['seenBy'] as List?)?.cast<String>() ?? const <String>[];
+          final seenBy =
+              (data['seenBy'] as List?)?.cast<String>() ?? const <String>[];
 
-          return RepaintBoundary(
-            child: Align(
-              alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-              child: GestureDetector(
-                onLongPress: () => _onMessageLongPress(context, doc, isMe),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(maxWidth: maxWidth),
-                  child: MessageBubble(
-                    key: ValueKey(doc.id),
-                    text: (data['text'] ?? '').toString(),
-                    timeLabel: formatTimestamp(data['createdAt']),
-                    isMe: isMe,
-                    isSeen: widget.otherUserId != null &&
-                        widget.otherUserId!.isNotEmpty &&
-                        seenBy.contains(widget.otherUserId),
-                    fileUrl: data['fileUrl'] as String?,
-                    fileName: data['fileName'] as String?,
-                    fileType: data['type']?.toString(),
+          // ✅ Shared normalization source
+          final att = ChatAttachmentUtils.normalizeAttachment(data);
+
+          // ✅ Keep old behavior: show real text (but hide accidental filenames)
+          final displayText =
+          ChatAttachmentUtils.displayTextForMessage(data['text'], att);
+
+          return KeyedSubtree(
+            key: _messageKey(doc, data, att),
+            child: RepaintBoundary(
+              child: Align(
+                alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+                child: GestureDetector(
+                  onLongPress: () => _onMessageLongPress(context, doc, isMe),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: maxWidth),
+                    child: MessageBubble(
+                      text: displayText,
+                      timeLabel: _formatDocTime(doc),
+                      isMe: isMe,
+                      isSeen: widget.otherUserId != null &&
+                          widget.otherUserId!.isNotEmpty &&
+                          seenBy.contains(widget.otherUserId),
+                      fileUrl: att.url,
+                      // ✅ hide device filenames for image/video
+                      fileName: ChatAttachmentUtils.uiFileNameForAttachment(att),
+                      // ✅ always pass inferred type so bubble shows correct kind
+                      fileType: att.type,
+                    ),
                   ),
                 ),
               ),
@@ -868,7 +659,6 @@ class _ChatMessageListState extends State<ChatMessageList> {
 }
 
 enum _MessageAction {
-  deleteForMe,
-  deleteForBoth,
+  delete,
   report,
 }

@@ -62,7 +62,8 @@ import 'app_localizations_en.dart';
 /// be consistent with the languages listed in the AppLocalizations.supportedLocales
 /// property.
 abstract class AppLocalizations {
-  AppLocalizations(String locale) : localeName = intl.Intl.canonicalizedLocale(locale.toString());
+  AppLocalizations(String locale)
+    : localeName = intl.Intl.canonicalizedLocale(locale.toString());
 
   final String localeName;
 
@@ -70,7 +71,8 @@ abstract class AppLocalizations {
     return Localizations.of<AppLocalizations>(context, AppLocalizations);
   }
 
-  static const LocalizationsDelegate<AppLocalizations> delegate = _AppLocalizationsDelegate();
+  static const LocalizationsDelegate<AppLocalizations> delegate =
+      _AppLocalizationsDelegate();
 
   /// A list of this localizations delegate along with the default localizations
   /// delegates.
@@ -82,17 +84,18 @@ abstract class AppLocalizations {
   /// Additional delegates can be added by appending to this list in
   /// MaterialApp. This list does not have to be used at all if a custom list
   /// of delegates is preferred or required.
-  static const List<LocalizationsDelegate<dynamic>> localizationsDelegates = <LocalizationsDelegate<dynamic>>[
-    delegate,
-    GlobalMaterialLocalizations.delegate,
-    GlobalCupertinoLocalizations.delegate,
-    GlobalWidgetsLocalizations.delegate,
-  ];
+  static const List<LocalizationsDelegate<dynamic>> localizationsDelegates =
+      <LocalizationsDelegate<dynamic>>[
+        delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+      ];
 
   /// A list of this localizations delegate's supported locales.
   static const List<Locale> supportedLocales = <Locale>[
     Locale('ar'),
-    Locale('en')
+    Locale('en'),
   ];
 
   /// No description provided for @mainTitle.
@@ -239,17 +242,35 @@ abstract class AppLocalizations {
   /// **'Failed to create user'**
   String get failedToCreateUser;
 
-  /// No description provided for @languageLabel.
+  /// No description provided for @forgotPassword.
   ///
   /// In en, this message translates to:
-  /// **'Language'**
-  String get languageLabel;
+  /// **'Forgot password?'**
+  String get forgotPassword;
 
-  /// No description provided for @menuTitle.
+  /// No description provided for @resetPasswordTitle.
   ///
   /// In en, this message translates to:
-  /// **'Menu'**
-  String get menuTitle;
+  /// **'Reset password'**
+  String get resetPasswordTitle;
+
+  /// No description provided for @resetEmailSent.
+  ///
+  /// In en, this message translates to:
+  /// **'Password reset email sent. Check your inbox.'**
+  String get resetEmailSent;
+
+  /// No description provided for @resetEmailIfExists.
+  ///
+  /// In en, this message translates to:
+  /// **'If this email exists, you will receive a reset link.'**
+  String get resetEmailIfExists;
+
+  /// No description provided for @tooManyRequests.
+  ///
+  /// In en, this message translates to:
+  /// **'Too many attempts. Please try again later.'**
+  String get tooManyRequests;
 
   /// No description provided for @settingUpProfile.
   ///
@@ -292,6 +313,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Go back'**
   String get goBack;
+
+  /// No description provided for @autoUpdateNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'This screen will update automatically once activated.'**
+  String get autoUpdateNotice;
+
+  /// No description provided for @checkAgain.
+  ///
+  /// In en, this message translates to:
+  /// **'Check again'**
+  String get checkAgain;
 
   /// No description provided for @profileTitle.
   ///
@@ -365,6 +398,48 @@ abstract class AppLocalizations {
   /// **'Unknown'**
   String get unknown;
 
+  /// No description provided for @languageLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Language'**
+  String get languageLabel;
+
+  /// No description provided for @menuTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Menu'**
+  String get menuTitle;
+
+  /// No description provided for @profile.
+  ///
+  /// In en, this message translates to:
+  /// **'Profile'**
+  String get profile;
+
+  /// No description provided for @viewProfile.
+  ///
+  /// In en, this message translates to:
+  /// **'View Profile'**
+  String get viewProfile;
+
+  /// No description provided for @viewFriendProfile.
+  ///
+  /// In en, this message translates to:
+  /// **'View Friend Profile'**
+  String get viewFriendProfile;
+
+  /// No description provided for @viewMyProfile.
+  ///
+  /// In en, this message translates to:
+  /// **'View My Profile'**
+  String get viewMyProfile;
+
+  /// Button label for removing the current profile picture
+  ///
+  /// In en, this message translates to:
+  /// **'Remove photo'**
+  String get removePhoto;
+
   /// No description provided for @usersTitle.
   ///
   /// In en, this message translates to:
@@ -424,42 +499,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'No other friends yet'**
   String get noOtherUsers;
-
-  /// No description provided for @profile.
-  ///
-  /// In en, this message translates to:
-  /// **'Profile'**
-  String get profile;
-
-  /// No description provided for @viewProfile.
-  ///
-  /// In en, this message translates to:
-  /// **'View Profile'**
-  String get viewProfile;
-
-  /// No description provided for @viewFriendProfile.
-  ///
-  /// In en, this message translates to:
-  /// **'View Friend Profile'**
-  String get viewFriendProfile;
-
-  /// No description provided for @viewMyProfile.
-  ///
-  /// In en, this message translates to:
-  /// **'View My Profile'**
-  String get viewMyProfile;
-
-  /// No description provided for @autoUpdateNotice.
-  ///
-  /// In en, this message translates to:
-  /// **'This screen will update automatically once activated.'**
-  String get autoUpdateNotice;
-
-  /// No description provided for @checkAgain.
-  ///
-  /// In en, this message translates to:
-  /// **'Check again'**
-  String get checkAgain;
 
   /// No description provided for @typeMessageHint.
   ///
@@ -629,12 +668,6 @@ abstract class AppLocalizations {
   /// **'File'**
   String get genericFileLabel;
 
-  /// Button label for removing the current profile picture
-  ///
-  /// In en, this message translates to:
-  /// **'Remove photo'**
-  String get removePhoto;
-
   /// The official MW Chats website domain displayed in the footer of the user profile screen
   ///
   /// In en, this message translates to:
@@ -695,6 +728,12 @@ abstract class AppLocalizations {
   /// **'Are you sure you want to delete this chat? This action cannot be undone.'**
   String get deleteChatWarning;
 
+  /// No description provided for @deleteChatDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Are you sure you want to delete this chat history? This action cannot be undone.'**
+  String get deleteChatDescription;
+
   /// No description provided for @delete.
   ///
   /// In en, this message translates to:
@@ -718,12 +757,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Failed to delete chat history'**
   String get chatHistoryDeleteFailed;
-
-  /// No description provided for @deleteChatDescription.
-  ///
-  /// In en, this message translates to:
-  /// **'Are you sure you want to delete this chat history? This action cannot be undone.'**
-  String get deleteChatDescription;
 
   /// No description provided for @chatHistoryDeleted.
   ///
@@ -752,13 +785,13 @@ abstract class AppLocalizations {
   /// No description provided for @inviteFromContactsFuture.
   ///
   /// In en, this message translates to:
-  /// **'Inviting friends directly from your contacts will be available in a future update.'**
+  /// **'Invite your friends to MW Chat and stay connected.'**
   String get inviteFromContactsFuture;
 
   /// No description provided for @inviteShareManual.
   ///
   /// In en, this message translates to:
-  /// **'For now, you can share the app link manually.'**
+  /// **'You can download MW Chat using the links below:'**
   String get inviteShareManual;
 
   /// No description provided for @contactsPermissionDenied.
@@ -796,6 +829,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Inviting contacts is not supported on web.'**
   String get inviteWebNotSupported;
+
+  /// No description provided for @invitePlatformAndroid.
+  ///
+  /// In en, this message translates to:
+  /// **'Android'**
+  String get invitePlatformAndroid;
+
+  /// No description provided for @invitePlatformIos.
+  ///
+  /// In en, this message translates to:
+  /// **'iOS'**
+  String get invitePlatformIos;
+
+  /// No description provided for @invitePlatformWeb.
+  ///
+  /// In en, this message translates to:
+  /// **'Web'**
+  String get invitePlatformWeb;
 
   /// No description provided for @search.
   ///
@@ -863,6 +914,12 @@ abstract class AppLocalizations {
   /// **'Inactive users'**
   String get friendSectionInactiveUsers;
 
+  /// No description provided for @friendRequestAlreadyIncoming.
+  ///
+  /// In en, this message translates to:
+  /// **'This user already sent you a friend request. Check your requests.'**
+  String get friendRequestAlreadyIncoming;
+
   /// No description provided for @friendRequestSent.
   ///
   /// In en, this message translates to:
@@ -898,6 +955,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Failed to decline friend request'**
   String get friendRequestDeclineFailed;
+
+  /// No description provided for @friendRequestCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Friend request cancelled'**
+  String get friendRequestCancelled;
+
+  /// No description provided for @friendRequestIncomingBanner.
+  ///
+  /// In en, this message translates to:
+  /// **'This user sent you a friend request.'**
+  String get friendRequestIncomingBanner;
 
   /// No description provided for @friendshipInfoOutgoing.
   ///
@@ -1337,36 +1406,6 @@ abstract class AppLocalizations {
   /// **'All rights reserved.'**
   String get allRightsReserved;
 
-  /// No description provided for @cancelFriendRequestTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Cancel friend request'**
-  String get cancelFriendRequestTitle;
-
-  /// No description provided for @cancelFriendRequestDescription.
-  ///
-  /// In en, this message translates to:
-  /// **'Do you want to cancel this friend request?'**
-  String get cancelFriendRequestDescription;
-
-  /// No description provided for @cancelFriendRequestConfirm.
-  ///
-  /// In en, this message translates to:
-  /// **'Cancel request'**
-  String get cancelFriendRequestConfirm;
-
-  /// No description provided for @friendRequestCancelled.
-  ///
-  /// In en, this message translates to:
-  /// **'Friend request cancelled'**
-  String get friendRequestCancelled;
-
-  /// No description provided for @friendRequestIncomingBanner.
-  ///
-  /// In en, this message translates to:
-  /// **'This user sent you a friend request.'**
-  String get friendRequestIncomingBanner;
-
   /// No description provided for @sidePanelAppName.
   ///
   /// In en, this message translates to:
@@ -1445,10 +1484,82 @@ abstract class AppLocalizations {
   /// **'Load more'**
   String get loadMore;
 
+  /// No description provided for @tapToPlay.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap to play'**
+  String get tapToPlay;
+
+  /// No description provided for @videoLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Video'**
+  String get videoLabel;
+
+  /// No description provided for @recordingLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Recording'**
+  String get recordingLabel;
+
+  /// No description provided for @cancelLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get cancelLabel;
+
+  /// No description provided for @stopLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop'**
+  String get stopLabel;
+
+  /// No description provided for @sendLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Send'**
+  String get sendLabel;
+
+  /// No description provided for @cancelFriendRequestTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel friend request'**
+  String get cancelFriendRequestTitle;
+
+  /// No description provided for @send.
+  ///
+  /// In en, this message translates to:
+  /// **'Send'**
+  String get send;
+
+  /// No description provided for @privacyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy Settings'**
+  String get privacyTitle;
+
+  /// No description provided for @ok.
+  ///
+  /// In en, this message translates to:
+  /// **'OK'**
+  String get ok;
+
+  /// No description provided for @cancelFriendRequestConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel request'**
+  String get cancelFriendRequestConfirm;
+
+  /// No description provided for @cancelFriendRequestDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Do you want to cancel this friend request?'**
+  String get cancelFriendRequestDescription;
+
   /// No description provided for @appBrandingBeta.
   ///
   /// In en, this message translates to:
-  /// **'MW Chat 2025 beta'**
+  /// **'MW Chat 2025'**
   String get appBrandingBeta;
 
   /// No description provided for @profileSafetyToolsSectionTitle.
@@ -1595,50 +1706,429 @@ abstract class AppLocalizations {
   /// **'Share app link'**
   String get shareAppLink;
 
-  /// No description provided for @forgotPassword.
+  /// No description provided for @presencePrivacyTitle.
   ///
   /// In en, this message translates to:
-  /// **'Forgot password?'**
-  String get forgotPassword;
+  /// **'Privacy Settings'**
+  String get presencePrivacyTitle;
 
-  /// No description provided for @resetPasswordTitle.
+  /// No description provided for @presencePrivacyNotSignedIn.
   ///
   /// In en, this message translates to:
-  /// **'Reset password'**
-  String get resetPasswordTitle;
+  /// **'Not signed in'**
+  String get presencePrivacyNotSignedIn;
 
-  /// No description provided for @resetEmailSent.
+  /// No description provided for @presencePrivacySectionSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Password reset email sent. Check your inbox.'**
-  String get resetEmailSent;
+  /// **'Control who can see your profile and activity.'**
+  String get presencePrivacySectionSubtitle;
 
-  /// No description provided for @resetEmailIfExists.
+  /// No description provided for @presencePrivacySectionOnlineTitle.
   ///
   /// In en, this message translates to:
-  /// **'If this email exists, you will receive a reset link.'**
-  String get resetEmailIfExists;
+  /// **'Online Status'**
+  String get presencePrivacySectionOnlineTitle;
 
-  /// No description provided for @tooManyRequests.
+  /// No description provided for @presencePrivacyShowWhenOnlineTitle.
   ///
   /// In en, this message translates to:
-  /// **'Too many attempts. Please try again later.'**
-  String get tooManyRequests;
+  /// **'Show when I’m online'**
+  String get presencePrivacyShowWhenOnlineTitle;
 
-  /// No description provided for @send.
+  /// No description provided for @presencePrivacyShowWhenOnlineSubtitleOn.
   ///
   /// In en, this message translates to:
-  /// **'Send'**
-  String get send;
+  /// **'Others can see when you are online.'**
+  String get presencePrivacyShowWhenOnlineSubtitleOn;
 
-  /// No description provided for @ok.
+  /// No description provided for @presencePrivacyShowWhenOnlineSubtitleOff.
   ///
   /// In en, this message translates to:
-  /// **'OK'**
-  String get ok;
+  /// **'You will appear offline to everyone.'**
+  String get presencePrivacyShowWhenOnlineSubtitleOff;
+
+  /// No description provided for @presencePrivacyStatusHiddenOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'You will appear offline to everyone.'**
+  String get presencePrivacyStatusHiddenOffline;
+
+  /// No description provided for @presencePrivacyStatusVisibleOnline.
+  ///
+  /// In en, this message translates to:
+  /// **'Others can see you as online.'**
+  String get presencePrivacyStatusVisibleOnline;
+
+  /// No description provided for @presencePrivacyStatusVisibleOfflineWhenInactive.
+  ///
+  /// In en, this message translates to:
+  /// **'Others will see you as offline when you’re not active.'**
+  String get presencePrivacyStatusVisibleOfflineWhenInactive;
+
+  /// No description provided for @presencePrivacyAutoOfflineTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto-offline (recommended)'**
+  String get presencePrivacyAutoOfflineTitle;
+
+  /// No description provided for @presencePrivacyAutoOfflineBody.
+  ///
+  /// In en, this message translates to:
+  /// **'If the app is closed, uninstalled, or loses connection, your status may stay “online” briefly. MW Chat automatically treats accounts as offline if there is no recent activity for {staleWindow}.'**
+  String presencePrivacyAutoOfflineBody(Object staleWindow);
+
+  /// No description provided for @presencePrivacyStaleMinutes.
+  ///
+  /// In en, this message translates to:
+  /// **'{minutes, plural, one{1 minute} other{{minutes} minutes}}'**
+  String presencePrivacyStaleMinutes(num minutes);
+
+  /// No description provided for @presencePrivacyLastSeenUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Last seen: unavailable'**
+  String get presencePrivacyLastSeenUnavailable;
+
+  /// No description provided for @presencePrivacyLastSeenLine.
+  ///
+  /// In en, this message translates to:
+  /// **'Last seen: {value}'**
+  String presencePrivacyLastSeenLine(Object value);
+
+  /// No description provided for @presencePrivacyTip.
+  ///
+  /// In en, this message translates to:
+  /// **'Tip: Turning this off hides your online status everywhere in the app.'**
+  String get presencePrivacyTip;
+
+  /// No description provided for @privacySectionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy'**
+  String get privacySectionTitle;
+
+  /// No description provided for @onlineStatusTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy & visibility'**
+  String get onlineStatusTitle;
+
+  /// No description provided for @onlineStatusSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage who can see your status, activity, and profile'**
+  String get onlineStatusSubtitle;
+
+  /// No description provided for @presencePrivacySectionProfileTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Profile & Requests'**
+  String get presencePrivacySectionProfileTitle;
+
+  /// No description provided for @presencePrivacySectionProfileSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Control who can view your profile and who can add you as a friend.'**
+  String get presencePrivacySectionProfileSubtitle;
+
+  /// No description provided for @presencePrivacyProfileVisTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Who can see my profile'**
+  String get presencePrivacyProfileVisTitle;
+
+  /// No description provided for @presencePrivacyProfileVisSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose who can view your profile details.'**
+  String get presencePrivacyProfileVisSubtitle;
+
+  /// No description provided for @presencePrivacyProfileVisSheetHint.
+  ///
+  /// In en, this message translates to:
+  /// **'This controls visibility of your profile to other users.'**
+  String get presencePrivacyProfileVisSheetHint;
+
+  /// No description provided for @presencePrivacyProfileVisEveryoneTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Everyone'**
+  String get presencePrivacyProfileVisEveryoneTitle;
+
+  /// No description provided for @presencePrivacyProfileVisEveryoneSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Anyone can view your profile.'**
+  String get presencePrivacyProfileVisEveryoneSubtitle;
+
+  /// No description provided for @presencePrivacyProfileVisFriendsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Friends only'**
+  String get presencePrivacyProfileVisFriendsTitle;
+
+  /// No description provided for @presencePrivacyProfileVisFriendsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Only your friends can view your profile.'**
+  String get presencePrivacyProfileVisFriendsSubtitle;
+
+  /// No description provided for @presencePrivacyProfileVisNobodyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Nobody'**
+  String get presencePrivacyProfileVisNobodyTitle;
+
+  /// No description provided for @presencePrivacyProfileVisNobodySubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide your profile from other users.'**
+  String get presencePrivacyProfileVisNobodySubtitle;
+
+  /// No description provided for @presencePrivacyProfileVisValueEveryone.
+  ///
+  /// In en, this message translates to:
+  /// **'Everyone'**
+  String get presencePrivacyProfileVisValueEveryone;
+
+  /// No description provided for @presencePrivacyProfileVisValueFriends.
+  ///
+  /// In en, this message translates to:
+  /// **'Friends'**
+  String get presencePrivacyProfileVisValueFriends;
+
+  /// No description provided for @presencePrivacyProfileVisValueNobody.
+  ///
+  /// In en, this message translates to:
+  /// **'Nobody'**
+  String get presencePrivacyProfileVisValueNobody;
+
+  /// No description provided for @presencePrivacyFriendReqTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Who can add me as a friend'**
+  String get presencePrivacyFriendReqTitle;
+
+  /// No description provided for @presencePrivacyFriendReqSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Control who is allowed to send you friend requests.'**
+  String get presencePrivacyFriendReqSubtitle;
+
+  /// No description provided for @presencePrivacyFriendReqSheetHint.
+  ///
+  /// In en, this message translates to:
+  /// **'This controls whether people can send you friend requests.'**
+  String get presencePrivacyFriendReqSheetHint;
+
+  /// No description provided for @presencePrivacyFriendReqEveryoneTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Everyone'**
+  String get presencePrivacyFriendReqEveryoneTitle;
+
+  /// No description provided for @presencePrivacyFriendReqEveryoneSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Anyone can send you a friend request.'**
+  String get presencePrivacyFriendReqEveryoneSubtitle;
+
+  /// No description provided for @presencePrivacyFriendReqNobodyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Nobody'**
+  String get presencePrivacyFriendReqNobodyTitle;
+
+  /// No description provided for @presencePrivacyFriendReqNobodySubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Disable friend requests from other users.'**
+  String get presencePrivacyFriendReqNobodySubtitle;
+
+  /// No description provided for @presencePrivacyFriendReqValueEveryone.
+  ///
+  /// In en, this message translates to:
+  /// **'Everyone'**
+  String get presencePrivacyFriendReqValueEveryone;
+
+  /// No description provided for @presencePrivacyFriendReqValueNobody.
+  ///
+  /// In en, this message translates to:
+  /// **'Nobody'**
+  String get presencePrivacyFriendReqValueNobody;
+
+  /// No description provided for @friendRequestNotAllowed.
+  ///
+  /// In en, this message translates to:
+  /// **'Friend requests are not allowed'**
+  String get friendRequestNotAllowed;
+
+  /// No description provided for @profilePrivateChatRestricted.
+  ///
+  /// In en, this message translates to:
+  /// **'This profile is private. Chat is restricted'**
+  String get profilePrivateChatRestricted;
+
+  /// No description provided for @profilePrivate.
+  ///
+  /// In en, this message translates to:
+  /// **'This profile is private'**
+  String get profilePrivate;
+
+  /// No description provided for @deleteMessageDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose how you want to delete this message'**
+  String get deleteMessageDescription;
+
+  /// No description provided for @deleteForMe.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete for me'**
+  String get deleteForMe;
+
+  /// No description provided for @deleteForEveryone.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete for everyone'**
+  String get deleteForEveryone;
+
+  /// No description provided for @deletingMessageInProgressTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Deleting message'**
+  String get deletingMessageInProgressTitle;
+
+  /// No description provided for @pleaseWait.
+  ///
+  /// In en, this message translates to:
+  /// **'Please wait'**
+  String get pleaseWait;
+
+  /// No description provided for @messageAlreadyDeleted.
+  ///
+  /// In en, this message translates to:
+  /// **'This message was already deleted'**
+  String get messageAlreadyDeleted;
+
+  /// No description provided for @deletedForMeSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Message deleted for you'**
+  String get deletedForMeSuccess;
+
+  /// No description provided for @deletedForEveryoneSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Message deleted for everyone'**
+  String get deletedForEveryoneSuccess;
+
+  /// No description provided for @searchFriendsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Search friends…'**
+  String get searchFriendsHint;
+
+  /// No description provided for @searchUsersHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Search MW users…'**
+  String get searchUsersHint;
+
+  /// No description provided for @noFriendsFound.
+  ///
+  /// In en, this message translates to:
+  /// **'No friends found.'**
+  String get noFriendsFound;
+
+  /// No description provided for @noUsersFound.
+  ///
+  /// In en, this message translates to:
+  /// **'No users found.'**
+  String get noUsersFound;
+
+  /// No description provided for @loading.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading'**
+  String get loading;
+
+  /// No description provided for @peopleOnMw.
+  ///
+  /// In en, this message translates to:
+  /// **'People on MW'**
+  String get peopleOnMw;
+
+  /// No description provided for @myFriends.
+  ///
+  /// In en, this message translates to:
+  /// **'My Friends'**
+  String get myFriends;
+
+  /// No description provided for @searchPeopleHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Search people'**
+  String get searchPeopleHint;
+
+  /// No description provided for @noSearchResults.
+  ///
+  /// In en, this message translates to:
+  /// **'No results found'**
+  String get noSearchResults;
+
+  /// No description provided for @friendRequestsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Friend Requests'**
+  String get friendRequestsTitle;
+
+  /// No description provided for @friendRequestsSearchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Search requests'**
+  String get friendRequestsSearchHint;
+
+  /// No description provided for @friendRequestsEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No requests'**
+  String get friendRequestsEmpty;
+
+  /// Used for friend requests subtitle (top pill + banner)
+  ///
+  /// In en, this message translates to:
+  /// **'{count,plural, =0{No new requests} =1{You have 1 new request} other{You have {count} new requests}}'**
+  String friendRequestsSubtitle(int count);
+
+  /// No description provided for @unknownUser.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown user'**
+  String get unknownUser;
+
+  /// No description provided for @accountUnavailableSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'This account is no longer available.'**
+  String get accountUnavailableSubtitle;
+
+  /// No description provided for @invitePlatformTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Invite via platform'**
+  String get invitePlatformTitle;
+
+  /// No description provided for @tapIconToOpen.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap an icon to open'**
+  String get tapIconToOpen;
 }
 
-class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> {
+class _AppLocalizationsDelegate
+    extends LocalizationsDelegate<AppLocalizations> {
   const _AppLocalizationsDelegate();
 
   @override
@@ -1647,25 +2137,26 @@ class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> 
   }
 
   @override
-  bool isSupported(Locale locale) => <String>['ar', 'en'].contains(locale.languageCode);
+  bool isSupported(Locale locale) =>
+      <String>['ar', 'en'].contains(locale.languageCode);
 
   @override
   bool shouldReload(_AppLocalizationsDelegate old) => false;
 }
 
 AppLocalizations lookupAppLocalizations(Locale locale) {
-
-
   // Lookup logic when only language code is specified.
   switch (locale.languageCode) {
-    case 'ar': return AppLocalizationsAr();
-    case 'en': return AppLocalizationsEn();
+    case 'ar':
+      return AppLocalizationsAr();
+    case 'en':
+      return AppLocalizationsEn();
   }
 
   throw FlutterError(
     'AppLocalizations.delegate failed to load unsupported locale "$locale". This is likely '
     'an issue with the localizations generation tool. Please file an issue '
     'on GitHub with a reproducible sample app and the gen-l10n configuration '
-    'that was used.'
+    'that was used.',
   );
 }

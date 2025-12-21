@@ -15,6 +15,9 @@ import '../../widgets/ui/mw_background.dart';
 import '../../widgets/ui/mw_feedback.dart';
 import '../../widgets/safety/report_user_dialog.dart';
 
+// ✅ friendship normalization / helpers (accepted/requested/incoming)
+import '../chat/chat_friendship_service.dart';
+
 class UserProfileScreen extends StatefulWidget {
   final String userId;
   const UserProfileScreen({super.key, required this.userId});
@@ -30,8 +33,29 @@ class _UserProfileScreenState extends State<UserProfileScreen>
   static const String _websiteUrl = 'https://www.mwchats.com';
 
   bool _isBlocking = false;
-
   late final AnimationController _glowController;
+
+  // ✅ NEW: cache the latest good snapshots to avoid "flashing" on reconnects
+  Map<String, dynamic>? _cachedMyData;
+  Map<String, dynamic>? _cachedUserData; // target profile
+  Map<String, dynamic>? _cachedFriendData;
+
+  // Presence privacy values
+  static const String _presenceFriends = 'friends';
+  static const String _presenceNobody = 'nobody';
+
+  // Profile privacy values
+  static const String _privacyEveryone = 'everyone';
+  static const String _privacyFriends = 'friends';
+  static const String _privacyNobody = 'nobody';
+
+  // New field names (aligned with your Friends tab + rules)
+  static const String _fieldProfileVisibility = 'profileVisibility';
+  static const String _fieldAddFriendVisibility = 'addFriendVisibility';
+
+  // Legacy field names
+  static const String _legacyFriendRequestsField = 'friendRequests';
+  static const String _legacyShowOnlineStatusField = 'showOnlineStatus';
 
   @override
   void initState() {
@@ -50,17 +74,8 @@ class _UserProfileScreenState extends State<UserProfileScreen>
 
   Future<void> _openMwWebsite() async {
     final uri = Uri.parse(_websiteUrl);
-
-    // LaunchMode.externalApplication can be problematic on web.
-    // PlatformDefault works across iOS/Android/Web.
-    final ok = await launchUrl(
-      uri,
-      mode: LaunchMode.platformDefault,
-    );
-
-    if (!ok) {
-      debugPrint('Could not launch $_websiteUrl');
-    }
+    final ok = await launchUrl(uri, mode: LaunchMode.platformDefault);
+    if (!ok) debugPrint('Could not launch $_websiteUrl');
   }
 
   bool _isOnlineWithTtl({
@@ -102,20 +117,98 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     Navigator.of(context).push(
       PageRouteBuilder(
         opaque: false,
-        barrierColor: Colors.transparent, // viewer handles bg fade
+        barrierColor: Colors.transparent,
         pageBuilder: (_, __, ___) => _FullScreenImageViewer(
           imageUrl: imageUrl,
           heroTag: heroTag,
         ),
         transitionsBuilder: (_, animation, __, child) {
-          return FadeTransition(
-            opacity: animation,
-            child: child,
-          );
+          return FadeTransition(opacity: animation, child: child);
         },
       ),
     );
   }
+
+  // ----------------------------
+  // Privacy helpers (same logic as Friends tab)
+  // ----------------------------
+
+  String _normalizePrivacy(String? raw) {
+    final v = raw?.trim().toLowerCase();
+    if (v == null || v.isEmpty) return _privacyEveryone; // backward compatible
+    if (v == _privacyFriends) return _privacyFriends;
+    if (v == _privacyNobody) return _privacyNobody;
+    return _privacyEveryone;
+  }
+
+  String _readPrivacyValue(Map<String, dynamic> data, String field) {
+    final String? rawNew = data[field] as String?;
+
+    String? rawLegacy;
+    if (field == _fieldAddFriendVisibility) {
+      rawLegacy = data[_legacyFriendRequestsField] as String?;
+    } else if (field == _fieldProfileVisibility) {
+      rawLegacy = null;
+    }
+
+    final chosen = (rawNew != null && rawNew.trim().isNotEmpty) ? rawNew : rawLegacy;
+    return _normalizePrivacy(chosen);
+  }
+
+  String _readPresenceVisibility(Map<String, dynamic> data) {
+    final dynamic rawShow = data[_legacyShowOnlineStatusField];
+    if (rawShow is bool && rawShow == false) return _presenceNobody;
+
+    final raw = (data['presenceVisibility'] as String?)?.trim().toLowerCase();
+    if (raw == _presenceNobody) return _presenceNobody;
+
+    return _presenceFriends; // privacy-first default
+  }
+
+  bool _canViewProfile({
+    required String profileVisibility,
+    required String? friendStatus,
+    required bool isBlockedRelationship,
+    required bool isActive,
+  }) {
+    if (!isActive) return false;
+    if (isBlockedRelationship) return false;
+
+    if (profileVisibility == _privacyNobody) return false;
+    if (profileVisibility == _privacyEveryone) return true;
+
+    return ChatFriendshipService.isFriends(friendStatus);
+  }
+
+  bool _canSeePresence({
+    required String presenceVisibility,
+    required String? friendStatus,
+    required bool isBlockedRelationship,
+    required bool isActive,
+  }) {
+    if (!isActive) return false;
+    if (isBlockedRelationship) return false;
+    if (presenceVisibility == _presenceNobody) return false;
+
+    return ChatFriendshipService.isFriends(friendStatus);
+  }
+
+  String? _normalizeFriendStatusFromDoc(Map<String, dynamic>? data) {
+    if (data == null) return null;
+    final rawStatus = data['status'] as String?;
+    final normalized = ChatFriendshipService.normalizeStatus(rawStatus);
+    if (normalized == null || normalized.isEmpty) return null;
+
+    // keep parity with Friends tab mapping
+    if (normalized == ChatFriendshipService.statusRequestReceivedAlias) {
+      return ChatFriendshipService.statusIncoming;
+    }
+    return normalized;
+  }
+
+  // ----------------------------
+  // Block / Report actions
+  // ----------------------------
 
   Future<void> _toggleBlockUser(
       BuildContext context, {
@@ -173,11 +266,12 @@ class _UserProfileScreenState extends State<UserProfileScreen>
 
     if (!confirm) return;
 
+    if (!mounted) return;
     setState(() => _isBlocking = true);
+
     try {
       final ref = FirebaseFirestore.instance.collection('users').doc(currentUid);
 
-      // ✅ Safer than update(): won’t fail if doc/field doesn’t exist yet
       await ref.set(
         {
           'blockedUserIds': currentlyBlocked
@@ -214,9 +308,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
       color: Colors.white70,
       fontSize: 11,
     );
-    final versionStyle = textStyle?.copyWith(
-      color: Colors.white38,
-    );
+    final versionStyle = textStyle?.copyWith(color: Colors.white38);
 
     return Padding(
       padding: EdgeInsets.symmetric(
@@ -229,16 +321,8 @@ class _UserProfileScreenState extends State<UserProfileScreen>
         alignment: WrapAlignment.center,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          Text(
-            l10n.appBrandingBeta,
-            style: textStyle,
-            textAlign: TextAlign.center,
-          ),
-          Text(
-            _appVersion,
-            style: versionStyle,
-            textAlign: TextAlign.center,
-          ),
+          Text(l10n.appBrandingBeta, style: textStyle, textAlign: TextAlign.center),
+          Text(_appVersion, style: versionStyle, textAlign: TextAlign.center),
           InkWell(
             onTap: _openMwWebsite,
             borderRadius: BorderRadius.circular(16),
@@ -259,6 +343,19 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     );
   }
 
+  // ✅ Helper: extract user snapshot data, but keep cache if stream is reconnecting
+  Map<String, dynamic>? _safeDataFromSnapshot(
+      AsyncSnapshot<DocumentSnapshot<Map<String, dynamic>>> snap,
+      Map<String, dynamic>? cache,
+      ) {
+    if (snap.hasData && snap.data != null && snap.data!.exists) {
+      final d = snap.data!.data();
+      if (d != null) return d;
+    }
+    // If reconnecting (waiting), return cache to prevent flashing
+    return cache;
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
@@ -266,9 +363,13 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     final currentUid = currentUser?.uid;
     final isSelf = currentUid == widget.userId;
 
-    final media = MediaQuery.of(context);
-    final width = media.size.width;
+    final width = MediaQuery.of(context).size.width;
     final isWide = width >= 900;
+
+    // If user not signed in, still allow viewing with limited features.
+    final myDocStream = (currentUid == null)
+        ? null
+        : FirebaseFirestore.instance.collection('users').doc(currentUid).snapshots();
 
     return Scaffold(
       appBar: AppBar(
@@ -306,340 +407,437 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                       decoration: BoxDecoration(
                         color: Colors.black.withOpacity(0.65),
                         borderRadius: BorderRadius.circular(24),
-                        border: Border.all(
-                          color: Colors.white.withOpacity(0.08),
-                        ),
+                        border: Border.all(color: Colors.white.withOpacity(0.08)),
                       ),
                       child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                        stream: FirebaseFirestore.instance
-                            .collection('users')
-                            .doc(widget.userId)
-                            .snapshots(),
-                        builder: (context, snapshot) {
-                          if (snapshot.connectionState == ConnectionState.waiting) {
-                            return const _ShimmerLoader();
-                          }
-                          if (!snapshot.hasData || !snapshot.data!.exists) {
-                            return Center(
-                              child: Text(
-                                l10n.userNotFound,
-                                style: const TextStyle(color: Colors.white70),
-                              ),
-                            );
-                          }
+                        stream: myDocStream,
+                        builder: (context, mySnap) {
+                          // ✅ cache my user doc to avoid flashing
+                          final myDataCandidate = _safeDataFromSnapshot(mySnap, _cachedMyData);
+                          if (myDataCandidate != null) _cachedMyData = myDataCandidate;
+                          final myData = myDataCandidate ?? const <String, dynamic>{};
 
-                          final data = snapshot.data!.data()!;
-                          final firstName = data['firstName'] ?? '';
-                          final lastName = data['lastName'] ?? '';
-                          final fullName = '$firstName $lastName'.trim();
-                          final avatarType = (data['avatarType'] ?? 'bear').toString();
-                          final profileUrl = (data['profileUrl'] ?? '').toString();
-                          final gender = (data['gender'] ?? '').toString();
-                          final isActive = data['isActive'] != false;
+                          final myBlockedDynamic =
+                              (myData['blockedUserIds'] as List<dynamic>?) ?? const [];
+                          final myBlocked = myBlockedDynamic.map((e) => e.toString()).toList();
+                          final isBlockedByMe =
+                              currentUid != null && myBlocked.contains(widget.userId);
 
-                          final theirBlockedDynamic =
-                              (data['blockedUserIds'] as List<dynamic>?) ?? const [];
-                          final theirBlocked =
-                          theirBlockedDynamic.whereType<String>().toList();
-                          final hasBlockedMe =
-                              currentUid != null && theirBlocked.contains(currentUid);
+                          return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                            stream: FirebaseFirestore.instance
+                                .collection('users')
+                                .doc(widget.userId)
+                                .snapshots(),
+                            builder: (context, snapshot) {
+                              // ✅ cache target profile doc to avoid shimmer on return
+                              final userDataCandidate =
+                              _safeDataFromSnapshot(snapshot, _cachedUserData);
 
-                          final rawIsOnline = data['isOnline'] == true && isActive;
-                          final lastSeen = data['lastSeen'] is Timestamp
-                              ? data['lastSeen'] as Timestamp
-                              : null;
+                              if (userDataCandidate != null) _cachedUserData = userDataCandidate;
 
-                          final effectiveOnline = !hasBlockedMe &&
-                              _isOnlineWithTtl(
-                                rawIsOnline: rawIsOnline,
-                                lastSeen: lastSeen,
-                              );
-
-                          final (presenceLabel, presenceColor) = _buildPresenceStatus(
-                            l10n,
-                            isActive: isActive,
-                            effectiveOnline: effectiveOnline,
-                          );
-
-                          DateTime? dob;
-                          final rawBirthday = data['birthday'];
-                          if (rawBirthday is Timestamp) {
-                            dob = rawBirthday.toDate();
-                          }
-                          final ageLabel = _ageLabel(dob, l10n);
-                          final birthdayLabel = dob != null
-                              ? DateFormat.yMMMd(l10n.localeName).format(dob)
-                              : l10n.unknown;
-
-                          // ✅ Keep the same hero tag so it matches full screen viewer
-                          final heroTag = 'profile_photo_${widget.userId}';
-
-                          // ✅ Use MwAvatar (keeps old glow animation + tap-to-view behavior)
-                          final avatar = GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: profileUrl.isEmpty
-                                ? null
-                                : () => _openProfilePhotoFullScreen(
-                              imageUrl: profileUrl,
-                              heroTag: heroTag,
-                            ),
-                            child: Stack(
-                              alignment: Alignment.center,
-                              children: [
-                                AnimatedBuilder(
-                                  animation: _glowController,
-                                  builder: (_, __) {
-                                    final glow = _glowController.value;
-                                    return Container(
-                                      width: 130,
-                                      height: 130,
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        gradient: RadialGradient(
-                                          colors: [
-                                            kPrimaryGold.withOpacity(0.3 + glow * 0.2),
-                                            kGoldDeep.withOpacity(0.2 + glow * 0.2),
-                                            Colors.transparent,
-                                          ],
-                                          stops: const [0.4, 0.8, 1],
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ),
-
-                                // ✅ MwAvatar is responsible for:
-                                // - network image
-                                // - fallback asset
-                                // - safe fallback icon
-                                // - ring/glow/dot/hero if you want
-                                MwAvatar(
-                                  heroTag: heroTag,
-                                  radius: 58, // ~116px diameter (same as before)
-                                  avatarType: avatarType,
-                                  profileUrl: profileUrl,
-                                  hideRealAvatar: false, // profile screen should show it
-                                  showRing: true,
-                                  // Do NOT show online dot on the big profile photo; status chip already shows it.
-                                  showOnlineDot: false,
-                                  // Optional: keep it clean; the outer animated glow already exists.
-                                  showOnlineGlow: false,
-                                  // Cache: keep default. If you have an updatedAt field, you can switch to refresh.
-                                  cachePolicy: MwAvatarCachePolicy.normal,
-                                ),
-
-                                if (profileUrl.isNotEmpty)
-                                  Positioned(
-                                    bottom: 2,
-                                    right: 2,
-                                    child: Container(
-                                      padding: const EdgeInsets.all(6),
-                                      decoration: BoxDecoration(
-                                        color: Colors.black.withOpacity(0.60),
-                                        shape: BoxShape.circle,
-                                        border: Border.all(
-                                          color: Colors.white.withOpacity(0.12),
-                                        ),
-                                      ),
-                                      child: const Icon(
-                                        Icons.zoom_in_rounded,
-                                        size: 18,
-                                        color: Colors.white,
-                                      ),
-                                    ),
+                              // Show shimmer ONLY if we have nothing cached yet (true first load)
+                              final hasAnyProfileData = userDataCandidate != null;
+                              if (!hasAnyProfileData) {
+                                // If stream is still connecting and we have no cache, show loader
+                                if (snapshot.connectionState == ConnectionState.waiting) {
+                                  return const _ShimmerLoader();
+                                }
+                                // If not found
+                                return Center(
+                                  child: Text(
+                                    l10n.userNotFound,
+                                    style: const TextStyle(color: Colors.white70),
                                   ),
-                              ],
-                            ),
-                          );
+                                );
+                              }
 
-                          return SingleChildScrollView(
-                            physics: const BouncingScrollPhysics(),
-                            padding: const EdgeInsets.all(24),
-                            child: Align(
-                              alignment: Alignment.topCenter,
-                              child: ConstrainedBox(
-                                constraints: const BoxConstraints(maxWidth: 540),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    avatar,
-                                    const SizedBox(height: 16),
-                                    Text(
-                                      fullName.isNotEmpty ? fullName : l10n.unknown,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 24,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                      textAlign: TextAlign.center,
+                              final data = userDataCandidate!;
+
+                              final firstName = (data['firstName'] ?? '').toString();
+                              final lastName = (data['lastName'] ?? '').toString();
+                              final fullName = '$firstName $lastName'.trim();
+
+                              final avatarType = (data['avatarType'] ?? 'bear').toString();
+                              final profileUrl = (data['profileUrl'] ?? '').toString();
+                              final gender = (data['gender'] ?? '').toString();
+                              final isActive = data['isActive'] != false;
+
+                              // Who they block (includes: if they blocked me)
+                              final theirBlockedDynamic =
+                                  (data['blockedUserIds'] as List<dynamic>?) ?? const [];
+                              final theirBlocked =
+                              theirBlockedDynamic.map((e) => e.toString()).toList();
+                              final hasBlockedMe =
+                                  currentUid != null && theirBlocked.contains(currentUid);
+
+                              final isBlockedRelationship = isBlockedByMe || hasBlockedMe;
+
+                              // Relationship doc stream: /users/{me}/friends/{them}
+                              final friendDocStream = (currentUid == null || isSelf)
+                                  ? null
+                                  : FirebaseFirestore.instance
+                                  .collection('users')
+                                  .doc(currentUid)
+                                  .collection('friends')
+                                  .doc(widget.userId)
+                                  .snapshots();
+
+                              return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                                stream: friendDocStream,
+                                builder: (context, relSnap) {
+                                  // ✅ cache relationship doc too (prevents banner/buttons flicker)
+                                  Map<String, dynamic>? relCandidate;
+                                  if (relSnap.hasData && relSnap.data != null && relSnap.data!.exists) {
+                                    relCandidate = relSnap.data!.data();
+                                  } else {
+                                    relCandidate = _cachedFriendData;
+                                  }
+                                  if (relCandidate != null) _cachedFriendData = relCandidate;
+
+                                  final friendStatus =
+                                  _normalizeFriendStatusFromDoc(relCandidate);
+
+                                  // Privacy decisions
+                                  final profileVisibility =
+                                  _readPrivacyValue(data, _fieldProfileVisibility);
+                                  final canViewProfile = _canViewProfile(
+                                    profileVisibility: profileVisibility,
+                                    friendStatus: friendStatus,
+                                    isBlockedRelationship: isBlockedRelationship,
+                                    isActive: isActive,
+                                  );
+
+                                  final presenceVisibility = _readPresenceVisibility(data);
+                                  final canSeePresence = _canSeePresence(
+                                    presenceVisibility: presenceVisibility,
+                                    friendStatus: friendStatus,
+                                    isBlockedRelationship: isBlockedRelationship,
+                                    isActive: isActive,
+                                  );
+
+                                  // Presence fields
+                                  final rawIsOnline = isActive && data['isOnline'] == true;
+                                  final lastSeen = data['lastSeen'] is Timestamp
+                                      ? data['lastSeen'] as Timestamp
+                                      : null;
+
+                                  final effectiveOnline = canSeePresence &&
+                                      _isOnlineWithTtl(
+                                        rawIsOnline: rawIsOnline,
+                                        lastSeen: lastSeen,
+                                      );
+
+                                  final (presenceLabel, presenceColor) =
+                                  _buildPresenceStatus(
+                                    l10n,
+                                    isActive: isActive,
+                                    effectiveOnline: effectiveOnline,
+                                  );
+
+                                  DateTime? dob;
+                                  final rawBirthday = data['birthday'];
+                                  if (rawBirthday is Timestamp) {
+                                    dob = rawBirthday.toDate();
+                                  }
+
+                                  // If profile is private, don’t show personal fields.
+                                  final ageLabel =
+                                  canViewProfile ? _ageLabel(dob, l10n) : l10n.unknown;
+                                  final birthdayLabel = (canViewProfile && dob != null)
+                                      ? DateFormat.yMMMd(l10n.localeName).format(dob)
+                                      : l10n.unknown;
+                                  String _localizedGender(
+                                      AppLocalizations l10n,
+                                      String gender,
+                                      bool canViewProfile,
+                                      ) {
+                                    if (!canViewProfile || gender.isEmpty) {
+                                      return l10n.notSpecified;
+                                    }
+
+                                    switch (gender.toLowerCase()) {
+                                      case 'male':
+                                        return l10n.male;
+                                      case 'female':
+                                        return l10n.female;
+                                      default:
+                                        return l10n.notSpecified;
+                                    }
+                                  }
+                                  final genderLabel = _localizedGender(
+                                    l10n,
+                                    gender,
+                                    canViewProfile,
+                                  );
+                                  // Show avatar image only if viewer can view profile & not blocked
+                                  final bool canShowProfilePhoto =
+                                      canViewProfile && !isBlockedRelationship;
+
+                                  final heroTag = 'profile_photo_${widget.userId}';
+
+                                  final avatar = GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTap: (!canShowProfilePhoto || profileUrl.isEmpty)
+                                        ? null
+                                        : () => _openProfilePhotoFullScreen(
+                                      imageUrl: profileUrl,
+                                      heroTag: heroTag,
                                     ),
-                                    const SizedBox(height: 12),
-                                    AnimatedContainer(
-                                      duration: const Duration(milliseconds: 400),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 14,
-                                        vertical: 6,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: presenceColor.withOpacity(0.20),
-                                        borderRadius: BorderRadius.circular(20),
-                                        border: Border.all(
-                                          color: presenceColor.withOpacity(0.8),
+                                    child: Stack(
+                                      alignment: Alignment.center,
+                                      children: [
+                                        AnimatedBuilder(
+                                          animation: _glowController,
+                                          builder: (_, __) {
+                                            final glow = _glowController.value;
+                                            return Container(
+                                              width: 130,
+                                              height: 130,
+                                              decoration: BoxDecoration(
+                                                shape: BoxShape.circle,
+                                                gradient: RadialGradient(
+                                                  colors: [
+                                                    kPrimaryGold.withOpacity(0.3 + glow * 0.2),
+                                                    kGoldDeep.withOpacity(0.2 + glow * 0.2),
+                                                    Colors.transparent,
+                                                  ],
+                                                  stops: const [0.4, 0.8, 1],
+                                                ),
+                                              ),
+                                            );
+                                          },
                                         ),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: presenceColor.withOpacity(0.35),
-                                            blurRadius: 10,
-                                            spreadRadius: 1,
-                                          ),
-                                        ],
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(Icons.circle, size: 10, color: presenceColor),
-                                          const SizedBox(width: 6),
-                                          Text(
-                                            presenceLabel,
-                                            style: TextStyle(
-                                              color: presenceColor,
-                                              fontWeight: FontWeight.w600,
+                                        MwAvatar(
+                                          heroTag: heroTag,
+                                          radius: 58,
+                                          avatarType: avatarType,
+                                          profileUrl: canShowProfilePhoto ? profileUrl : '',
+                                          hideRealAvatar: !canShowProfilePhoto,
+                                          showRing: true,
+                                          showOnlineDot: false,
+                                          showOnlineGlow: false,
+                                          cachePolicy: MwAvatarCachePolicy.normal,
+                                        ),
+                                        if (canShowProfilePhoto && profileUrl.isNotEmpty)
+                                          Positioned(
+                                            bottom: 2,
+                                            right: 2,
+                                            child: Container(
+                                              padding: const EdgeInsets.all(6),
+                                              decoration: BoxDecoration(
+                                                color: Colors.black.withOpacity(0.60),
+                                                shape: BoxShape.circle,
+                                                border: Border.all(
+                                                  color: Colors.white.withOpacity(0.12),
+                                                ),
+                                              ),
+                                              child: const Icon(
+                                                Icons.zoom_in_rounded,
+                                                size: 18,
+                                                color: Colors.white,
+                                              ),
                                             ),
                                           ),
-                                        ],
-                                      ),
+                                      ],
                                     ),
-                                    if (hasBlockedMe) ...[
-                                      const SizedBox(height: 10),
-                                      Text(
-                                        l10n.profileBlockedUserHintLimitedVisibility,
-                                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                          color: Colors.white60,
-                                        ),
-                                        textAlign: TextAlign.center,
-                                      ),
-                                    ],
-                                    const SizedBox(height: 24),
-                                    const Divider(color: Colors.white24),
-                                    const SizedBox(height: 16),
-                                    _InfoRow(
-                                      icon: Icons.cake_outlined,
-                                      label: l10n.ageLabel,
-                                      value: ageLabel,
-                                    ),
-                                    const SizedBox(height: 10),
-                                    _InfoRow(
-                                      icon: Icons.calendar_today_outlined,
-                                      label: l10n.birthdayLabel,
-                                      value: birthdayLabel,
-                                    ),
-                                    const SizedBox(height: 10),
-                                    _InfoRow(
-                                      icon: Icons.person_outline,
-                                      label: l10n.genderLabel,
-                                      value: gender.isEmpty
-                                          ? l10n.notSpecified
-                                          : gender[0].toUpperCase() + gender.substring(1),
-                                    ),
+                                  );
 
-                                    // ✅ Safety Tools (NO DUPLICATION: uses ReportUserDialog)
-                                    if (!isSelf && currentUid != null) ...[
-                                      const SizedBox(height: 28),
-                                      const Divider(color: Colors.white24),
-                                      const SizedBox(height: 12),
-                                      Align(
-                                        alignment: Alignment.centerLeft,
-                                        child: Text(
-                                          l10n.profileSafetyToolsSectionTitle,
-                                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                            color: Colors.white70,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 10),
-                                      StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                                        stream: FirebaseFirestore.instance
-                                            .collection('users')
-                                            .doc(currentUid)
-                                            .snapshots(),
-                                        builder: (context, mySnap) {
-                                          final myData = mySnap.data?.data() ?? {};
-                                          final myBlockedDynamic =
-                                              (myData['blockedUserIds'] as List<dynamic>?) ??
-                                                  const [];
-                                          final myBlocked =
-                                          myBlockedDynamic.map((e) => e.toString()).toList();
-                                          final isBlocked = myBlocked.contains(widget.userId);
+                                  // ✅ Safety tools ONLY for friends (accepted)
+                                  final bool canShowSafetyTools = !isSelf &&
+                                      currentUid != null &&
+                                      ChatFriendshipService.isFriends(friendStatus);
 
-                                          return Column(
-                                            children: [
-                                              SizedBox(
-                                                width: double.infinity,
-                                                child: ElevatedButton.icon(
-                                                  onPressed: _isBlocking
-                                                      ? null
-                                                      : () => _toggleBlockUser(
-                                                    context,
-                                                    currentUid: currentUid,
-                                                    currentlyBlocked: isBlocked,
+                                  return SingleChildScrollView(
+                                    key: PageStorageKey<String>('user_profile_${widget.userId}'),
+                                    physics: const BouncingScrollPhysics(),
+                                    padding: const EdgeInsets.all(24),
+                                    child: Align(
+                                      alignment: Alignment.topCenter,
+                                      child: ConstrainedBox(
+                                        constraints: const BoxConstraints(maxWidth: 540),
+                                        child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            avatar,
+                                            const SizedBox(height: 16),
+                                            Text(
+                                              fullName.isNotEmpty ? fullName : l10n.unknown,
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 24,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                              textAlign: TextAlign.center,
+                                            ),
+                                            const SizedBox(height: 12),
+
+                                            // Presence chip (respects privacy)
+                                            AnimatedContainer(
+                                              duration: const Duration(milliseconds: 400),
+                                              padding: const EdgeInsets.symmetric(
+                                                horizontal: 14,
+                                                vertical: 6,
+                                              ),
+                                              decoration: BoxDecoration(
+                                                color: presenceColor.withOpacity(0.20),
+                                                borderRadius: BorderRadius.circular(20),
+                                                border: Border.all(
+                                                  color: presenceColor.withOpacity(0.8),
+                                                ),
+                                                boxShadow: [
+                                                  BoxShadow(
+                                                    color: presenceColor.withOpacity(0.35),
+                                                    blurRadius: 10,
+                                                    spreadRadius: 1,
                                                   ),
-                                                  icon: Icon(
-                                                    isBlocked ? Icons.person_remove : Icons.block,
-                                                    size: 18,
-                                                  ),
-                                                  label: Text(
-                                                    isBlocked
-                                                        ? l10n.profileBlockButtonUnblock
-                                                        : l10n.profileBlockButtonBlock,
-                                                  ),
-                                                  style: ElevatedButton.styleFrom(
-                                                    backgroundColor: isBlocked
-                                                        ? Colors.red.withOpacity(0.45)
-                                                        : Colors.redAccent,
-                                                    foregroundColor: Colors.white,
-                                                    padding: const EdgeInsets.symmetric(vertical: 12),
-                                                    shape: RoundedRectangleBorder(
-                                                      borderRadius: BorderRadius.circular(24),
+                                                ],
+                                              ),
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Icon(Icons.circle, size: 10, color: presenceColor),
+                                                  const SizedBox(width: 6),
+                                                  Text(
+                                                    presenceLabel,
+                                                    style: TextStyle(
+                                                      color: presenceColor,
+                                                      fontWeight: FontWeight.w600,
                                                     ),
-                                                    elevation: 6,
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+
+                                            if (isBlockedRelationship) ...[
+                                              const SizedBox(height: 10),
+                                              Text(
+                                                l10n.profileBlockedUserHintLimitedVisibility,
+                                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                                  color: Colors.white60,
+                                                ),
+                                                textAlign: TextAlign.center,
+                                              ),
+                                            ] else if (!canViewProfile) ...[
+                                              const SizedBox(height: 10),
+                                              Text(
+                                                l10n.privacySectionTitle,
+                                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                                  color: Colors.white60,
+                                                ),
+                                                textAlign: TextAlign.center,
+                                              ),
+                                            ],
+
+                                            const SizedBox(height: 24),
+                                            const Divider(color: Colors.white24),
+                                            const SizedBox(height: 16),
+
+                                            _InfoRow(
+                                              icon: Icons.cake_outlined,
+                                              label: l10n.ageLabel,
+                                              value: ageLabel,
+                                            ),
+                                            const SizedBox(height: 10),
+                                            _InfoRow(
+                                              icon: Icons.calendar_today_outlined,
+                                              label: l10n.birthdayLabel,
+                                              value: birthdayLabel,
+                                            ),
+                                            const SizedBox(height: 10),
+                                            _InfoRow(
+                                              icon: Icons.person_outline,
+                                              label: l10n.genderLabel,
+                                              value: genderLabel,
+                                            ),
+
+                                            // ✅ Safety Tools (friends only)
+                                            if (canShowSafetyTools) ...[
+                                              const SizedBox(height: 28),
+                                              const Divider(color: Colors.white24),
+                                              const SizedBox(height: 12),
+                                              Align(
+                                                alignment: AlignmentDirectional.centerStart,
+                                                child: Text(
+                                                  l10n.profileSafetyToolsSectionTitle,
+                                                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                                    color: Colors.white70,
+                                                    fontWeight: FontWeight.w600,
                                                   ),
                                                 ),
                                               ),
                                               const SizedBox(height: 10),
-                                              SizedBox(
-                                                width: double.infinity,
-                                                child: OutlinedButton.icon(
-                                                  onPressed: () => ReportUserDialog.open(
-                                                    context,
-                                                    reportedUserId: widget.userId,
-                                                    reporterUserIdOverride: currentUid,
-                                                  ),
-                                                  icon: const Icon(Icons.flag_outlined, size: 18),
-                                                  label: Text(l10n.profileReportButtonLabel),
-                                                  style: OutlinedButton.styleFrom(
-                                                    foregroundColor: kGoldDeep,
-                                                    side: const BorderSide(
-                                                      color: kGoldDeep,
-                                                      width: 1.4,
+                                              Column(
+                                                children: [
+                                                  SizedBox(
+                                                    width: double.infinity,
+                                                    child: ElevatedButton.icon(
+                                                      onPressed: (_isBlocking || currentUid == null)
+                                                          ? null
+                                                          : () => _toggleBlockUser(
+                                                        context,
+                                                        currentUid: currentUid,
+                                                        currentlyBlocked: isBlockedByMe,
+                                                      ),
+                                                      icon: Icon(
+                                                        isBlockedByMe
+                                                            ? Icons.person_remove
+                                                            : Icons.block,
+                                                        size: 18,
+                                                      ),
+                                                      label: Text(
+                                                        isBlockedByMe
+                                                            ? l10n.profileBlockButtonUnblock
+                                                            : l10n.profileBlockButtonBlock,
+                                                      ),
+                                                      style: ElevatedButton.styleFrom(
+                                                        backgroundColor: isBlockedByMe
+                                                            ? Colors.red.withOpacity(0.45)
+                                                            : Colors.redAccent,
+                                                        foregroundColor: Colors.white,
+                                                        padding: const EdgeInsets.symmetric(vertical: 12),
+                                                        shape: RoundedRectangleBorder(
+                                                          borderRadius: BorderRadius.circular(24),
+                                                        ),
+                                                        elevation: 6,
+                                                      ),
                                                     ),
-                                                    padding: const EdgeInsets.symmetric(vertical: 12),
-                                                    shape: RoundedRectangleBorder(
-                                                      borderRadius: BorderRadius.circular(24),
-                                                    ),
-                                                    backgroundColor: Colors.black.withOpacity(0.35),
                                                   ),
-                                                ),
+                                                  const SizedBox(height: 10),
+                                                  SizedBox(
+                                                    width: double.infinity,
+                                                    child: OutlinedButton.icon(
+                                                      onPressed: () => ReportUserDialog.open(
+                                                        context,
+                                                        reportedUserId: widget.userId,
+                                                        reporterUserIdOverride: currentUid,
+                                                      ),
+                                                      icon: const Icon(Icons.flag_outlined, size: 18),
+                                                      label: Text(l10n.profileReportButtonLabel),
+                                                      style: OutlinedButton.styleFrom(
+                                                        foregroundColor: kGoldDeep,
+                                                        side: const BorderSide(
+                                                          color: kGoldDeep,
+                                                          width: 1.4,
+                                                        ),
+                                                        padding: const EdgeInsets.symmetric(vertical: 12),
+                                                        shape: RoundedRectangleBorder(
+                                                          borderRadius: BorderRadius.circular(24),
+                                                        ),
+                                                        backgroundColor: Colors.black.withOpacity(0.35),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
                                               ),
                                             ],
-                                          );
-                                        },
+                                          ],
+                                        ),
                                       ),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                            ),
+                                    ),
+                                  );
+                                },
+                              );
+                            },
                           );
                         },
                       ),
@@ -720,9 +918,6 @@ class _ShimmerLoader extends StatelessWidget {
 }
 
 // ✅ Full-screen image viewer (Instagram-like) WITH CACHED NETWORK IMAGE
-// - pinch zoom + pan
-// - double-tap zoom
-// - swipe-down to dismiss (only when not zoomed)
 class _FullScreenImageViewer extends StatefulWidget {
   final String imageUrl;
   final String heroTag;

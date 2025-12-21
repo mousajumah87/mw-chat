@@ -7,14 +7,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../screens/home/invite_friends.dart';
+import '../../screens/profile/presence_privacy_screen.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/presence_service.dart';
 import '../../utils/locale_provider.dart';
 import '../../screens/about/about_screen.dart';
 import '../../screens/profile/profile_screen.dart';
 import 'mw_language_button.dart';
-
-// ✅ shared avatar widget (bear/smurf assets)
 import 'mw_avatar.dart';
 
 class MwAppHeader extends StatefulWidget implements PreferredSizeWidget {
@@ -100,7 +100,6 @@ class _MwAppHeaderState extends State<MwAppHeader>
 
         return Stack(
           children: [
-            // dim + blur background
             Positioned.fill(
               child: GestureDetector(
                 behavior: HitTestBehavior.translucent,
@@ -111,8 +110,6 @@ class _MwAppHeaderState extends State<MwAppHeader>
                 ),
               ),
             ),
-
-            // menu panel
             PositionedDirectional(
               top: topPadding + headerHeight + 10,
               start: 12,
@@ -200,7 +197,6 @@ class _MwAppHeaderState extends State<MwAppHeader>
                   ],
                 ),
               ),
-
               if (widget.showTabs && tabBar != null)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(14, 4, 14, 12),
@@ -223,7 +219,6 @@ class _MwAppHeaderState extends State<MwAppHeader>
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(16),
                       child: Theme(
-                        // ✅ ensures NO default blue splash/highlight in TabBar
                         data: Theme.of(context).copyWith(
                           splashColor: Colors.transparent,
                           highlightColor: Colors.transparent,
@@ -311,9 +306,6 @@ class _MenuPanel extends StatelessWidget {
     final currentUser = FirebaseAuth.instance.currentUser;
     final l10n = AppLocalizations.of(context);
 
-    final locale = context.watch<LocaleProvider>().locale;
-    final isArabic = locale.languageCode.toLowerCase() == 'ar';
-
     Future<void> closeThen(VoidCallback action) async {
       await onClose(immediate: true, updateState: true);
       Future.microtask(() {
@@ -346,26 +338,25 @@ class _MenuPanel extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // ✅ Language row: no overflow + consistent row sizing/alignment
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10),
               child: _MenuTile(
-                leading: Icon(Icons.language_rounded, color: kOffWhite.withOpacity(0.92)),
-                title: l10n?.languageLabel ?? (isArabic ? 'اللغة' : 'Language'),
-                trailing: Directionality(
-                  textDirection: TextDirection.ltr,
-                  child: Transform.scale(
-                    scale: 0.82,
-                    alignment: Alignment.centerRight,
-                    child: MwLanguageButton(
-                      onChanged: () {
-                        Future.microtask(() => onClose(immediate: true, updateState: true));
-                      },
-                    ),
-                  ),
+                leading: Icon(
+                  Icons.language_rounded,
+                  color: kOffWhite.withOpacity(0.92),
+                  size: 22,
+                ),
+                title: '',
+                isLanguageRow: true,
+                trailing: MwLanguageButton(
+                  onChanged: () {
+                    Future.microtask(() => onClose(immediate: true, updateState: true));
+                  },
                 ),
                 onTap: () {
-                  Future.microtask(() => onClose(immediate: true, updateState: true));
-                  context.read<LocaleProvider>().setLocale(Locale(isArabic ? 'en' : 'ar'));
+                  // tapping the row does nothing now (toggle handles changes)
+                  // keep it safe (avoid accidental double toggle)
                 },
               ),
             ),
@@ -385,10 +376,55 @@ class _MenuPanel extends StatelessWidget {
                 ),
               ),
 
+            // ✅ Privacy
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10),
               child: _MenuTile(
-                leading: Icon(Icons.info_outline_rounded, color: kOffWhite.withOpacity(0.92)),
+                leading: Icon(
+                  Icons.privacy_tip_outlined,
+                  color: kOffWhite.withOpacity(0.92),
+                  size: 22,
+                ),
+                title: l10n?.privacyTitle ?? 'Privacy',
+                onTap: () {
+                  closeThen(() {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const PresencePrivacyScreen()),
+                    );
+                  });
+                },
+              ),
+            ),
+
+            // ✅ NEW: Invite Friends (place it here: after Privacy, before About)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: _MenuTile(
+                leading: Icon(
+                  Icons.group_add_outlined,
+                  color: kOffWhite.withOpacity(0.92),
+                  size: 22,
+                ),
+                title: l10n?.inviteFriendsTitle ?? 'Invite Friends',
+                onTap: () {
+                  closeThen(() {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const InviteFriendsTab()),
+                    );
+                  });
+                },
+              ),
+            ),
+
+            // ✅ About
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: _MenuTile(
+                leading: Icon(
+                  Icons.info_outline_rounded,
+                  color: kOffWhite.withOpacity(0.92),
+                  size: 22,
+                ),
                 title: l10n?.aboutTitle ?? 'About MW Chat',
                 onTap: () {
                   closeThen(() {
@@ -400,10 +436,15 @@ class _MenuPanel extends StatelessWidget {
               ),
             ),
 
+            // ✅ Logout (keep last)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10),
               child: _MenuTile(
-                leading: Icon(Icons.logout_rounded, color: kOffWhite.withOpacity(0.92)),
+                leading: Icon(
+                  Icons.logout_rounded,
+                  color: kOffWhite.withOpacity(0.92),
+                  size: 22,
+                ),
                 title: l10n?.logout ?? 'Logout',
                 onTap: () {
                   closeThen(() async {
@@ -418,6 +459,7 @@ class _MenuPanel extends StatelessWidget {
             ),
           ],
         ),
+
       ),
     );
   }
@@ -429,38 +471,77 @@ class _MenuTile extends StatelessWidget {
   final Widget? trailing;
   final VoidCallback? onTap;
 
+  /// When true: trailing expands into remaining width (language row)
+  final bool isLanguageRow;
+
   const _MenuTile({
     required this.leading,
     required this.title,
     this.trailing,
     this.onTap,
+    this.isLanguageRow = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final hasTitle = title.trim().isNotEmpty;
+
+    const double leadingSlotW = 34.0;
+    const double rowMinH = 48.0;
+    const double hPad = 12.0;
+
+    final double gapAfterLeading = hasTitle ? 10.0 : 8.0;
+
     return InkWell(
       borderRadius: BorderRadius.circular(14),
       onTap: onTap,
       splashColor: kPrimaryGold.withOpacity(0.10),
       highlightColor: kPrimaryGold.withOpacity(0.06),
-      child: Padding(
-        padding: const EdgeInsetsDirectional.fromSTEB(10, 10, 10, 10),
-        child: Row(
-          children: [
-            SizedBox(width: 30, child: Center(child: leading)),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                title,
-                style: TextStyle(
-                  color: kOffWhite.withOpacity(0.92),
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: rowMinH),
+        child: Padding(
+          padding: const EdgeInsetsDirectional.fromSTEB(hPad, 10, hPad, 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              SizedBox(width: leadingSlotW, child: Center(child: leading)),
+              SizedBox(width: gapAfterLeading),
+
+              if (hasTitle)
+                Expanded(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: kOffWhite.withOpacity(0.92),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      height: 1.15,
+                    ),
+                  ),
                 ),
-              ),
-            ),
-            if (trailing != null) trailing!,
-          ],
+
+              if (trailing != null)
+                if (isLanguageRow)
+                  Expanded(
+                    child: Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: FittedBox(
+                        // ✅ prevents overflow on extremely tiny widths while keeping good size normally
+                        fit: BoxFit.scaleDown,
+                        alignment: AlignmentDirectional.centerStart,
+                        child: trailing!,
+                      ),
+                    ),
+                  )
+                else
+                  Padding(
+                    padding: const EdgeInsetsDirectional.only(start: 8),
+                    child: trailing!,
+                  ),
+            ],
+          ),
         ),
       ),
     );
@@ -496,29 +577,40 @@ class _ProfileTile extends StatelessWidget {
           onTap: onTap,
           splashColor: kPrimaryGold.withOpacity(0.10),
           highlightColor: kPrimaryGold.withOpacity(0.06),
-          child: Padding(
-            padding: const EdgeInsetsDirectional.fromSTEB(10, 10, 10, 10),
-            child: Row(
-              children: [
-                MwAvatar(
-                  radius: 16,
-                  avatarType: avatarType,
-                  profileUrl: profileUrl,
-                  hideRealAvatar: false,
-                  backgroundColor: kOffWhite,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    l10n?.profileTitle ?? 'Profile',
-                    style: TextStyle(
-                      color: kOffWhite.withOpacity(0.92),
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 48),
+            child: Padding(
+              padding: const EdgeInsetsDirectional.fromSTEB(12, 10, 12, 10),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 34,
+                    child: Center(
+                      child: MwAvatar(
+                        radius: 14,
+                        avatarType: avatarType,
+                        profileUrl: profileUrl,
+                        hideRealAvatar: false,
+                        backgroundColor: kOffWhite,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      l10n?.profileTitle ?? 'Profile',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: kOffWhite.withOpacity(0.92),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        height: 1.15,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         );

@@ -81,10 +81,21 @@ class AppLocalizationsAr extends AppLocalizations {
   String get failedToCreateUser => 'فشل إنشاء المستخدم';
 
   @override
-  String get languageLabel => 'اللغة';
+  String get forgotPassword => 'نسيت كلمة المرور؟';
 
   @override
-  String get menuTitle => 'القائمة';
+  String get resetPasswordTitle => 'إعادة تعيين كلمة المرور';
+
+  @override
+  String get resetEmailSent =>
+      'تم إرسال رابط إعادة تعيين كلمة المرور. تحقق من بريدك الإلكتروني.';
+
+  @override
+  String get resetEmailIfExists =>
+      'إذا كان هذا البريد الإلكتروني موجودًا، فستتلقى رابط إعادة التعيين.';
+
+  @override
+  String get tooManyRequests => 'محاولات كثيرة. يرجى المحاولة لاحقًا.';
 
   @override
   String get settingUpProfile => 'جارٍ إعداد ملفك الشخصي...';
@@ -93,7 +104,8 @@ class AppLocalizationsAr extends AppLocalizations {
   String get accountNotActive => 'حسابك غير مفعّل بعد.';
 
   @override
-  String get waitForActivation => 'يرجى الانتظار حتى يتم تفعيل حسابك من قبل المسؤول.';
+  String get waitForActivation =>
+      'يرجى الانتظار حتى يتم تفعيل حسابك من قبل المسؤول.';
 
   @override
   String get notLoggedIn => 'غير مسجل الدخول';
@@ -106,6 +118,12 @@ class AppLocalizationsAr extends AppLocalizations {
 
   @override
   String get goBack => 'الرجوع';
+
+  @override
+  String get autoUpdateNotice => 'سيتم تحديث هذه الشاشة تلقائيًا عند التفعيل.';
+
+  @override
+  String get checkAgain => 'تحقق مرة أخرى';
 
   @override
   String get profileTitle => 'الملف الشخصي';
@@ -146,6 +164,27 @@ class AppLocalizationsAr extends AppLocalizations {
   String get unknown => 'غير معروف';
 
   @override
+  String get languageLabel => 'اللغة';
+
+  @override
+  String get menuTitle => 'القائمة';
+
+  @override
+  String get profile => 'الملف الشخصي';
+
+  @override
+  String get viewProfile => 'عرض الملف الشخصي';
+
+  @override
+  String get viewFriendProfile => 'عرض ملف الصديق';
+
+  @override
+  String get viewMyProfile => 'عرض ملفي الشخصي';
+
+  @override
+  String get removePhoto => 'إزالة الصورة';
+
+  @override
   String get usersTitle => 'الأصدقاء';
 
   @override
@@ -180,24 +219,6 @@ class AppLocalizationsAr extends AppLocalizations {
 
   @override
   String get noOtherUsers => 'لا يوجد أصدقاء آخرون';
-
-  @override
-  String get profile => 'الملف الشخصي';
-
-  @override
-  String get viewProfile => 'عرض الملف الشخصي';
-
-  @override
-  String get viewFriendProfile => 'عرض ملف الصديق';
-
-  @override
-  String get viewMyProfile => 'عرض ملفي الشخصي';
-
-  @override
-  String get autoUpdateNotice => 'سيتم تحديث هذه الشاشة تلقائيًا عند التفعيل.';
-
-  @override
-  String get checkAgain => 'تحقق مرة أخرى';
 
   @override
   String get typeMessageHint => 'اكتب رسالة...';
@@ -276,13 +297,16 @@ class AppLocalizationsAr extends AppLocalizations {
   String get attachFileFromDevice => 'ملف من الجهاز';
 
   @override
-  String get voiceNotSupportedWeb => 'الرسائل الصوتية غير مدعومة على الويب بعد.';
+  String get voiceNotSupportedWeb =>
+      'الرسائل الصوتية غير مدعومة على الويب بعد.';
 
   @override
-  String get microphonePermissionRequired => 'يتطلب تسجيل الصوت منح إذن الوصول إلى الميكروفون.';
+  String get microphonePermissionRequired =>
+      'يتطلب تسجيل الصوت منح إذن الوصول إلى الميكروفون.';
 
   @override
-  String get holdMicToRecord => 'اضغط باستمرار على الميكروفون لتسجيل رسالة صوتية';
+  String get holdMicToRecord =>
+      'اضغط باستمرار على الميكروفون لتسجيل رسالة صوتية';
 
   @override
   String get previewVoiceMessage => 'معاينة الرسالة الصوتية';
@@ -292,9 +316,6 @@ class AppLocalizationsAr extends AppLocalizations {
 
   @override
   String get genericFileLabel => 'ملف';
-
-  @override
-  String get removePhoto => 'إزالة الصورة';
 
   @override
   String get websiteDomain => 'mwchats.com';
@@ -326,7 +347,12 @@ class AppLocalizationsAr extends AppLocalizations {
   String get deleteChatTitle => 'حذف المحادثة';
 
   @override
-  String get deleteChatWarning => 'هل أنت متأكد أنك تريد حذف هذه المحادثة؟ لا يمكن التراجع عن هذا الإجراء.';
+  String get deleteChatWarning =>
+      'هل أنت متأكد أنك تريد حذف هذه المحادثة؟ لا يمكن التراجع عن هذا الإجراء.';
+
+  @override
+  String get deleteChatDescription =>
+      'هل أنت متأكد أنك تريد حذف سجل هذه المحادثة؟ لا يمكن التراجع عن هذا الإجراء.';
 
   @override
   String get delete => 'حذف';
@@ -341,9 +367,6 @@ class AppLocalizationsAr extends AppLocalizations {
   String get chatHistoryDeleteFailed => 'فشل حذف سجل المحادثة';
 
   @override
-  String get deleteChatDescription => 'هل أنت متأكد أنك تريد حذف سجل هذه المحادثة؟ لا يمكن التراجع عن هذا الإجراء.';
-
-  @override
   String get chatHistoryDeleted => 'تم حذف سجل المحادثة بنجاح';
 
   @override
@@ -356,13 +379,16 @@ class AppLocalizationsAr extends AppLocalizations {
   String get inviteContactsTabTitle => 'دعوة جهات الاتصال';
 
   @override
-  String get inviteFromContactsFuture => 'دعوة الأصدقاء مباشرةً من جهات الاتصال ستكون متاحة في تحديث قادم من تطبيق MW Chat.';
+  String get inviteFromContactsFuture =>
+      'ادعُ أصدقاءك إلى MW Chat وابقَ على تواصل معهم.';
 
   @override
-  String get inviteShareManual => 'حالياً، يمكنك مشاركة تطبيق MW Chat مع أصدقائك من خلال إرسال رابط التطبيق لهم يدوياً.';
+  String get inviteShareManual =>
+      'يمكنك تنزيل تطبيق MW Chat من خلال الروابط التالية:';
 
   @override
-  String get contactsPermissionDenied => 'لا يمكننا الوصول إلى جهات الاتصال لديك. يرجى تفعيل إذن جهات الاتصال من الإعدادات لدعوة أصدقائك.';
+  String get contactsPermissionDenied =>
+      'لا يمكننا الوصول إلى جهات الاتصال لديك. يرجى تفعيل إذن جهات الاتصال من الإعدادات لدعوة أصدقائك.';
 
   @override
   String get noContactsFound => 'لا توجد جهات اتصال تحتوي على أرقام هاتف.';
@@ -371,7 +397,11 @@ class AppLocalizationsAr extends AppLocalizations {
   String get inviteSubject => 'انضم إليّ في MW Chat';
 
   @override
-  String inviteMessageTemplate(Object androidLink, Object iosLink, Object name) {
+  String inviteMessageTemplate(
+    Object androidLink,
+    Object iosLink,
+    Object name,
+  ) {
     return 'مرحباً $name، أستخدم تطبيق MW Chat للتواصل. يمكنك تحميله من هنا:\nأندرويد: $androidLink\nآيفون: $iosLink\nأراك هناك!';
   }
 
@@ -381,7 +411,17 @@ class AppLocalizationsAr extends AppLocalizations {
   }
 
   @override
-  String get inviteWebNotSupported => 'دعوة جهات الاتصال من دفتر العناوين غير مدعومة على نسخة الويب. يرجى استخدام تطبيق الهاتف بدلاً من ذلك.';
+  String get inviteWebNotSupported =>
+      'دعوة جهات الاتصال من دفتر العناوين غير مدعومة على نسخة الويب. يرجى استخدام تطبيق الهاتف بدلاً من ذلك.';
+
+  @override
+  String get invitePlatformAndroid => 'أندرويد';
+
+  @override
+  String get invitePlatformIos => 'آيفون';
+
+  @override
+  String get invitePlatformWeb => 'الموقع الإلكتروني';
 
   @override
   String get search => 'بحث';
@@ -417,6 +457,10 @@ class AppLocalizationsAr extends AppLocalizations {
   String get friendSectionInactiveUsers => 'المستخدمون غير النشطين';
 
   @override
+  String get friendRequestAlreadyIncoming =>
+      'هذا المستخدم أرسل لك طلب صداقة بالفعل. تحقّق من طلبات الصداقة.';
+
+  @override
   String get friendRequestSent => 'تم إرسال طلب الصداقة';
 
   @override
@@ -435,22 +479,35 @@ class AppLocalizationsAr extends AppLocalizations {
   String get friendRequestDeclineFailed => 'فشل في رفض طلب الصداقة';
 
   @override
-  String get friendshipInfoOutgoing => 'تم إرسال طلب الصداقة. يرجى الانتظار لحين الموافقة.';
+  String get friendRequestCancelled => 'تم إلغاء طلب الصداقة';
 
   @override
-  String get friendshipInfoIncoming => 'لديك طلب صداقة معلق. قم بقبوله لبدء الدردشة.';
+  String get friendRequestIncomingBanner =>
+      'قام هذا المستخدم بإرسال طلب صداقة إليك.';
 
   @override
-  String get friendshipInfoNotFriends => 'يجب أن تكون صديقًا لهذا المستخدم لتتمكن من إرسال الرسائل.';
+  String get friendshipInfoOutgoing =>
+      'تم إرسال طلب الصداقة. يرجى الانتظار لحين الموافقة.';
 
   @override
-  String get friendshipFileInfoOutgoing => 'تم إرسال طلب الصداقة. يمكنك إرسال الملفات بعد قبول الطلب.';
+  String get friendshipInfoIncoming =>
+      'لديك طلب صداقة معلق. قم بقبوله لبدء الدردشة.';
 
   @override
-  String get friendshipFileInfoIncoming => 'لديك طلب صداقة معلق. قم بقبوله لمشاركة الملفات.';
+  String get friendshipInfoNotFriends =>
+      'يجب أن تكون صديقًا لهذا المستخدم لتتمكن من إرسال الرسائل.';
 
   @override
-  String get friendshipFileInfoNotFriends => 'أرسل طلب صداقة لبدء مشاركة الملفات.';
+  String get friendshipFileInfoOutgoing =>
+      'تم إرسال طلب الصداقة. يمكنك إرسال الملفات بعد قبول الطلب.';
+
+  @override
+  String get friendshipFileInfoIncoming =>
+      'لديك طلب صداقة معلق. قم بقبوله لمشاركة الملفات.';
+
+  @override
+  String get friendshipFileInfoNotFriends =>
+      'أرسل طلب صداقة لبدء مشاركة الملفات.';
 
   @override
   String friendshipBannerNotFriends(Object name) {
@@ -471,37 +528,45 @@ class AppLocalizationsAr extends AppLocalizations {
   }
 
   @override
-  String get friendshipCannotSendOutgoing => 'تم إرسال طلب الصداقة. ستتمكن من الدردشة بعد قبول الطلب.';
+  String get friendshipCannotSendOutgoing =>
+      'تم إرسال طلب الصداقة. ستتمكن من الدردشة بعد قبول الطلب.';
 
   @override
-  String get friendshipCannotSendIncoming => 'قم بقبول طلب الصداقة أعلاه لبدء الدردشة.';
+  String get friendshipCannotSendIncoming =>
+      'قم بقبول طلب الصداقة أعلاه لبدء الدردشة.';
 
   @override
-  String get friendshipCannotSendNotFriends => 'أرسل طلب صداقة أعلاه لبدء الدردشة.';
+  String get friendshipCannotSendNotFriends =>
+      'أرسل طلب صداقة أعلاه لبدء الدردشة.';
 
   @override
   String get blockUserTitle => 'حظر المستخدم';
 
   @override
-  String get blockUserDescription => 'سيؤدي حظر هذا المستخدم إلى منعه من التواصل معك، ولن تتلقى رسائل جديدة منه.';
+  String get blockUserDescription =>
+      'سيؤدي حظر هذا المستخدم إلى منعه من التواصل معك، ولن تتلقى رسائل جديدة منه.';
 
   @override
   String get userBlocked => 'تم حظر المستخدم.';
 
   @override
-  String get userBlockedInfo => 'لقد قمت بحظر هذا المستخدم. لا يمكنك إرسال أو استقبال رسائل جديدة معه.';
+  String get userBlockedInfo =>
+      'لقد قمت بحظر هذا المستخدم. لا يمكنك إرسال أو استقبال رسائل جديدة معه.';
 
   @override
-  String get blockedUserBanner => 'لقد قمت بحظر هذا المستخدم. لن تصلك رسائل منه بعد الآن.';
+  String get blockedUserBanner =>
+      'لقد قمت بحظر هذا المستخدم. لن تصلك رسائل منه بعد الآن.';
 
   @override
-  String get blockedByUserBanner => 'قام هذا المستخدم بحظرك. لا يمكنك إرسال رسائل في هذه المحادثة.';
+  String get blockedByUserBanner =>
+      'قام هذا المستخدم بحظرك. لا يمكنك إرسال رسائل في هذه المحادثة.';
 
   @override
   String get unblockUserTitle => 'إلغاء حظر المستخدم';
 
   @override
-  String get unblockUserDescription => 'هل تريد إلغاء حظر هذا المستخدم؟ ستبدأ برؤية الرسائل الجديدة منه مرة أخرى.';
+  String get unblockUserDescription =>
+      'هل تريد إلغاء حظر هذا المستخدم؟ ستبدأ برؤية الرسائل الجديدة منه مرة أخرى.';
 
   @override
   String get unblockUserConfirm => 'إلغاء الحظر';
@@ -513,7 +578,8 @@ class AppLocalizationsAr extends AppLocalizations {
   String get removeFriendTitle => 'إزالة الصديق';
 
   @override
-  String get removeFriendDescription => 'سيتم إزالة هذا الشخص من قائمة أصدقائك. ما زال بإمكانك الدردشة معه إذا سمحت إعدادات الخصوصية بذلك.';
+  String get removeFriendDescription =>
+      'سيتم إزالة هذا الشخص من قائمة أصدقائك. ما زال بإمكانك الدردشة معه إذا سمحت إعدادات الخصوصية بذلك.';
 
   @override
   String get removeFriendConfirm => 'إزالة';
@@ -525,13 +591,15 @@ class AppLocalizationsAr extends AppLocalizations {
   String get reportMessageTitle => 'الإبلاغ عن رسالة';
 
   @override
-  String get reportMessageHint => 'صف سبب الإبلاغ عن هذه الرسالة (تحرش، إزعاج، محتوى غير لائق، إلخ...)';
+  String get reportMessageHint =>
+      'صف سبب الإبلاغ عن هذه الرسالة (تحرش، إزعاج، محتوى غير لائق، إلخ...)';
 
   @override
   String get reportUserTitle => 'الإبلاغ عن مستخدم';
 
   @override
-  String get reportUserHint => 'صف المشكلة (تحرش، إزعاج، محتوى غير لائق، إلخ...)';
+  String get reportUserHint =>
+      'صف المشكلة (تحرش، إزعاج، محتوى غير لائق، إلخ...)';
 
   @override
   String get reportUserReasonLabel => 'السبب';
@@ -540,13 +608,15 @@ class AppLocalizationsAr extends AppLocalizations {
   String get reportSubmitted => 'شكراً لك. تم إرسال بلاغك لمراجعته.';
 
   @override
-  String get messageContainsRestrictedContent => 'رسالتك تحتوي على كلمات غير مسموح بها في MW Chat.';
+  String get messageContainsRestrictedContent =>
+      'رسالتك تحتوي على كلمات غير مسموح بها في MW Chat.';
 
   @override
   String get contentBlockedTitle => 'لم يتم إرسال الرسالة';
 
   @override
-  String get contentBlockedBody => 'تحتوي رسالتك على كلمات غير مسموح بها في تطبيق MW Chat. يرجى تعديلها والمحاولة مرة أخرى.';
+  String get contentBlockedBody =>
+      'تحتوي رسالتك على كلمات غير مسموح بها في تطبيق MW Chat. يرجى تعديلها والمحاولة مرة أخرى.';
 
   @override
   String get dangerZone => 'إجراءات حساسة';
@@ -573,7 +643,7 @@ class AppLocalizationsAr extends AppLocalizations {
   String get deleteMessageSuccess => 'تم حذف الرسالة';
 
   @override
-  String get deleteMessageFailed => 'تعذر حذف الرسالة';
+  String get deleteMessageFailed => 'فشل حذف الرسالة';
 
   @override
   String get deletedForMe => 'تم الحذف لدي';
@@ -585,19 +655,23 @@ class AppLocalizationsAr extends AppLocalizations {
   String get deleteMyAccount => 'حذف حسابي';
 
   @override
-  String get deleteAccountWarning => 'سيؤدي هذا إلى حذف حسابك ورسائلك وبياناتك بشكل دائم. لا يمكن التراجع عن هذا الإجراء.';
+  String get deleteAccountWarning =>
+      'سيؤدي هذا إلى حذف حسابك ورسائلك وبياناتك بشكل دائم. لا يمكن التراجع عن هذا الإجراء.';
 
   @override
-  String get deleteAccountDescription => 'سيؤدي حذف حسابك إلى إزالة ملفك الشخصي ورسائلك وبياناتك المرتبطة بشكل دائم.';
+  String get deleteAccountDescription =>
+      'سيؤدي حذف حسابك إلى إزالة ملفك الشخصي ورسائلك وبياناتك المرتبطة بشكل دائم.';
 
   @override
-  String get loginAgainToDelete => 'يرجى تسجيل الدخول مرة أخرى ثم إعادة محاولة حذف الحساب';
+  String get loginAgainToDelete =>
+      'يرجى تسجيل الدخول مرة أخرى ثم إعادة محاولة حذف الحساب';
 
   @override
   String get deleteAccountFailed => 'فشل حذف الحساب.';
 
   @override
-  String get deleteAccountFailedRetry => 'فشل حذف الحساب. يرجى المحاولة مرة أخرى.';
+  String get deleteAccountFailedRetry =>
+      'فشل حذف الحساب. يرجى المحاولة مرة أخرى.';
 
   @override
   String get accountDeletedSuccessfully => 'تم حذف الحساب بنجاح';
@@ -609,10 +683,12 @@ class AppLocalizationsAr extends AppLocalizations {
   String get termsAcceptButton => 'أوافق';
 
   @override
-  String get termsBody => 'مرحباً بك في MW Chat!\n\nباستخدامك لهذا التطبيق، فإنك توافق على شروط الاستخدام التالية:\n\n1. عدم التسامح مع المحتوى غير اللائق\n• يُمنع إرسال أو مشاركة أي محتوى يتسم بالكراهية أو التحرش أو التهديد أو الإيحاءات الجنسية أو العنف أو التمييز أو أي محتوى ضار.\n• يُمنع التنمر أو الإساءة أو الترهيب لأي مستخدم آخر.\n• يُمنع انتحال شخصية الآخرين أو استخدام MW Chat للاحتيال أو أي نشاط غير قانوني.\n\n2. المحتوى الذي ينشئه المستخدمون\n• أنت تتحمل المسؤولية الكاملة عن الرسائل والمحتوى الذي ترسله.\n• يحق لتطبيق MW Chat إزالة أي محتوى يخالف هذه الشروط.\n• يحق لتطبيق MW Chat تعليق أو حظر أي مستخدم ينتهك هذه القواعد بشكل مؤقت أو دائم.\n\n3. الإبلاغ والحظر\n• يوفر MW Chat أدوات للإبلاغ عن المستخدمين وحظرهم في حال إساءة الاستخدام.\n• تتم مراجعة البلاغات بسرعة، ونعمل على اتخاذ الإجراءات المناسبة خلال 24 ساعة، بما في ذلك إزالة المحتوى المسيء و/أو تعطيل حساب المستخدم المخالف عند الحاجة.\n\n4. الخصوصية والسلامة\n• يُنصح بعدم مشاركة معلومات شخصية حساسة (مثل كلمات المرور أو المعلومات المالية أو الوثائق الرسمية) داخل المحادثات.\n• لمزيد من التفاصيل حول كيفية تعاملنا مع بياناتك، يُرجى مراجعة سياسة الخصوصية.\n\n5. إنهاء الاستخدام\n• في حال مخالفة شروط الاستخدام، قد يقوم MW Chat بتقييد أو إنهاء وصولك إلى الخدمة دون إشعار مسبق.\n\nإذا واجهت سلوكاً مسيئاً أو محتوى غير لائق، أو كانت لديك أسئلة حول هذه الشروط، يمكنك التواصل معنا عبر البريد الإلكتروني: support@mwchats.com.\n\nبالنقر على \"أوافق\"، فإنك تؤكد أنك قرأت هذه الشروط وفهمتها وتوافق عليها.';
+  String get termsBody =>
+      'مرحباً بك في MW Chat!\n\nباستخدامك لهذا التطبيق، فإنك توافق على شروط الاستخدام التالية:\n\n1. عدم التسامح مع المحتوى غير اللائق\n• يُمنع إرسال أو مشاركة أي محتوى يتسم بالكراهية أو التحرش أو التهديد أو الإيحاءات الجنسية أو العنف أو التمييز أو أي محتوى ضار.\n• يُمنع التنمر أو الإساءة أو الترهيب لأي مستخدم آخر.\n• يُمنع انتحال شخصية الآخرين أو استخدام MW Chat للاحتيال أو أي نشاط غير قانوني.\n\n2. المحتوى الذي ينشئه المستخدمون\n• أنت تتحمل المسؤولية الكاملة عن الرسائل والمحتوى الذي ترسله.\n• يحق لتطبيق MW Chat إزالة أي محتوى يخالف هذه الشروط.\n• يحق لتطبيق MW Chat تعليق أو حظر أي مستخدم ينتهك هذه القواعد بشكل مؤقت أو دائم.\n\n3. الإبلاغ والحظر\n• يوفر MW Chat أدوات للإبلاغ عن المستخدمين وحظرهم في حال إساءة الاستخدام.\n• تتم مراجعة البلاغات بسرعة، ونعمل على اتخاذ الإجراءات المناسبة خلال 24 ساعة، بما في ذلك إزالة المحتوى المسيء و/أو تعطيل حساب المستخدم المخالف عند الحاجة.\n\n4. الخصوصية والسلامة\n• يُنصح بعدم مشاركة معلومات شخصية حساسة (مثل كلمات المرور أو المعلومات المالية أو الوثائق الرسمية) داخل المحادثات.\n• لمزيد من التفاصيل حول كيفية تعاملنا مع بياناتك، يُرجى مراجعة سياسة الخصوصية.\n\n5. إنهاء الاستخدام\n• في حال مخالفة شروط الاستخدام، قد يقوم MW Chat بتقييد أو إنهاء وصولك إلى الخدمة دون إشعار مسبق.\n\nإذا واجهت سلوكاً مسيئاً أو محتوى غير لائق، أو كانت لديك أسئلة حول هذه الشروط، يمكنك التواصل معنا عبر البريد الإلكتروني: support@mwchats.com.\n\nبالنقر على \"أوافق\"، فإنك تؤكد أنك قرأت هذه الشروط وفهمتها وتوافق عليها.';
 
   @override
-  String get byRegisteringYouAgree => 'من خلال إنشاء حساب، فإنك توافق على شروط الاستخدام الخاصة بتطبيق MW Chat.';
+  String get byRegisteringYouAgree =>
+      'من خلال إنشاء حساب، فإنك توافق على شروط الاستخدام الخاصة بتطبيق MW Chat.';
 
   @override
   String get viewTermsLink => 'عرض شروط الاستخدام';
@@ -630,7 +706,8 @@ class AppLocalizationsAr extends AppLocalizations {
   String get iAgree => 'أوافق';
 
   @override
-  String get mustAcceptTerms => 'يجب عليك الموافقة على شروط الاستخدام قبل إنشاء الحساب.';
+  String get mustAcceptTerms =>
+      'يجب عليك الموافقة على شروط الاستخدام قبل إنشاء الحساب.';
 
   @override
   String get contactSupport => 'الاتصال بالدعم';
@@ -648,55 +725,47 @@ class AppLocalizationsAr extends AppLocalizations {
   String get aboutTitle => 'حول MW Chat';
 
   @override
-  String get aboutDescription => '‏MW Chat هو تطبيق مراسلة حديث للرسائل الخاصة، مُصمَّم لتواصل آمن وسلس.\n\nيمكنك الدردشة مع الأصدقاء، وإرسال الصور والفيديوهات والرسائل الصوتية من خلال واجهة بسيطة وسهلة الاستخدام. يركّز MW Chat على الخصوصية والسرعة والبساطة.\n\nالمميزات:\n• رسائل فورية في الوقت الحقيقي\n• مشاركة الوسائط (صور وفيديوهات)\n• تسجيل دخول آمن\n• تصميم بسيط وأنيق\n• تطبيق سريع وخفيف\n\nسواء للمحادثات الشخصية أو العائلية، يبقيك MW Chat على تواصل آمن وممتع.';
+  String get aboutDescription =>
+      '‏MW Chat هو تطبيق مراسلة حديث للرسائل الخاصة، مُصمَّم لتواصل آمن وسلس.\n\nيمكنك الدردشة مع الأصدقاء، وإرسال الصور والفيديوهات والرسائل الصوتية من خلال واجهة بسيطة وسهلة الاستخدام. يركّز MW Chat على الخصوصية والسرعة والبساطة.\n\nالمميزات:\n• رسائل فورية في الوقت الحقيقي\n• مشاركة الوسائط (صور وفيديوهات)\n• تسجيل دخول آمن\n• تصميم بسيط وأنيق\n• تطبيق سريع وخفيف\n\nسواء للمحادثات الشخصية أو العائلية، يبقيك MW Chat على تواصل آمن وممتع.';
 
   @override
   String get legalTitle => 'الجانب القانوني';
 
   @override
-  String get copyrightText => 'MW Chat – تطبيق مراسلة حديث للرسائل الخاصة.\nحقوق النشر © 2025 موسى أبو هلال. جميع الحقوق محفوظة.';
+  String get copyrightText =>
+      'MW Chat – تطبيق مراسلة حديث للرسائل الخاصة.\nحقوق النشر © 2025 موسى أبو هلال. جميع الحقوق محفوظة.';
 
   @override
   String get allRightsReserved => 'جميع الحقوق محفوظة.';
 
   @override
-  String get cancelFriendRequestTitle => 'إلغاء طلب الصداقة';
+  String get sidePanelAppName => 'MW Chat';
 
   @override
-  String get cancelFriendRequestDescription => 'هل تريد إلغاء طلب الصداقة هذا؟';
+  String get sidePanelTagline => 'ابقَ قريبًا من الأشخاص المفضلين لديك.';
 
   @override
-  String get cancelFriendRequestConfirm => 'إلغاء الطلب';
-
-  @override
-  String get friendRequestCancelled => 'تم إلغاء طلب الصداقة';
-
-  @override
-  String get friendRequestIncomingBanner => 'قام هذا المستخدم بإرسال طلب صداقة إليك.';
-
-  @override
-  String get sidePanelAppName => 'MW شات';
-
-  @override
-  String get sidePanelTagline => 'ابق قريباً من أحبّ الناس إليك.';
-
-  @override
-  String get sidePanelMissingMascotsHint => 'أضِف صورة شخصيات MW إلى المسار assets/images/mw_bear_and_smurf.png';
+  String get sidePanelMissingMascotsHint =>
+      'أضِف صورة شخصيات MW إلى المسار assets/images/mw_bear_and_smurf.png';
 
   @override
   String get sidePanelFeatureTitle => 'لماذا يحبّ الناس MW';
 
   @override
-  String get sidePanelFeaturePrivate => 'محادثات خاصة فردية مع الأشخاص المقرّبين منك.';
+  String get sidePanelFeaturePrivate =>
+      'محادثات خاصة فردية مع الأشخاص المقرّبين منك.';
 
   @override
-  String get sidePanelFeatureStatus => 'حالة الاتصال وآخر ظهور لتعرف متى يكون الأصدقاء متاحين.';
+  String get sidePanelFeatureStatus =>
+      'حالة الاتصال وآخر ظهور لتعرف متى يكون الأصدقاء متاحين.';
 
   @override
-  String get sidePanelFeatureInvite => 'ادعُ أصدقاءك من جهات الاتصال بضغطة واحدة.';
+  String get sidePanelFeatureInvite =>
+      'ادعُ أصدقاءك من جهات الاتصال بضغطة واحدة.';
 
   @override
-  String get sidePanelTip => 'نصيحة: الأصدقاء المتصلون يظهرون في الأعلى. اضغط على أي صديق لبدء المحادثة فوراً.';
+  String get sidePanelTip =>
+      'نصيحة: الأصدقاء المتصلون يظهرون في الأعلى. اضغط على أي صديق لبدء المحادثة فوراً.';
 
   @override
   String get sidePanelFollowTitle => 'تابِع MW';
@@ -714,13 +783,50 @@ class AppLocalizationsAr extends AppLocalizations {
   String get loadMore => 'عرض المزيد';
 
   @override
-  String get appBrandingBeta => 'MW شات 2025 نسخة تجريبية';
+  String get tapToPlay => 'اضغط للتشغيل';
+
+  @override
+  String get videoLabel => 'فيديو';
+
+  @override
+  String get recordingLabel => 'جارٍ التسجيل';
+
+  @override
+  String get cancelLabel => 'إلغاء';
+
+  @override
+  String get stopLabel => 'إيقاف';
+
+  @override
+  String get sendLabel => 'إرسال';
+
+  @override
+  String get cancelFriendRequestTitle => 'إلغاء طلب الصداقة';
+
+  @override
+  String get send => 'إرسال';
+
+  @override
+  String get privacyTitle => 'إعدادات الخصوصية';
+
+  @override
+  String get ok => 'موافق';
+
+  @override
+  String get cancelFriendRequestConfirm => 'إلغاء الطلب';
+
+  @override
+  String get cancelFriendRequestDescription => 'هل تريد إلغاء طلب الصداقة هذا؟';
+
+  @override
+  String get appBrandingBeta => 'MW شات 2025';
 
   @override
   String get profileSafetyToolsSectionTitle => 'أدوات السلامة';
 
   @override
-  String get profileBlockedUserHintLimitedVisibility => 'قام هذا المستخدم بتقييد ما يمكنك رؤيته.';
+  String get profileBlockedUserHintLimitedVisibility =>
+      'قام هذا المستخدم بتقييد ما يمكنك رؤيته.';
 
   @override
   String get profileBlockDialogTitleBlock => 'حظر المستخدم';
@@ -729,10 +835,12 @@ class AppLocalizationsAr extends AppLocalizations {
   String get profileBlockDialogTitleUnblock => 'إلغاء حظر المستخدم';
 
   @override
-  String get profileBlockDialogBodyBlock => 'هل تريد حظر هذا المستخدم؟ لن تتلقى رسائل منه في تطبيق MW Chat بعد الآن.';
+  String get profileBlockDialogBodyBlock =>
+      'هل تريد حظر هذا المستخدم؟ لن تتلقى رسائل منه في تطبيق MW Chat بعد الآن.';
 
   @override
-  String get profileBlockDialogBodyUnblock => 'هل تريد إلغاء حظر هذا المستخدم؟ ستتمكن من استقبال الرسائل منه مرة أخرى.';
+  String get profileBlockDialogBodyUnblock =>
+      'هل تريد إلغاء حظر هذا المستخدم؟ ستتمكن من استقبال الرسائل منه مرة أخرى.';
 
   @override
   String get profileBlockDialogConfirmBlock => 'حظر';
@@ -753,13 +861,15 @@ class AppLocalizationsAr extends AppLocalizations {
   String get profileBlockSnackbarUnblocked => 'تم إلغاء حظر المستخدم.';
 
   @override
-  String get profileBlockSnackbarError => 'فشل تحديث حالة الحظر. يرجى المحاولة مرة أخرى.';
+  String get profileBlockSnackbarError =>
+      'فشل تحديث حالة الحظر. يرجى المحاولة مرة أخرى.';
 
   @override
   String get profileReportDialogTitle => 'الإبلاغ عن مستخدم';
 
   @override
-  String get profileReportDialogBody => 'يرجى وصف سبب الإبلاغ عن هذا المستخدم، مثل: الرسائل المزعجة، التنمر، خطاب الكراهية، أو أي محتوى مسيء آخر.';
+  String get profileReportDialogBody =>
+      'يرجى وصف سبب الإبلاغ عن هذا المستخدم، مثل: الرسائل المزعجة، التنمر، خطاب الكراهية، أو أي محتوى مسيء آخر.';
 
   @override
   String get profileReportDialogHint => 'صف المشكلة…';
@@ -774,10 +884,11 @@ class AppLocalizationsAr extends AppLocalizations {
   String get profileReportSnackbarSuccess => 'تم إرسال البلاغ. سنقوم بمراجعته.';
 
   @override
-  String get profileReportSnackbarError => 'فشل إرسال البلاغ. يرجى المحاولة مرة أخرى.';
+  String get profileReportSnackbarError =>
+      'فشل إرسال البلاغ. يرجى المحاولة مرة أخرى.';
 
   @override
-  String get generalErrorMessage => 'حدث خطأ ما. يُرجى المحاولة مرة أخرى.';
+  String get generalErrorMessage => 'حدث خطأ ما. يرجى المحاولة مرة أخرى.';
 
   @override
   String get downloadOnAppStore => 'حمّل من متجر آبل';
@@ -789,23 +900,255 @@ class AppLocalizationsAr extends AppLocalizations {
   String get shareAppLink => 'مشاركة رابط التطبيق';
 
   @override
-  String get forgotPassword => 'نسيت كلمة المرور؟';
+  String get presencePrivacyTitle => 'إعدادات الخصوصية';
 
   @override
-  String get resetPasswordTitle => 'إعادة تعيين كلمة المرور';
+  String get presencePrivacyNotSignedIn => 'لم يتم تسجيل الدخول';
 
   @override
-  String get resetEmailSent => 'تم إرسال رابط إعادة تعيين كلمة المرور. تحقق من بريدك الإلكتروني.';
+  String get presencePrivacySectionSubtitle =>
+      'تحكّم في من يمكنه رؤية ملفك الشخصي ونشاطك.';
 
   @override
-  String get resetEmailIfExists => 'إذا كان هذا البريد الإلكتروني موجودًا، فستتلقى رابط إعادة التعيين.';
+  String get presencePrivacySectionOnlineTitle => 'حالة الاتصال';
 
   @override
-  String get tooManyRequests => 'محاولات كثيرة. يرجى المحاولة لاحقًا.';
+  String get presencePrivacyShowWhenOnlineTitle =>
+      'إظهار حالتي عندما أكون متصلاً';
 
   @override
-  String get send => 'إرسال';
+  String get presencePrivacyShowWhenOnlineSubtitleOn =>
+      'يمكن للآخرين رؤية أنك متصل.';
 
   @override
-  String get ok => 'موافق';
+  String get presencePrivacyShowWhenOnlineSubtitleOff =>
+      'ستظهر غير متصل للجميع.';
+
+  @override
+  String get presencePrivacyStatusHiddenOffline => 'ستظهر غير متصل للجميع.';
+
+  @override
+  String get presencePrivacyStatusVisibleOnline => 'يمكن للآخرين رؤيتك كمُتصل.';
+
+  @override
+  String get presencePrivacyStatusVisibleOfflineWhenInactive =>
+      'سيراك الآخرون غير متصل عندما لا تكون نشطًا.';
+
+  @override
+  String get presencePrivacyAutoOfflineTitle => 'إيقاف تلقائي (موصى به)';
+
+  @override
+  String presencePrivacyAutoOfflineBody(Object staleWindow) {
+    return 'إذا تم إغلاق التطبيق أو حذفه أو انقطع الاتصال، فقد تبقى حالتك \"متصل\" لفترة قصيرة. يقوم MW Chat باعتبار الحساب غير متصل تلقائيًا إذا لم يتم تسجيل نشاط حديث لمدة $staleWindow.';
+  }
+
+  @override
+  String presencePrivacyStaleMinutes(num minutes) {
+    String _temp0 = intl.Intl.pluralLogic(
+      minutes,
+      locale: localeName,
+      other: '$minutes دقيقة',
+      many: '$minutes دقيقة',
+      few: '$minutes دقائق',
+      two: 'دقيقتان',
+      one: 'دقيقة واحدة',
+      zero: 'أقل من دقيقة',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get presencePrivacyLastSeenUnavailable => 'آخر ظهور: غير متاح';
+
+  @override
+  String presencePrivacyLastSeenLine(Object value) {
+    return 'آخر ظهور: $value';
+  }
+
+  @override
+  String get presencePrivacyTip =>
+      'نصيحة: إيقاف هذا الخيار يُخفي حالة اتصالك في جميع أنحاء التطبيق.';
+
+  @override
+  String get privacySectionTitle => 'الخصوصية';
+
+  @override
+  String get onlineStatusTitle => 'الخصوصية والظهور';
+
+  @override
+  String get onlineStatusSubtitle =>
+      'إدارة من يمكنه رؤية حالتك ونشاطك وملفك الشخصي';
+
+  @override
+  String get presencePrivacySectionProfileTitle => 'الملف الشخصي والطلبات';
+
+  @override
+  String get presencePrivacySectionProfileSubtitle =>
+      'تحكّم بمن يمكنه رؤية ملفك الشخصي ومن يمكنه إضافتك كصديق.';
+
+  @override
+  String get presencePrivacyProfileVisTitle => 'من يمكنه رؤية ملفي الشخصي';
+
+  @override
+  String get presencePrivacyProfileVisSubtitle =>
+      'اختر من يمكنه مشاهدة تفاصيل ملفك الشخصي.';
+
+  @override
+  String get presencePrivacyProfileVisSheetHint =>
+      'هذا الإعداد يتحكم في ظهور ملفك الشخصي للمستخدمين الآخرين.';
+
+  @override
+  String get presencePrivacyProfileVisEveryoneTitle => 'الجميع';
+
+  @override
+  String get presencePrivacyProfileVisEveryoneSubtitle =>
+      'يمكن لأي شخص رؤية ملفك الشخصي.';
+
+  @override
+  String get presencePrivacyProfileVisFriendsTitle => 'الأصدقاء فقط';
+
+  @override
+  String get presencePrivacyProfileVisFriendsSubtitle =>
+      'يمكن لأصدقائك فقط رؤية ملفك الشخصي.';
+
+  @override
+  String get presencePrivacyProfileVisNobodyTitle => 'لا أحد';
+
+  @override
+  String get presencePrivacyProfileVisNobodySubtitle =>
+      'إخفاء ملفك الشخصي عن المستخدمين الآخرين.';
+
+  @override
+  String get presencePrivacyProfileVisValueEveryone => 'الجميع';
+
+  @override
+  String get presencePrivacyProfileVisValueFriends => 'الأصدقاء';
+
+  @override
+  String get presencePrivacyProfileVisValueNobody => 'لا أحد';
+
+  @override
+  String get presencePrivacyFriendReqTitle => 'من يمكنه إضافتي كصديق';
+
+  @override
+  String get presencePrivacyFriendReqSubtitle =>
+      'تحكّم بمن يُسمح له بإرسال طلبات صداقة إليك.';
+
+  @override
+  String get presencePrivacyFriendReqSheetHint =>
+      'هذا الإعداد يتحكم في إمكانية إرسال طلبات الصداقة إليك.';
+
+  @override
+  String get presencePrivacyFriendReqEveryoneTitle => 'الجميع';
+
+  @override
+  String get presencePrivacyFriendReqEveryoneSubtitle =>
+      'يمكن لأي شخص إرسال طلب صداقة.';
+
+  @override
+  String get presencePrivacyFriendReqNobodyTitle => 'لا أحد';
+
+  @override
+  String get presencePrivacyFriendReqNobodySubtitle =>
+      'تعطيل طلبات الصداقة من المستخدمين الآخرين.';
+
+  @override
+  String get presencePrivacyFriendReqValueEveryone => 'الجميع';
+
+  @override
+  String get presencePrivacyFriendReqValueNobody => 'لا أحد';
+
+  @override
+  String get friendRequestNotAllowed => 'طلبات الصداقة غير مسموح بها';
+
+  @override
+  String get profilePrivateChatRestricted =>
+      'هذا الملف الشخصي خاص ولا يمكن بدء الدردشة';
+
+  @override
+  String get profilePrivate => 'هذا الملف الشخصي خاص';
+
+  @override
+  String get deleteMessageDescription => 'اختر كيفية حذف هذه الرسالة';
+
+  @override
+  String get deleteForMe => 'حذف لدي';
+
+  @override
+  String get deleteForEveryone => 'حذف لدى الجميع';
+
+  @override
+  String get deletingMessageInProgressTitle => 'جارٍ حذف الرسالة';
+
+  @override
+  String get pleaseWait => 'يرجى الانتظار';
+
+  @override
+  String get messageAlreadyDeleted => 'تم حذف هذه الرسالة مسبقًا';
+
+  @override
+  String get deletedForMeSuccess => 'تم حذف الرسالة لديك';
+
+  @override
+  String get deletedForEveryoneSuccess => 'تم حذف الرسالة لدى الجميع';
+
+  @override
+  String get searchFriendsHint => 'ابحث في الأصدقاء…';
+
+  @override
+  String get searchUsersHint => 'ابحث في مستخدمي MW…';
+
+  @override
+  String get noFriendsFound => 'لم يتم العثور على أصدقاء.';
+
+  @override
+  String get noUsersFound => 'لم يتم العثور على مستخدمين.';
+
+  @override
+  String get loading => 'جارٍ التحميل…';
+
+  @override
+  String get peopleOnMw => 'أشخاص على MW';
+
+  @override
+  String get myFriends => 'أصدقائي';
+
+  @override
+  String get searchPeopleHint => 'ابحث عن أشخاص';
+
+  @override
+  String get noSearchResults => 'لا توجد نتائج';
+
+  @override
+  String get friendRequestsTitle => 'طلبات الصداقة';
+
+  @override
+  String get friendRequestsSearchHint => 'ابحث في طلبات الصداقة';
+
+  @override
+  String get friendRequestsEmpty => 'لا توجد طلبات صداقة';
+
+  @override
+  String friendRequestsSubtitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'لديك $count طلبات صداقة جديدة',
+      one: 'لديك طلب صداقة جديد',
+      zero: 'لا توجد طلبات صداقة جديدة',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get unknownUser => 'مستخدم غير معروف';
+
+  @override
+  String get accountUnavailableSubtitle => 'هذا الحساب لم يعد متاحًا.';
+
+  @override
+  String get invitePlatformTitle => 'الدعوة عبر المنصات';
+
+  @override
+  String get tapIconToOpen => 'اضغط على أيقونة للفتح';
 }

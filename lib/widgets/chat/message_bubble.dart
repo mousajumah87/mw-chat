@@ -1,10 +1,11 @@
-import 'dart:async';
-import 'dart:math' as math;
+// lib/widgets/chat/message_bubble.dart
 
-import 'package:flutter/material.dart';
+import 'dart:async';
+
 import 'package:audioplayers/audioplayers.dart';
-import 'package:video_player/video_player.dart';
+import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:video_player/video_player.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../theme/app_theme.dart';
@@ -16,7 +17,7 @@ class MessageBubble extends StatefulWidget {
   final bool isSeen;
   final String? fileUrl;
   final String? fileName;
-  final String? fileType; // "image", "video", "audio", "file"
+  final String? fileType; // "image", "video", "audio", "file", "voice", mime-like "audio/*"
   final bool showTimestamp;
 
   const MessageBubble({
@@ -35,77 +36,119 @@ class MessageBubble extends StatefulWidget {
   State<MessageBubble> createState() => _MessageBubbleState();
 }
 
-class _MessageBubbleState extends State<MessageBubble> {
-  // ===== AUDIO =====
-  final AudioPlayer _audioPlayer = AudioPlayer();
+class _MessageBubbleState extends State<MessageBubble>
+    with AutomaticKeepAliveClientMixin {
+  final AudioPlayer _player = AudioPlayer();
 
-  StreamSubscription<PlayerState>? _playerStateSub;
+  StreamSubscription<PlayerState>? _stateSub;
   StreamSubscription<Duration>? _posSub;
   StreamSubscription<Duration>? _durSub;
   StreamSubscription<void>? _completeSub;
 
-  bool _isPlaying = false;
-  bool _isAudioLoading = false;
+  Duration _pos = Duration.zero;
+  Duration _dur = Duration.zero;
 
-  bool _audioReady = false;
+  bool _playing = false;
+  bool _loading = false;
   bool _audioError = false;
-
-  Duration _audioDuration = Duration.zero;
-  Duration _audioPosition = Duration.zero;
 
   String? _preparedUrl;
 
-  // ===== VIDEO =====
-  VideoPlayerController? _videoController;
-  bool _videoInitialized = false;
-  bool _videoInitError = false;
-
-  static const double _mediaSize = 220; // image & video
+  static const double _mediaSize = 220;
+  static const double _bubbleRadius = 16.0;
 
   bool get hasAttachment => widget.fileUrl?.isNotEmpty == true;
 
-  bool get isImage {
-    final type = (widget.fileType ?? '').toLowerCase();
-    return type == 'image' || type.startsWith('image/');
-  }
+  String get _typeLower => (widget.fileType ?? '').trim().toLowerCase();
 
-  bool get isVideo {
-    final type = (widget.fileType ?? '').toLowerCase();
-    return type == 'video' || type.startsWith('video/');
-  }
+  bool get isImage => _typeLower == 'image' || _typeLower.startsWith('image/');
+  bool get isVideo => _typeLower == 'video' || _typeLower.startsWith('video/');
 
   bool get isAudio {
-    final type = (widget.fileType ?? '').toLowerCase();
-    return type == 'audio' || type.startsWith('audio/');
+    // ✅ accept "voice" variants too
+    final t = _typeLower;
+    if (t == 'audio' || t.startsWith('audio/')) return true;
+    if (t == 'voice' ||
+        t == 'voice_note' ||
+        t == 'voicenote' ||
+        t == 'voice-message') return true;
+    return false;
   }
 
   bool get isGenericFile => hasAttachment && !isImage && !isVideo && !isAudio;
 
-  static const double _bubbleRadius = 16.0;
+  @override
+  bool get wantKeepAlive => isAudio;
 
-  // ========= STYLE HELPERS =========
+  // =============================
+  // ✅ RTL / Emoji stability helpers
+  // =============================
+
+  // Arabic + Hebrew ranges (good enough for chat)
+  bool _containsRtlChars(String s) {
+    return RegExp(
+      r'[\u0590-\u05FF\u0600-\u06FF\u0700-\u074F\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]',
+    ).hasMatch(s);
+  }
+
+  bool _containsLtrLetters(String s) {
+    return RegExp(r'[A-Za-z]').hasMatch(s);
+  }
+
+  /// Decide message direction:
+  /// - If it contains Arabic/Hebrew => RTL (even if it also contains emoji/punctuation)
+  /// - Else LTR
+  TextDirection _textDirectionForMessage(String s) {
+    final t = s.trim();
+    if (t.isEmpty) return Directionality.of(context);
+    if (_containsRtlChars(t)) return TextDirection.rtl;
+    return TextDirection.ltr;
+  }
+
+  /// Unicode isolate marks prevent bidi reordering problems with neutrals (emoji, punctuation).
+  /// - LTR isolate: LRI ... PDI
+  /// - RTL isolate: RLI ... PDI
+  String _isolateBidi(String s, TextDirection dir) {
+    const lri = '\u2066'; // Left-to-Right Isolate
+    const rli = '\u2067'; // Right-to-Left Isolate
+    const pdi = '\u2069'; // Pop Directional Isolate
+
+    if (s.isEmpty) return s;
+
+    // Keep RTL priority when RTL chars exist.
+    return dir == TextDirection.rtl ? '$rli$s$pdi' : '$lri$s$pdi';
+  }
+
+  // ✅ Locale-first effective direction (works even if parent forced LTR)
+  TextDirection _effectiveDir(BuildContext context) {
+    final locale = Localizations.localeOf(context);
+    final lang = locale.languageCode.toLowerCase();
+    const rtlLangs = {'ar', 'he', 'fa', 'ur'};
+    if (rtlLangs.contains(lang)) return TextDirection.rtl;
+    return Directionality.of(context);
+  }
+
+  // Keep digits stable regardless of surrounding bidi.
+  String _isolateLtrDigits(String s) {
+    const lri = '\u2066';
+    const pdi = '\u2069';
+    return '$lri$s$pdi';
+  }
 
   Color _tint(Color base, Color tint, double amount) {
     return Color.lerp(base, tint, amount.clamp(0.0, 1.0)) ?? base;
   }
 
-  /// ✅ Dark glass bubbles:
-  /// - "Me": dark glass with a *very subtle* gold tint
-  /// - "Other": dark glass only
   Color get _bubbleColor {
-    final base = kSurfaceAltColor; // dark
-    if (!widget.isMe) {
-      return base.withOpacity(0.62);
-    }
-    final tinted = _tint(base, kGoldDeep, 0.10); // tiny warm tint
-    return tinted.withOpacity(0.70); // more transparent than before
+    final base = kSurfaceAltColor;
+    if (!widget.isMe) return base.withOpacity(0.62);
+    final tinted = _tint(base, kGoldDeep, 0.10);
+    return tinted.withOpacity(0.70);
   }
 
-  /// ✅ Text colors now always readable on dark glass
   Color get _onBubblePrimary => kTextPrimary;
   Color get _onBubbleSecondary => kTextSecondary.withOpacity(0.90);
 
-  /// ✅ Border becomes subtle (no heavy gold frame)
   Border? get _bubbleBorder {
     final c = widget.isMe
         ? kGoldDeep.withOpacity(0.18)
@@ -113,205 +156,332 @@ class _MessageBubbleState extends State<MessageBubble> {
     return Border.all(color: c, width: 1);
   }
 
-  // ---------------- VIDEO ----------------
+  // =============================
+  // ✅ Attachment classification
+  // =============================
 
-  void _initVideoIfNeeded() {
-    if (!isVideo || widget.fileUrl == null || widget.fileUrl!.isEmpty) return;
+  String _norm(String? v) => (v ?? '').toLowerCase().trim();
 
-    _videoInitialized = false;
-    _videoInitError = false;
+  String _extFrom(String s) {
+    final clean = s.split('?').first.split('#').first;
+    final dot = clean.lastIndexOf('.');
+    if (dot < 0 || dot == clean.length - 1) return '';
+    return clean.substring(dot + 1).toLowerCase();
+  }
 
-    _disposeVideo();
+  String _attachmentLabel(AppLocalizations l10n) {
+    final type = _norm(widget.fileType);
+    final name = _norm(widget.fileName);
+    final url = _norm(widget.fileUrl);
 
-    final uri = Uri.tryParse(widget.fileUrl!);
-    if (uri == null) {
-      _videoInitError = true;
-      return;
+    final ext = _extFrom(name).isNotEmpty ? _extFrom(name) : _extFrom(url);
+
+    if (type == 'image' || type.startsWith('image/')) return l10n.photo;
+    if (type == 'video' || type.startsWith('video/')) return l10n.videoLabel;
+    if (type == 'audio' ||
+        type.startsWith('audio/') ||
+        type == 'voice' ||
+        type == 'voice_note' ||
+        type == 'voicenote' ||
+        type == 'voice-message') {
+      return l10n.voiceMessageLabel;
     }
 
-    final controller = VideoPlayerController.networkUrl(uri);
-    _videoController = controller;
+    const imageExts = {'jpg', 'jpeg', 'png', 'gif', 'webp', 'heic'};
+    const videoExts = {'mp4', 'mov', 'mkv', 'avi', 'm4v', 'webm'};
+    const audioExts = {'mp3', 'wav', 'm4a', 'aac', 'ogg', 'opus'};
 
-    controller.initialize().then((_) {
-      if (!mounted || _videoController != controller) return;
-      setState(() => _videoInitialized = true);
-    }).catchError((_) {
-      if (!mounted || _videoController != controller) return;
-      setState(() => _videoInitError = true);
-    });
+    final looksLikeVoice = name.contains('voice') ||
+        name.contains('audio') ||
+        name.contains('record') ||
+        name.contains('rec') ||
+        name.contains('mic');
+
+    if (ext == 'webm' && looksLikeVoice) return l10n.voiceMessageLabel;
+
+    if (imageExts.contains(ext)) return l10n.photo;
+    if (videoExts.contains(ext)) return l10n.videoLabel;
+    if (audioExts.contains(ext)) return l10n.voiceMessageLabel;
+
+    return l10n.genericFileLabel;
   }
 
-  void _disposeVideo() {
-    final controller = _videoController;
-    _videoController = null;
-    _videoInitialized = false;
-    _videoInitError = false;
-    controller?.dispose();
+  // ==============================
+  // ✅ Friendly file name (only for generic files)
+  // ==============================
+
+  String _basenameFromUrl(String url) {
+    final u = Uri.tryParse(url);
+    if (u == null) return '';
+    final segs = u.pathSegments;
+    if (segs.isEmpty) return '';
+    return segs.last;
   }
 
-  // ---------------- AUDIO ----------------
-
-  void _initAudioStreams() {
-    _playerStateSub?.cancel();
-    _posSub?.cancel();
-    _durSub?.cancel();
-    _completeSub?.cancel();
-
-    _playerStateSub = _audioPlayer.onPlayerStateChanged.listen((state) {
-      if (!mounted) return;
-      final playing = state == PlayerState.playing;
-      if (playing != _isPlaying) setState(() => _isPlaying = playing);
-    });
-
-    _posSub = _audioPlayer.onPositionChanged.listen((pos) {
-      if (!mounted) return;
-      if ((pos - _audioPosition).inMilliseconds.abs() < 120) return;
-
-      final d = _audioDuration;
-      if (d != Duration.zero && pos > d) pos = d;
-      setState(() => _audioPosition = pos);
-    });
-
-    _durSub = _audioPlayer.onDurationChanged.listen((dur) {
-      if (!mounted) return;
-      if (dur != _audioDuration) setState(() => _audioDuration = dur);
-    });
-
-    _completeSub = _audioPlayer.onPlayerComplete.listen((_) {
-      if (!mounted) return;
-      setState(() {
-        _isPlaying = false;
-        _audioPosition =
-        _audioDuration == Duration.zero ? Duration.zero : _audioDuration;
-      });
-    });
+  String _stripExtension(String name) {
+    final i = name.lastIndexOf('.');
+    if (i <= 0) return name;
+    return name.substring(0, i);
   }
 
-  void _resetAudioUi() {
-    _isAudioLoading = false;
-    _isPlaying = false;
-    _audioReady = false;
-    _audioError = false;
-    _audioDuration = Duration.zero;
-    _audioPosition = Duration.zero;
-    _preparedUrl = null;
-  }
+  bool _looksLikeIdOrJunk(String s) {
+    final t = s.trim();
+    if (t.length < 3) return true;
 
-  Duration _clampToDuration(Duration value, Duration max) {
-    if (max == Duration.zero) {
-      return value < Duration.zero ? Duration.zero : value;
+    if (t.contains('/') || t.contains('\\')) return true;
+
+    if (RegExp(r'^\d{10,}$').hasMatch(t)) return true;
+
+    if (RegExp(r'^[a-f0-9-]{12,}$', caseSensitive: false).hasMatch(t)) {
+      return true;
     }
-    if (value < Duration.zero) return Duration.zero;
-    if (value > max) return max;
-    return value;
+
+    final lower = t.toLowerCase();
+    if (lower.contains('screen recording') ||
+        lower.contains('screen record') ||
+        lower.contains('screenrec')) {
+      return true;
+    }
+
+    final letters = RegExp(r'[A-Za-z]').allMatches(t).length;
+    if (t.length >= 14 && letters <= 2) return true;
+
+    return false;
   }
 
-  String _formatTime(Duration d) {
-    final totalSeconds = d.inSeconds;
-    final minutes = (totalSeconds ~/ 60).toString().padLeft(1, '0');
-    final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
-    return '$minutes:$seconds';
-  }
-
-  Future<bool> _ensureAudioSourceReady() async {
-    final url = widget.fileUrl;
-    if (url == null || url.isEmpty) return false;
-
-    if (_audioReady && !_audioError && _preparedUrl == url) return true;
+  String _cleanHumanName(String raw) {
+    var s = raw.trim();
 
     try {
-      await _audioPlayer.setReleaseMode(ReleaseMode.stop);
-      await _audioPlayer.setSourceUrl(url).timeout(const Duration(seconds: 6));
+      s = Uri.decodeFull(s);
+    } catch (_) {}
+
+    final q = s.indexOf('?');
+    if (q >= 0) s = s.substring(0, q);
+
+    s = s.replaceAll('\\', '/');
+    if (s.contains('/')) {
+      s = s.split('/').where((p) => p.trim().isNotEmpty).last;
+    }
+
+    s = s.replaceAll(RegExp(r'^\d{10,}[\s_\-]+'), '');
+
+    s = s.replaceAll(RegExp(r'[_\-]+'), ' ');
+    s = s.replaceAll(
+      RegExp(r'\b(screen recording|screen record)\b', caseSensitive: false),
+      'Screen Recording',
+    );
+
+    s = s.replaceAll(
+      RegExp(r'^(img|vid|video|photo|screenshot)\s+', caseSensitive: false),
+      '',
+    );
+
+    s = s.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return s;
+  }
+
+  String _friendlyGenericFileTitle(AppLocalizations l10n) {
+    final raw = (widget.fileName ?? '').trim().isNotEmpty
+        ? (widget.fileName ?? '').trim()
+        : _basenameFromUrl((widget.fileUrl ?? '').trim());
+
+    if (raw.isEmpty) return l10n.genericFileLabel;
+
+    var base = _stripExtension(raw);
+    base = _cleanHumanName(base);
+
+    if (_looksLikeIdOrJunk(base)) return l10n.genericFileLabel;
+
+    const maxLen = 26;
+    if (base.length > maxLen) base = base.substring(0, maxLen).trim();
+
+    return base.isEmpty ? l10n.genericFileLabel : base;
+  }
+
+  String _displayTextForBubble(AppLocalizations l10n) {
+    final t = (widget.text).trim();
+    if (t.isEmpty) return '';
+
+    if (hasAttachment) {
+      final label = _attachmentLabel(l10n).trim().toLowerCase();
+      if (label.isNotEmpty && t.toLowerCase() == label) return '';
+    }
+
+    return t;
+  }
+
+  Widget _mediaTitleLine(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Text(
+        title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          color: kTextPrimary.withOpacity(0.92),
+          fontWeight: FontWeight.w800,
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+
+  // =============================
+  // ✅ Audio
+  // =============================
+
+  @override
+  void initState() {
+    super.initState();
+
+    _stateSub = _player.onPlayerStateChanged.listen((s) {
+      if (!mounted) return;
+      setState(() => _playing = s == PlayerState.playing);
+    });
+
+    _posSub = _player.onPositionChanged.listen((p) {
+      if (!mounted) return;
+      setState(() => _pos = p);
+    });
+
+    _durSub = _player.onDurationChanged.listen((d) {
+      if (!mounted) return;
+      setState(() => _dur = d);
+    });
+
+    _completeSub = _player.onPlayerComplete.listen((_) {
+      if (!mounted) return;
+      setState(() {
+        _playing = false;
+        _pos = _dur == Duration.zero ? Duration.zero : _dur;
+      });
+    });
+
+    _player.setReleaseMode(ReleaseMode.stop);
+  }
+
+  @override
+  void didUpdateWidget(covariant MessageBubble oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    final oldUrl = (oldWidget.fileUrl ?? '').trim();
+    final newUrl = (widget.fileUrl ?? '').trim();
+
+    final oldType = (oldWidget.fileType ?? '').trim().toLowerCase();
+    final newType = (widget.fileType ?? '').trim().toLowerCase();
+
+    final urlChanged = oldUrl != newUrl;
+    final typeChanged = oldType != newType;
+
+    if (urlChanged || (typeChanged && !isAudio)) {
+      _stopAndResetAudioUi();
+    }
+  }
+
+  void _stopAndResetAudioUi() {
+    _player.stop().catchError((_) {});
+    if (!mounted) return;
+    setState(() {
+      _pos = Duration.zero;
+      _dur = Duration.zero;
+      _playing = false;
+      _loading = false;
+      _audioError = false;
+      _preparedUrl = null;
+    });
+  }
+
+  String _fmt(Duration d) {
+    final s = d.inSeconds;
+    final m = (s ~/ 60).toString();
+    final r = (s % 60).toString().padLeft(2, '0');
+    return '$m:$r';
+  }
+
+  Future<bool> _ensureAudioReady(String url) async {
+    if (url.isEmpty) return false;
+
+    if (_preparedUrl == url && _dur != Duration.zero && !_audioError) {
+      return true;
+    }
+
+    try {
+      await _player.setReleaseMode(ReleaseMode.stop);
+      await _player.setSourceUrl(url).timeout(const Duration(seconds: 6));
 
       _preparedUrl = url;
-      _audioReady = true;
       _audioError = false;
 
-      final d = await _audioPlayer.getDuration();
+      final d = await _player.getDuration();
       if (d != null && d != Duration.zero && mounted) {
-        setState(() => _audioDuration = d);
+        setState(() => _dur = d);
       }
       return true;
     } catch (_) {
-      _audioReady = false;
-      _audioError = true;
+      if (mounted) setState(() => _audioError = true);
       return false;
     }
   }
 
-  Future<void> _toggleAudio() async {
-    final url = widget.fileUrl;
-    if (url == null || url.isEmpty) return;
-    if (_isAudioLoading) return;
+  Future<void> _togglePlay() async {
+    final url = (widget.fileUrl ?? '').trim();
+    if (url.isEmpty) return;
+    if (_loading) return;
 
     try {
-      if (_isPlaying) {
-        await _audioPlayer.pause();
+      if (_playing) {
+        await _player.pause();
         return;
       }
 
       setState(() {
-        _isAudioLoading = true;
+        _loading = true;
         _audioError = false;
       });
 
-      final ok = await _ensureAudioSourceReady();
-      if (!ok) {
-        if (mounted) {
-          setState(() {
-            _isAudioLoading = false;
-            _audioError = true;
-          });
-        }
-        return;
-      }
+      final ok = await _ensureAudioReady(url);
+      if (!ok) return;
 
-      final d = _audioDuration;
-      final atEnd =
-          d != Duration.zero && _audioPosition >= d - const Duration(milliseconds: 400);
-
-      if (atEnd) {
-        await _audioPlayer.seek(Duration.zero);
-        if (mounted) setState(() => _audioPosition = Duration.zero);
+      final total = _dur;
+      if (total != Duration.zero &&
+          _pos >= total - const Duration(milliseconds: 300)) {
+        await _player.seek(Duration.zero);
+        if (mounted) setState(() => _pos = Duration.zero);
       }
 
       try {
-        await _audioPlayer.resume().timeout(const Duration(seconds: 5));
+        await _player.resume().timeout(const Duration(seconds: 5));
       } catch (_) {
-        await _audioPlayer.stop().catchError((_) {});
-        await _audioPlayer.play(UrlSource(url)).timeout(const Duration(seconds: 6));
+        await _player.stop().catchError((_) {});
+        await _player.play(UrlSource(url)).timeout(const Duration(seconds: 6));
       }
-    } catch (_) {
-      // swallow
     } finally {
-      if (mounted) setState(() => _isAudioLoading = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
-  Future<void> _seekAudio(Duration target) async {
-    final url = widget.fileUrl;
-    if (url == null || url.isEmpty) return;
+  Future<void> _seek(Duration t) async {
+    final total = _dur;
+    if (total == Duration.zero) return;
 
-    final t = _clampToDuration(target, _audioDuration);
+    final clamped = t < Duration.zero ? Duration.zero : (t > total ? total : t);
 
     try {
-      final ok = await _ensureAudioSourceReady();
-      if (!ok) {
-        if (mounted) setState(() => _audioError = true);
-        return;
-      }
+      final url = (widget.fileUrl ?? '').trim();
+      final ok = await _ensureAudioReady(url);
+      if (!ok) return;
 
-      await _audioPlayer.seek(t);
-      if (mounted) setState(() => _audioPosition = t);
+      await _player.seek(clamped);
+      if (mounted) setState(() => _pos = clamped);
     } catch (_) {}
   }
 
-  Future<void> _jumpAudio(int seconds) async {
-    final next = _audioPosition + Duration(seconds: seconds);
-    await _seekAudio(next);
-  }
+  // =============================
+  // ✅ Open / fullscreen
+  // =============================
 
-  // ===== FILE OPEN =====
   Future<void> _openFile() async {
     final url = widget.fileUrl;
     if (url == null || url.isEmpty) return;
@@ -323,7 +493,6 @@ class _MessageBubbleState extends State<MessageBubble> {
     }
   }
 
-  // ===== FULLSCREEN IMAGE =====
   void _openImageFullScreen() {
     final url = widget.fileUrl;
     if (url == null || url.isEmpty) return;
@@ -364,7 +533,6 @@ class _MessageBubbleState extends State<MessageBubble> {
     );
   }
 
-  // ===== FULLSCREEN VIDEO =====
   void _openVideoFullScreen() {
     final url = widget.fileUrl;
     if (url == null || url.isEmpty) return;
@@ -376,279 +544,268 @@ class _MessageBubbleState extends State<MessageBubble> {
     );
   }
 
-  // IMAGE BUBBLE
+  // =============================
+  // ✅ Bubble builders
+  // =============================
+
   Widget _buildImageBubble() {
+    final l10n = AppLocalizations.of(context)!;
     final url = widget.fileUrl!;
+    final title = _attachmentLabel(l10n);
+
     return GestureDetector(
       onTap: _openImageFullScreen,
-      child: Hero(
-        tag: 'image_$url',
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: Image.network(
-            url,
-            width: _mediaSize,
-            height: _mediaSize,
-            fit: BoxFit.cover,
-            loadingBuilder: (_, child, progress) {
-              if (progress == null) return child;
-              return SizedBox(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Hero(
+            tag: 'image_$url',
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.network(
+                url,
                 width: _mediaSize,
                 height: _mediaSize,
-                child: Center(
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Theme.of(context).colorScheme.primary,
+                fit: BoxFit.cover,
+                loadingBuilder: (_, child, progress) {
+                  if (progress == null) return child;
+                  return SizedBox(
+                    width: _mediaSize,
+                    height: _mediaSize,
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                  );
+                },
+                errorBuilder: (_, __, ___) => SizedBox(
+                  width: _mediaSize,
+                  height: _mediaSize,
+                  child: Center(
+                    child: Icon(Icons.broken_image,
+                        color: kTextSecondary.withOpacity(0.8)),
                   ),
                 ),
-              );
-            },
-            errorBuilder: (_, __, ___) => SizedBox(
-              width: _mediaSize,
-              height: _mediaSize,
-              child: Center(
-                child: Icon(Icons.broken_image, color: kTextSecondary.withOpacity(0.8)),
               ),
             ),
           ),
-        ),
-      ),
-    );
-  }
-
-  // VIDEO BUBBLE
-  Widget _buildVideoBubble() {
-    final c = _videoController;
-
-    if (_videoInitError) {
-      return SizedBox(
-        width: _mediaSize,
-        height: _mediaSize,
-        child: Center(
-          child: Icon(Icons.broken_image, color: kTextSecondary.withOpacity(0.8)),
-        ),
-      );
-    }
-
-    if (!_videoInitialized || c == null || !c.value.isInitialized) {
-      return SizedBox(
-        width: _mediaSize,
-        height: _mediaSize,
-        child: Center(
-          child: CircularProgressIndicator(
-            strokeWidth: 2,
-            color: Theme.of(context).colorScheme.primary,
-          ),
-        ),
-      );
-    }
-
-    return GestureDetector(
-      onTap: _openVideoFullScreen,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: SizedBox(
-              width: _mediaSize,
-              height: _mediaSize,
-              child: FittedBox(
-                fit: BoxFit.cover,
-                child: SizedBox(
-                  width: c.value.size.width,
-                  height: c.value.size.height,
-                  child: VideoPlayer(c),
-                ),
-              ),
-            ),
-          ),
-          CircleAvatar(
-            backgroundColor: Colors.black.withOpacity(0.55),
-            child: const Icon(Icons.play_arrow, color: kTextPrimary),
-          ),
+          _mediaTitleLine(title),
         ],
       ),
     );
   }
 
-  // ================= WHATSAPP-STYLE AUDIO BUBBLE + WAVEFORM =================
+  Widget _buildVideoBubbleLightweight() {
+    final l10n = AppLocalizations.of(context)!;
+    final url = widget.fileUrl ?? '';
+    final title = _attachmentLabel(l10n);
 
-  List<double> _waveformHeights(String seed, int count) {
-    final int hash = seed.codeUnits.fold<int>(0, (p, c) => (p * 31 + c) & 0x7fffffff);
-    final rnd = math.Random(hash);
-    final List<double> bars = List<double>.generate(count, (_) {
-      final v = 0.25 + rnd.nextDouble() * 0.75;
-      return v;
-    });
-
-    for (int i = 1; i < bars.length - 1; i++) {
-      bars[i] = (bars[i - 1] + bars[i] + bars[i + 1]) / 3.0;
-    }
-    return bars;
+    return GestureDetector(
+      onTap: _openVideoFullScreen,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          width: _mediaSize,
+          height: _mediaSize,
+          decoration: BoxDecoration(
+            color: kSurfaceAltColor.withOpacity(0.55),
+            border: Border.all(color: kBorderColor.withOpacity(0.45)),
+          ),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Positioned.fill(
+                child: Opacity(
+                  opacity: 0.10,
+                  child: Image.network(
+                    url,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                  ),
+                ),
+              ),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircleAvatar(
+                    radius: 26,
+                    backgroundColor: Colors.black.withOpacity(0.55),
+                    child: const Icon(Icons.play_arrow,
+                        color: kTextPrimary, size: 30),
+                  ),
+                  const SizedBox(height: 10),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    child: Text(
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: kTextPrimary.withOpacity(0.92),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    l10n.tapToPlay,
+                    style: TextStyle(
+                      color: kTextSecondary.withOpacity(0.85),
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildAudioBubble() {
     final l10n = AppLocalizations.of(context)!;
-    final isRtl = Directionality.of(context) == TextDirection.rtl;
+    final dir = _effectiveDir(context);
 
-    final duration = _audioDuration;
-    final position = _clampToDuration(_audioPosition, duration);
+    final url = widget.fileUrl ?? '';
+    if (url.isEmpty) return const SizedBox.shrink();
 
-    final totalMs = duration.inMilliseconds;
-    final posMs = position.inMilliseconds.clamp(0, totalMs == 0 ? 0 : totalMs);
+    final total = _dur;
+    final pos = (_pos > total && total != Duration.zero) ? total : _pos;
+    final canSeek = total.inMilliseconds > 0;
 
-    final progress = (totalMs == 0) ? 0.0 : (posMs / totalMs).clamp(0.0, 1.0);
-
-    final seed = widget.fileUrl ?? '${widget.timeLabel}_${widget.isMe}';
-    final bars = _waveformHeights(seed, 42);
-
-    Future<void> seekByRatio(double ratio) async {
-      if (totalMs == 0) return;
-      final r = ratio.clamp(0.0, 1.0);
-      final ms = (r * totalMs).round();
-      await _seekAudio(Duration(milliseconds: ms));
-    }
-
-    Widget waveform = LayoutBuilder(
-      builder: (context, constraints) {
-        return GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onTapDown: (d) async {
-            final w = constraints.maxWidth;
-            if (w <= 0) return;
-            final dx = d.localPosition.dx.clamp(0.0, w);
-            final ratio = isRtl ? (1.0 - dx / w) : (dx / w);
-            await seekByRatio(ratio);
-          },
-          child: CustomPaint(
-            size: Size(constraints.maxWidth, 28),
-            painter: _WaveformPainter(
-              bars: bars,
-              progress: progress,
-              isMe: widget.isMe,
-              isRtl: isRtl,
-            ),
-          ),
-        );
-      },
-    );
-
-    final backBtn = IconButton(
-      visualDensity: VisualDensity.compact,
-      padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
-      onPressed: _isAudioLoading ? null : () => _jumpAudio(-10),
-      icon: Icon(Icons.replay_10, color: kTextPrimary.withOpacity(0.92)),
-      tooltip: 'Back 10s',
-    );
-
-    final fwdBtn = IconButton(
-      visualDensity: VisualDensity.compact,
-      padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
-      onPressed: _isAudioLoading ? null : () => _jumpAudio(10),
-      icon: Icon(Icons.forward_10, color: kTextPrimary.withOpacity(0.92)),
-      tooltip: 'Forward 10s',
-    );
-
-    final playBtn = InkWell(
-      onTap: _isAudioLoading ? null : _toggleAudio,
-      borderRadius: BorderRadius.circular(999),
+    // ✅ IMPORTANT:
+    // Keep the WHOLE audio bubble LTR so slider + play icon never get mirrored on Arabic.
+    // This is the most stable way across Flutter versions and platforms.
+    // We'll still align the title/time nicely and keep digits stable.
+    return Directionality(
+      textDirection: TextDirection.ltr,
       child: Container(
-        width: 44,
-        height: 44,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: kSurfaceAltColor.withOpacity(0.55),
-          shape: BoxShape.circle,
-          border: Border.all(color: kBorderColor.withOpacity(0.50)),
+          color: kSurfaceAltColor.withOpacity(0.60),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: kBorderColor.withOpacity(0.45)),
         ),
-        child: Center(
-          child: _isAudioLoading
-              ? SizedBox(
-            width: 18,
-            height: 18,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-          )
-              : Icon(
-            _isPlaying ? Icons.pause : Icons.play_arrow,
-            color: kTextPrimary,
-            size: 26,
-          ),
-        ),
-      ),
-    );
-
-    final leftTime = Text(
-      _formatTime(position),
-      style: TextStyle(color: kTextSecondary.withOpacity(0.9), fontSize: 11),
-    );
-
-    final rightTime = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          duration == Duration.zero ? '--:--' : _formatTime(duration),
-          style: TextStyle(color: kTextSecondary.withOpacity(0.9), fontSize: 11),
-        ),
-        if (_audioError) ...[
-          const SizedBox(width: 6),
-          const Icon(Icons.error_outline, size: 14, color: kErrorColor),
-        ],
-      ],
-    );
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        // ✅ slightly darker + more transparent
-        color: kSurfaceAltColor.withOpacity(0.48),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: kBorderColor.withOpacity(0.45)),
-      ),
-      child: Directionality(
-        textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
         child: Row(
-          mainAxisSize: MainAxisSize.min,
           children: [
-            playBtn,
+            InkWell(
+              onTap: _togglePlay,
+              borderRadius: BorderRadius.circular(999),
+              child: Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: kSurfaceAltColor.withOpacity(0.55),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: kBorderColor.withOpacity(0.50)),
+                ),
+                child: Center(
+                  child: _loading
+                      ? SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  )
+                      : Directionality(
+                    // ✅ FIX: never mirror play/pause icon in RTL
+                    textDirection: TextDirection.ltr,
+                    child: Icon(
+                      _playing ? Icons.pause : Icons.play_arrow,
+                      color: kTextPrimary,
+                      size: 26,
+                      textDirection: TextDirection.ltr, // extra safety
+                    ),
+                  ),
+                ),
+              ),
+            ),
             const SizedBox(width: 10),
+
             Expanded(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(
-                    l10n.voiceMessageLabel,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: kTextPrimary,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 13,
+                  // Title row: align based on locale (Arabic right, English left),
+                  // but keep actual direction LTR so layout doesn't flip controls.
+                  Align(
+                    alignment: dir == TextDirection.rtl
+                        ? Alignment.centerRight
+                        : Alignment.centerLeft,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          l10n.voiceMessageLabel,
+                          style: const TextStyle(
+                            color: kTextPrimary,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 13,
+                          ),
+                        ),
+                        if (_audioError) ...[
+                          const SizedBox(width: 6),
+                          const Icon(Icons.error_outline,
+                              size: 14, color: kErrorColor),
+                        ],
+                      ],
                     ),
                   ),
+
                   const SizedBox(height: 6),
-                  SizedBox(height: 28, child: waveform),
-                  const SizedBox(height: 6),
+
+                  // ✅ Slider: always LTR (no transform) so it behaves naturally.
+                  SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      trackHeight: 3,
+                      thumbShape:
+                      const RoundSliderThumbShape(enabledThumbRadius: 7),
+                    ),
+                    child: Slider(
+                      value: canSeek ? pos.inMilliseconds.toDouble() : 0,
+                      min: 0,
+                      max: canSeek ? total.inMilliseconds.toDouble() : 1,
+                      onChanged: canSeek
+                          ? (v) => _seek(Duration(milliseconds: v.round()))
+                          : null,
+                    ),
+                  ),
+
+                  // Time row: keep LTR digits, but align row according to locale.
                   Row(
                     children: [
-                      leftTime,
+                      if (dir == TextDirection.rtl) const Spacer(),
+                      Text(
+                        _isolateLtrDigits(_fmt(pos)),
+                        textDirection: TextDirection.ltr,
+                        style: TextStyle(
+                          color: kTextSecondary.withOpacity(0.90),
+                          fontSize: 11,
+                        ),
+                      ),
                       const Spacer(),
-                      rightTime,
+                      Text(
+                        total == Duration.zero
+                            ? _isolateLtrDigits('--:--')
+                            : _isolateLtrDigits(_fmt(total)),
+                        textDirection: TextDirection.ltr,
+                        style: TextStyle(
+                          color: kTextSecondary.withOpacity(0.90),
+                          fontSize: 11,
+                        ),
+                      ),
+                      if (dir != TextDirection.rtl) const Spacer(),
                     ],
                   ),
                 ],
               ),
-            ),
-            const SizedBox(width: 10),
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                backBtn,
-                fwdBtn,
-              ],
             ),
           ],
         ),
@@ -658,6 +815,7 @@ class _MessageBubbleState extends State<MessageBubble> {
 
   Widget _buildFileBubble() {
     final l10n = AppLocalizations.of(context)!;
+    final title = _friendlyGenericFileTitle(l10n);
 
     return GestureDetector(
       onTap: _openFile,
@@ -671,11 +829,12 @@ class _MessageBubbleState extends State<MessageBubble> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.insert_drive_file, color: kTextSecondary.withOpacity(0.9)),
+            Icon(Icons.insert_drive_file,
+                color: kTextSecondary.withOpacity(0.9)),
             const SizedBox(width: 8),
             Flexible(
               child: Text(
-                widget.fileName ?? l10n.genericFileLabel,
+                title,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(color: kTextPrimary),
               ),
@@ -686,54 +845,40 @@ class _MessageBubbleState extends State<MessageBubble> {
     );
   }
 
-  @override
-  void initState() {
-    super.initState();
-    _audioPlayer.setReleaseMode(ReleaseMode.stop);
-    _initVideoIfNeeded();
-    _initAudioStreams();
-  }
-
-  @override
-  void didUpdateWidget(covariant MessageBubble oldWidget) {
-    super.didUpdateWidget(oldWidget);
-
-    final bool urlChanged = oldWidget.fileUrl != widget.fileUrl;
-    final bool typeChanged =
-        (oldWidget.fileType ?? '').toLowerCase() != (widget.fileType ?? '').toLowerCase();
-
-    if (urlChanged || typeChanged) {
-      _disposeVideo();
-      _initVideoIfNeeded();
-    }
-
-    if (urlChanged && isAudio) {
-      _audioPlayer.stop().catchError((_) {});
-      if (mounted) setState(_resetAudioUi);
-    }
-
-    if (typeChanged && !isAudio) {
-      _audioPlayer.stop().catchError((_) {});
-      _resetAudioUi();
-    }
-  }
+  // =============================
+  // ✅ Dispose
+  // =============================
 
   @override
   void dispose() {
-    _audioPlayer.stop().catchError((_) {});
-    _playerStateSub?.cancel();
+    _player.stop().catchError((_) {});
+    _stateSub?.cancel();
     _posSub?.cancel();
     _durSub?.cancel();
     _completeSub?.cancel();
-    _audioPlayer.dispose();
-
-    _disposeVideo();
+    _player.dispose();
     super.dispose();
   }
 
+  // =============================
+  // ✅ Build
+  // =============================
+
   @override
   Widget build(BuildContext context) {
+    super.build(context);
+
+    final l10n = AppLocalizations.of(context)!;
     final maxWidth = MediaQuery.of(context).size.width * 0.75;
+
+    final displayText = _displayTextForBubble(l10n);
+
+    // ✅ Key fix: compute per-message direction + isolate so emoji stays visually in correct place
+    final msgDir = _textDirectionForMessage(displayText);
+    final fixedText = _isolateBidi(displayText, msgDir);
+
+    final textAlign =
+    msgDir == TextDirection.rtl ? TextAlign.right : TextAlign.left;
 
     return Align(
       alignment: widget.isMe ? Alignment.centerRight : Alignment.centerLeft,
@@ -745,7 +890,6 @@ class _MessageBubbleState extends State<MessageBubble> {
           color: _bubbleColor,
           borderRadius: BorderRadius.circular(_bubbleRadius),
           border: _bubbleBorder,
-          // ✅ remove heavy glow; keep super subtle depth
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.22),
@@ -759,14 +903,16 @@ class _MessageBubbleState extends State<MessageBubble> {
           widget.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           children: [
             if (hasAttachment && isImage) _buildImageBubble(),
-            if (hasAttachment && isVideo) _buildVideoBubble(),
+            if (hasAttachment && isVideo) _buildVideoBubbleLightweight(),
             if (hasAttachment && isAudio) _buildAudioBubble(),
             if (hasAttachment && isGenericFile) _buildFileBubble(),
-            if (widget.text.isNotEmpty)
+            if (displayText.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 6),
                 child: Text(
-                  widget.text,
+                  fixedText,
+                  textDirection: msgDir,
+                  textAlign: textAlign,
                   style: TextStyle(color: _onBubblePrimary),
                 ),
               ),
@@ -777,8 +923,10 @@ class _MessageBubbleState extends State<MessageBubble> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      widget.timeLabel,
-                      style: TextStyle(color: _onBubbleSecondary, fontSize: 10),
+                      _isolateBidi(widget.timeLabel, TextDirection.ltr),
+                      textDirection: TextDirection.ltr,
+                      style:
+                      TextStyle(color: _onBubbleSecondary, fontSize: 10),
                     ),
                     if (widget.isMe)
                       Padding(
@@ -786,7 +934,6 @@ class _MessageBubbleState extends State<MessageBubble> {
                         child: Icon(
                           widget.isSeen ? Icons.done_all : Icons.done,
                           size: 12,
-                          // ✅ gold accent on dark bubble (not black)
                           color: widget.isSeen
                               ? kPrimaryGold.withOpacity(0.92)
                               : kPrimaryGold.withOpacity(0.55),
@@ -801,79 +948,6 @@ class _MessageBubbleState extends State<MessageBubble> {
     );
   }
 }
-
-class _WaveformPainter extends CustomPainter {
-  final List<double> bars; // 0..1
-  final double progress; // 0..1
-  final bool isMe;
-  final bool isRtl;
-
-  _WaveformPainter({
-    required this.bars,
-    required this.progress,
-    required this.isMe,
-    required this.isRtl,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paintBase = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeWidth = 3;
-
-    final paintPlayed = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeWidth = 3;
-
-    paintPlayed.color = (isMe ? kPrimaryGold : kOffWhite).withOpacity(0.92);
-    paintBase.color = kTextSecondary.withOpacity(isMe ? 0.36 : 0.26);
-
-    final w = size.width;
-    final h = size.height;
-    final mid = h / 2;
-
-    final count = bars.length;
-    if (count == 0 || w <= 0) return;
-
-    final playedCount = (progress * count).clamp(0.0, count.toDouble());
-
-    for (int i = 0; i < count; i++) {
-      final idx = isRtl ? (count - 1 - i) : i;
-
-      final x = (i + 0.5) * (w / count);
-      final amp = (bars[idx]).clamp(0.15, 1.0);
-      final barH = (amp * (h * 0.85)).clamp(6.0, h);
-
-      final y1 = mid - barH / 2;
-      final y2 = mid + barH / 2;
-
-      final isPlayed = isRtl ? (i >= (count - playedCount)) : (i < playedCount);
-      final p = isPlayed ? paintPlayed : paintBase;
-
-      canvas.drawLine(Offset(x, y1), Offset(x, y2), p);
-    }
-
-    final headX = isRtl ? (w * (1.0 - progress)) : (w * progress);
-    final headPaint = Paint()
-      ..color = (isMe ? kPrimaryGold : kOffWhite).withOpacity(0.85)
-      ..strokeWidth = 4
-      ..strokeCap = StrokeCap.round;
-
-    canvas.drawLine(Offset(headX, mid - 12), Offset(headX, mid + 12), headPaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _WaveformPainter oldDelegate) {
-    return oldDelegate.progress != progress ||
-        oldDelegate.isMe != isMe ||
-        oldDelegate.isRtl != isRtl ||
-        oldDelegate.bars != bars;
-  }
-}
-
-/// ================= FULLSCREEN VIDEO PAGE ==================
 
 class _FullScreenVideoPage extends StatefulWidget {
   final String videoUrl;

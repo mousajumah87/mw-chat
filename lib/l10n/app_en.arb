@@ -2,6 +2,7 @@
     "@@locale": "en",
 
     "mainTitle": "MW",
+
     "loginTitle": "Welcome back",
     "createAccount": "Create your MW account",
     "createNewAccount": "Create new account",
@@ -25,8 +26,12 @@
     "minPassword": "Minimum 6 characters",
     "authError": "Authentication error",
     "failedToCreateUser": "Failed to create user",
-    "languageLabel": "Language",
-    "menuTitle": "Menu",
+
+    "forgotPassword": "Forgot password?",
+    "resetPasswordTitle": "Reset password",
+    "resetEmailSent": "Password reset email sent. Check your inbox.",
+    "resetEmailIfExists": "If this email exists, you will receive a reset link.",
+    "tooManyRequests": "Too many attempts. Please try again later.",
 
     "settingUpProfile": "Setting up your profile...",
     "accountNotActive": "Your account is not active yet.",
@@ -35,6 +40,8 @@
     "logout": "Logout",
     "logoutTooltip": "Logout",
     "goBack": "Go back",
+    "autoUpdateNotice": "This screen will update automatically once activated.",
+    "checkAgain": "Check again",
 
     "profileTitle": "Profile",
     "profileUpdated": "Profile updated",
@@ -48,6 +55,17 @@
     "genderLabel": "Gender",
     "notSpecified": "Not specified",
     "unknown": "Unknown",
+    "languageLabel": "Language",
+    "menuTitle": "Menu",
+    "profile": "Profile",
+    "viewProfile": "View Profile",
+    "viewFriendProfile": "View Friend Profile",
+    "viewMyProfile": "View My Profile",
+
+    "removePhoto": "Remove photo",
+    "@removePhoto": {
+    "description": "Button label for removing the current profile picture"
+    },
 
     "usersTitle": "Friends",
     "mwUsersTabTitle": "MW Friends",
@@ -59,13 +77,6 @@
     "lastSeenHours": "Last seen {hours} h ago",
     "lastSeenDays": "Last seen {days} d ago",
     "noOtherUsers": "No other friends yet",
-    "profile": "Profile",
-    "viewProfile": "View Profile",
-    "viewFriendProfile": "View Friend Profile",
-    "viewMyProfile": "View My Profile",
-    "autoUpdateNotice": "This screen will update automatically once activated.",
-    "checkAgain": "Check again",
-
 
     "typeMessageHint": "Type a message...",
     "isTyping": "{name} is typing...",
@@ -105,43 +116,39 @@
     "description": "Fallback label for a file attachment when no fileName is provided"
     },
 
-    "removePhoto": "Remove photo",
-    "@removePhoto": {
-    "description": "Button label for removing the current profile picture"
-    },
     "websiteDomain": "mwchats.com",
     "@websiteDomain": {
-      "description": "The official MW Chats website domain displayed in the footer of the user profile screen"
+    "description": "The official MW Chats website domain displayed in the footer of the user profile screen"
     },
 
     "deleteChatForMe": "Delete for me",
     "@deleteChatForMe": {
-      "description": "Button label to delete the chat only for the current user"
+    "description": "Button label to delete the chat only for the current user"
     },
 
     "deleteChatForBoth": "Delete for both",
     "@deleteChatForBoth": {
-      "description": "Button label to delete the chat history for both participants"
+    "description": "Button label to delete the chat history for both participants"
     },
 
     "deletingChatInProgressTitle": "Deleting chat...",
     "@deletingChatInProgressTitle": {
-      "description": "Title of the progress dialog shown while deleting chat messages"
+    "description": "Title of the progress dialog shown while deleting chat messages"
     },
 
     "deletingChatProgress": "{current} / {total} messages",
     "@deletingChatProgress": {
-      "description": "Progress label for chat deletion, showing number of processed messages out of total",
-      "placeholders": {
-        "current": {
-          "type": "int",
-          "description": "Number of messages processed so far"
-        },
-        "total": {
-          "type": "int",
-          "description": "Total number of messages to delete"
-        }
+    "description": "Progress label for chat deletion, showing number of processed messages out of total",
+    "placeholders": {
+      "current": {
+        "type": "int",
+        "description": "Number of messages processed so far"
+      },
+      "total": {
+        "type": "int",
+        "description": "Total number of messages to delete"
       }
+    }
     },
 
     "deleteMessageTitle": "Delete message",
@@ -149,11 +156,11 @@
     "deleteFailed": "Failed to delete the message. Please try again.",
     "deleteChatTitle": "Delete chat",
     "deleteChatWarning": "Are you sure you want to delete this chat? This action cannot be undone.",
+    "deleteChatDescription": "Are you sure you want to delete this chat history? This action cannot be undone.",
     "delete": "Delete",
     "cancel": "Cancel",
     "chatDeleted": "Chat deleted successfully",
     "chatHistoryDeleteFailed": "Failed to delete chat history",
-    "deleteChatDescription": "Are you sure you want to delete this chat history? This action cannot be undone.",
     "chatHistoryDeleted": "Chat history deleted successfully",
 
     "invite": "Invite",
@@ -167,6 +174,12 @@
     "inviteMessageTemplate": "Hi {name}, I’m using MW Chat to stay in touch. Download it here:\nAndroid: {androidLink}\niOS: {iosLink}\nSee you there!",
     "inviteSent": "Invite sent to {name}",
     "inviteWebNotSupported": "Inviting contacts is not supported on web.",
+    "inviteFromContactsFuture": "Invite your friends to MW Chat and stay connected.",
+    "inviteShareManual": "You can download MW Chat using the links below:",
+    "invitePlatformAndroid": "Android",
+    "invitePlatformIos": "iOS",
+    "invitePlatformWeb": "Web",
+
     "search": "Search",
     "retry": "Retry",
 
@@ -179,6 +192,7 @@
     "friendSectionYourFriends": "Your friends",
     "friendSectionAllUsers": "All MW users",
     "friendSectionInactiveUsers": "Inactive users",
+    "friendRequestAlreadyIncoming": "This user already sent you a friend request. Check your requests.",
 
     "friendRequestSent": "Friend request sent",
     "friendRequestSendFailed": "Failed to send friend request",
@@ -186,6 +200,9 @@
     "friendRequestAcceptFailed": "Failed to accept friend request",
     "friendRequestDeclined": "Friend request declined",
     "friendRequestDeclineFailed": "Failed to decline friend request",
+    "friendRequestCancelled": "Friend request cancelled",
+    "friendRequestIncomingBanner": "This user sent you a friend request.",
+
     "friendshipInfoOutgoing": "Friend request sent. Please wait for approval.",
     "friendshipInfoIncoming": "You have a friend request pending. Accept it to start chatting.",
     "friendshipInfoNotFriends": "You need to be friends to send messages.",
@@ -238,20 +255,23 @@
     "reportUserHint": "Describe the problem (harassment, spam, inappropriate content, etc.)",
     "reportUserReasonLabel": "Reason",
     "reportSubmitted": "Thank you. Your report has been submitted.",
+
     "messageContainsRestrictedContent": "Your message contains language that is not allowed in MW Chat.",
     "contentBlockedTitle": "Message not sent",
     "contentBlockedBody": "Your message contains words that are not allowed in MW Chat. Please edit and try again.",
+
     "dangerZone": "Sensitive actions",
     "optional": "Optional",
+
     "reasonHarassment": "Harassment or bullying",
     "reasonSpam": "Spam or scam",
     "reasonHate": "Hate or abusive content",
     "reasonSexual": "Sexual or inappropriate content",
     "reasonOther": "Other",
+
     "deleteMessageSuccess": "Message deleted",
     "deleteMessageFailed": "Failed to delete message",
     "deletedForMe": "Deleted for me",
-
 
     "deletingAccount": "Deleting account...",
     "deleteMyAccount": "Delete my account",
@@ -265,6 +285,7 @@
     "termsTitle": "Terms of Use",
     "termsAcceptButton": "I Agree",
     "termsBody": "Welcome to MW Chat!\n\nBy using this app, you agree to the following Terms of Use:\n\n1. No tolerance for objectionable content\n• Do not send or share content that is hateful, harassing, threatening, sexually explicit, violent, discriminatory, or harmful.\n• Do not bully, abuse, or intimidate others.\n• Do not impersonate others or use MW Chat for fraud or illegal activity.\n\n2. User-generated content\n• You are responsible for the messages and content you send.\n• MW Chat may remove any content that violates these terms.\n• MW Chat may suspend or permanently ban users who violate these rules.\n\n3. Reporting and blocking\n• MW Chat provides tools to report users and block abusive users.\n• Reports are reviewed promptly, and we act on objectionable content within 24 hours by removing the content and/or disabling offending accounts.\n\n4. Privacy and safety\n• Do not share sensitive personal information inside chats.\n• Review our Privacy Policy for more details on data handling.\n\n5. Account termination\n• MW Chat may restrict or terminate your access if you violate these terms.\n\nIf you encounter abusive content or behavior, contact us at support@mwchats.com.\n\nBy tapping \"I Agree\", you accept these Terms of Use.",
+
     "byRegisteringYouAgree": "By creating an account, you agree to the MW Chat Terms of Use.",
     "viewTermsLink": "View Terms of Use",
     "iAgreeTo": "I agree to the MW Chat Terms of Use",
@@ -280,15 +301,10 @@
     "website": "Website",
     "aboutTitle": "About MW Chat",
     "aboutDescription": "MW Chat is a modern private messaging app designed for secure and smooth communication.\n\nChat with friends, send photos, videos, and voice messages through a clean and simple interface.\n\nFeatures:\n• Real-time messaging\n• Media sharing\n• Secure authentication\n• Simple & elegant design\n• Fast and lightweight",
+
     "legalTitle": "Legal",
     "copyrightText": "MW Chat – modern private messaging app.\nCopyright © 2025 Mousa Abu Hilal.",
     "allRightsReserved": "All rights reserved.",
-
-    "cancelFriendRequestTitle": "Cancel friend request",
-    "cancelFriendRequestDescription": "Do you want to cancel this friend request?",
-    "cancelFriendRequestConfirm": "Cancel request",
-    "friendRequestCancelled": "Friend request cancelled",
-    "friendRequestIncomingBanner": "This user sent you a friend request.",
 
     "sidePanelAppName": "MW Chat",
     "sidePanelTagline": "Stay close to your favorite people.",
@@ -302,9 +318,22 @@
     "socialFacebook": "Facebook",
     "socialInstagram": "Instagram",
     "socialX": "X / Twitter",
-    "loadMore": "Load more",
 
-    "appBrandingBeta": "MW Chat 2025 beta",
+    "loadMore": "Load more",
+    "tapToPlay": "Tap to play",
+    "videoLabel": "Video",
+    "recordingLabel": "Recording",
+    "cancelLabel": "Cancel",
+    "stopLabel": "Stop",
+    "sendLabel": "Send",
+    "cancelFriendRequestTitle": "Cancel friend request",
+    "send": "Send",
+    "privacyTitle": "Privacy Settings",
+    "ok": "OK",
+    "cancelFriendRequestConfirm": "Cancel request",
+    "cancelFriendRequestDescription": "Do you want to cancel this friend request?",
+
+    "appBrandingBeta": "MW Chat 2025",
 
     "profileSafetyToolsSectionTitle": "Safety tools",
     "profileBlockedUserHintLimitedVisibility": "This user has limited what you can see.",
@@ -319,6 +348,7 @@
     "profileBlockSnackbarBlocked": "User blocked successfully.",
     "profileBlockSnackbarUnblocked": "User unblocked.",
     "profileBlockSnackbarError": "Failed to update block status. Please try again.",
+
     "profileReportDialogTitle": "Report user",
     "profileReportDialogBody": "Please describe why you are reporting this user. For example: spam, bullying, hate speech, or other abusive content.",
     "profileReportDialogHint": "Describe the problem…",
@@ -326,17 +356,123 @@
     "profileReportButtonLabel": "Report user",
     "profileReportSnackbarSuccess": "Report submitted. We will review it.",
     "profileReportSnackbarError": "Failed to submit report. Please try again.",
+
     "generalErrorMessage": "Something went wrong. Please try again.",
     "downloadOnAppStore": "Download on the App Store",
     "getItOnGooglePlay": "Get it on Google Play",
     "shareAppLink": "Share app link",
 
-    "forgotPassword": "Forgot password?",
-    "resetPasswordTitle": "Reset password",
-    "resetEmailSent": "Password reset email sent. Check your inbox.",
-    "resetEmailIfExists": "If this email exists, you will receive a reset link.",
-    "tooManyRequests": "Too many attempts. Please try again later.",
-    "send": "Send",
-    "ok": "OK"
+    "presencePrivacyTitle": "Privacy Settings",
+    "presencePrivacyNotSignedIn": "Not signed in",
+    "presencePrivacySectionSubtitle": "Control who can see your profile and activity.",
+    "presencePrivacySectionOnlineTitle": "Online Status",
+
+    "presencePrivacyShowWhenOnlineTitle": "Show when I’m online",
+    "presencePrivacyShowWhenOnlineSubtitleOn": "Others can see when you are online.",
+    "presencePrivacyShowWhenOnlineSubtitleOff": "You will appear offline to everyone.",
+
+    "presencePrivacyStatusHiddenOffline": "You will appear offline to everyone.",
+    "presencePrivacyStatusVisibleOnline": "Others can see you as online.",
+    "presencePrivacyStatusVisibleOfflineWhenInactive": "Others will see you as offline when you’re not active.",
+
+    "presencePrivacyAutoOfflineTitle": "Auto-offline (recommended)",
+    "presencePrivacyAutoOfflineBody": "If the app is closed, uninstalled, or loses connection, your status may stay “online” briefly. MW Chat automatically treats accounts as offline if there is no recent activity for {staleWindow}.",
+    "@presencePrivacyAutoOfflineBody": {
+    "placeholders": {
+      "staleWindow": {}
+    }
+    },
+
+    "presencePrivacyStaleMinutes": "{minutes, plural, one{1 minute} other{{minutes} minutes}}",
+    "@presencePrivacyStaleMinutes": {
+    "placeholders": {
+      "minutes": {}
+    }
+    },
+
+    "presencePrivacyLastSeenUnavailable": "Last seen: unavailable",
+    "presencePrivacyLastSeenLine": "Last seen: {value}",
+    "@presencePrivacyLastSeenLine": {
+    "placeholders": {
+      "value": {}
+    }
+    },
+
+    "presencePrivacyTip": "Tip: Turning this off hides your online status everywhere in the app.",
+    "privacySectionTitle": "Privacy",
+    "onlineStatusTitle": "Privacy & visibility",
+    "onlineStatusSubtitle": "Manage who can see your status, activity, and profile",
+
+
+    "presencePrivacySectionProfileTitle": "Profile & Requests",
+    "presencePrivacySectionProfileSubtitle": "Control who can view your profile and who can add you as a friend.",
+
+    "presencePrivacyProfileVisTitle": "Who can see my profile",
+    "presencePrivacyProfileVisSubtitle": "Choose who can view your profile details.",
+    "presencePrivacyProfileVisSheetHint": "This controls visibility of your profile to other users.",
+
+    "presencePrivacyProfileVisEveryoneTitle": "Everyone",
+    "presencePrivacyProfileVisEveryoneSubtitle": "Anyone can view your profile.",
+    "presencePrivacyProfileVisFriendsTitle": "Friends only",
+    "presencePrivacyProfileVisFriendsSubtitle": "Only your friends can view your profile.",
+    "presencePrivacyProfileVisNobodyTitle": "Nobody",
+    "presencePrivacyProfileVisNobodySubtitle": "Hide your profile from other users.",
+
+    "presencePrivacyProfileVisValueEveryone": "Everyone",
+    "presencePrivacyProfileVisValueFriends": "Friends",
+    "presencePrivacyProfileVisValueNobody": "Nobody",
+
+    "presencePrivacyFriendReqTitle": "Who can add me as a friend",
+    "presencePrivacyFriendReqSubtitle": "Control who is allowed to send you friend requests.",
+    "presencePrivacyFriendReqSheetHint": "This controls whether people can send you friend requests.",
+
+    "presencePrivacyFriendReqEveryoneTitle": "Everyone",
+    "presencePrivacyFriendReqEveryoneSubtitle": "Anyone can send you a friend request.",
+    "presencePrivacyFriendReqNobodyTitle": "Nobody",
+    "presencePrivacyFriendReqNobodySubtitle": "Disable friend requests from other users.",
+
+    "presencePrivacyFriendReqValueEveryone": "Everyone",
+    "presencePrivacyFriendReqValueNobody": "Nobody",
+
+    "friendRequestNotAllowed": "Friend requests are not allowed",
+    "profilePrivateChatRestricted": "This profile is private. Chat is restricted",
+    "profilePrivate": "This profile is private",
+
+    "deleteMessageTitle": "Delete message",
+    "deleteMessageDescription": "Choose how you want to delete this message",
+    "deleteForMe": "Delete for me",
+    "deleteForEveryone": "Delete for everyone",
+    "deletingMessageInProgressTitle": "Deleting message",
+    "pleaseWait": "Please wait",
+    "messageAlreadyDeleted": "This message was already deleted",
+    "deletedForMeSuccess": "Message deleted for you",
+    "deletedForEveryoneSuccess": "Message deleted for everyone",
+    "deleteMessageFailed": "Failed to delete message",
+    "searchFriendsHint": "Search friends…",
+    "searchUsersHint": "Search MW users…",
+    "noFriendsFound": "No friends found.",
+    "noUsersFound": "No users found.",
+    "loading": "Loading",
+    "peopleOnMw": "People on MW",
+    "myFriends": "My Friends",
+    "searchPeopleHint": "Search people",
+    "noSearchResults": "No results found",
+    "friendRequestsTitle": "Friend Requests",
+    "friendRequestsSearchHint": "Search requests",
+    "friendRequestsEmpty": "No requests",
+
+    "friendRequestsSubtitle": "{count,plural, =0{No new requests} =1{You have 1 new request} other{You have {count} new requests}}",
+    "@friendRequestsSubtitle": {
+    "description": "Used for friend requests subtitle (top pill + banner)",
+        "placeholders": {
+          "count": { "type": "int" }
+        }
+    },
+    "friendRequestAccepted": "Friend request accepted",
+    "unknownUser": "Unknown user",
+    "accountUnavailableSubtitle": "This account is no longer available.",
+    "invitePlatformTitle": "Invite via platform",
+    "tapIconToOpen": "Tap an icon to open"
+
 
 }

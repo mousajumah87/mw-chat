@@ -1,7 +1,5 @@
-// lib/screens/profile/profile_screen.dart
 import 'dart:io';
 import 'dart:typed_data';
-import 'dart:ui'; // still OK even if BackdropFilter not used elsewhere
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
@@ -10,14 +8,26 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/services.dart'; // for PlatformException
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../theme/app_theme.dart';
-import '../../widgets/ui/mw_avatar.dart';
 import '../../widgets/ui/mw_background.dart';
+import '../../widgets/ui/mw_full_screen_image_viewer.dart';
 import '../legal/terms_of_use_screen.dart';
+import 'presence_privacy_screen.dart';
+
+import 'widgets/profile_avatar_section.dart';
+import 'widgets/profile_birthday_section.dart';
+import 'widgets/profile_danger_zone_section.dart';
+import 'widgets/profile_footer.dart';
+import 'widgets/profile_gender_section.dart';
+import 'widgets/profile_legal_section.dart';
+import 'widgets/profile_name_section.dart';
+import 'widgets/profile_privacy_tile.dart';
+
+
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -30,9 +40,10 @@ class _ProfileScreenState extends State<ProfileScreen>
     with SingleTickerProviderStateMixin {
   File? _imageFile;
   Uint8List? _imageBytes;
+
   bool _saving = false;
   bool _deletingAccount = false;
-  bool _pickingImage = false; // avoid double-taps
+  bool _pickingImage = false;
 
   String? _currentUrl;
   String _avatarType = 'bear';
@@ -49,7 +60,6 @@ class _ProfileScreenState extends State<ProfileScreen>
   static const String _appVersion = 'v1.0';
   static const String _websiteUrl = 'https://www.mwchats.com';
 
-  // Upload progress
   bool _uploadingImage = false;
   double _uploadProgress = 0.0;
 
@@ -77,51 +87,9 @@ class _ProfileScreenState extends State<ProfileScreen>
     super.dispose();
   }
 
-  // REMOVE PROFILE IMAGE SAFELY
-  Future<void> _removeImage() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    try {
-      // 1) Delete from Firebase Storage
-      if (_currentUrl != null && _currentUrl!.isNotEmpty) {
-        try {
-          final ref = FirebaseStorage.instance.refFromURL(_currentUrl!);
-          await ref.delete();
-        } catch (e) {
-          debugPrint('[ProfileScreen] Storage delete failed: $e');
-        }
-      }
-
-      // 2) Remove from Firestore
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
-        'profileUrl': FieldValue.delete(),
-      });
-
-      // 3) Remove from Firebase Auth
-      await user.updatePhotoURL(null);
-
-      // 4) Clear locally
-      if (mounted) {
-        setState(() {
-          _imageFile = null;
-          _imageBytes = null;
-          _currentUrl = '';
-        });
-      }
-    } catch (e, st) {
-      debugPrint('[ProfileScreen] _removeImage error: $e\n$st');
-    }
-  }
-
   Future<void> _openMwWebsite() async {
     final uri = Uri.parse(_websiteUrl);
-
-    // Keep your behavior (externalApplication). If you want cross-platform parity, switch to platformDefault.
-    if (!await launchUrl(
-      uri,
-      mode: LaunchMode.externalApplication,
-    )) {
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
       debugPrint('Could not launch $_websiteUrl');
     }
   }
@@ -131,8 +99,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     if (user == null) return;
 
     try {
-      final doc =
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
       final data = doc.data() ?? {};
 
       if (!mounted) return;
@@ -166,7 +133,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     if (!mounted) return;
 
     final l10n = AppLocalizations.of(context)!;
-
     setState(() => _pickingImage = true);
 
     try {
@@ -224,6 +190,38 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
+  Future<void> _removeImage() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      if (_currentUrl != null && _currentUrl!.isNotEmpty) {
+        try {
+          final ref = FirebaseStorage.instance.refFromURL(_currentUrl!);
+          await ref.delete();
+        } catch (e) {
+          debugPrint('[ProfileScreen] Storage delete failed: $e');
+        }
+      }
+
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
+        'profileUrl': FieldValue.delete(),
+      });
+
+      await user.updatePhotoURL(null);
+
+      if (mounted) {
+        setState(() {
+          _imageFile = null;
+          _imageBytes = null;
+          _currentUrl = '';
+        });
+      }
+    } catch (e, st) {
+      debugPrint('[ProfileScreen] _removeImage error: $e\n$st');
+    }
+  }
+
   Future<void> _pickBirthday() async {
     final now = DateTime.now();
     final picked = await showDatePicker(
@@ -256,7 +254,6 @@ class _ProfileScreenState extends State<ProfileScreen>
         });
 
         UploadTask task;
-
         if (kIsWeb && _imageBytes != null) {
           task = ref.putData(_imageBytes!, metadata);
         } else {
@@ -265,22 +262,14 @@ class _ProfileScreenState extends State<ProfileScreen>
 
         task.snapshotEvents.listen((event) {
           final double progress = event.totalBytes > 0
-              ? (event.bytesTransferred / event.totalBytes)
-              .clamp(0.0, 1.0)
-              .toDouble()
+              ? (event.bytesTransferred / event.totalBytes).clamp(0.0, 1.0).toDouble()
               : 0.0;
-
-          if (mounted) {
-            setState(() => _uploadProgress = progress);
-          }
+          if (mounted) setState(() => _uploadProgress = progress);
         });
 
         await task;
 
-        if (mounted) {
-          setState(() => _uploadingImage = false);
-        }
-
+        if (mounted) setState(() => _uploadingImage = false);
         url = await ref.getDownloadURL();
       }
 
@@ -312,24 +301,23 @@ class _ProfileScreenState extends State<ProfileScreen>
         await user.updatePhotoURL(url);
       }
 
-      if (mounted) {
-        setState(() => _saving = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.profileUpdated)),
-        );
+      if (!mounted) return;
 
-        if (Navigator.of(context).canPop()) {
-          Navigator.of(context).pop();
-        }
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.profileUpdated)),
+      );
+
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
       }
     } catch (e, st) {
       debugPrint('[ProfileScreen] _saveProfile error: $e\n$st');
-      if (mounted) {
-        setState(() => _saving = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.authError)),
-        );
-      }
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.authError)),
+      );
     }
   }
 
@@ -348,10 +336,7 @@ class _ProfileScreenState extends State<ProfileScreen>
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(
-              l10n.delete,
-              style: const TextStyle(color: Colors.red),
-            ),
+            child: Text(l10n.delete, style: const TextStyle(color: Colors.red)),
           ),
         ],
       ),
@@ -388,9 +373,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(l10n.accountDeletedSuccessfully),
-        ),
+        SnackBar(content: Text(l10n.accountDeletedSuccessfully)),
       );
 
       Navigator.of(context).popUntil((route) => route.isFirst);
@@ -409,9 +392,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       debugPrint('[ProfileScreen] _deleteAccount error: $e\n$st');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(l10n.deleteAccountFailedRetry),
-        ),
+        SnackBar(content: Text(l10n.deleteAccountFailedRetry)),
       );
     } finally {
       if (mounted) {
@@ -455,209 +436,17 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
-  // ✅ Open avatar in full screen (Instagram-like)
-  void _openAvatarFullScreen({
-    required ImageProvider provider,
-    required String heroTag,
-  }) {
+  void _openAvatarFullScreen(ImageProvider provider, String heroTag) {
     Navigator.of(context).push(
       PageRouteBuilder(
         opaque: false,
         barrierColor: Colors.transparent,
-        pageBuilder: (_, __, ___) => _FullScreenImageViewer(
+        pageBuilder: (_, __, ___) => MwFullScreenImageViewer(
           provider: provider,
           heroTag: heroTag,
         ),
-        transitionsBuilder: (_, animation, __, child) {
-          return FadeTransition(opacity: animation, child: child);
-        },
-      ),
-    );
-  }
-
-  Widget _buildAvatar() {
-    final l10n = AppLocalizations.of(context)!;
-
-    // Prefer local selection first (web bytes / mobile file)
-    final ImageProvider? localProvider = kIsWeb
-        ? (_imageBytes != null ? MemoryImage(_imageBytes!) : null)
-        : (_imageFile != null ? FileImage(_imageFile!) : null);
-
-    final bool hasNetwork = (_currentUrl?.trim().isNotEmpty ?? false);
-
-    // Stable hero tag (keeps hero animation consistent everywhere)
-    const heroTag = 'my_profile_photo';
-
-    // Tap provider (viewer)
-    final ImageProvider? tapProvider = localProvider ??
-        (hasNetwork ? CachedNetworkImageProvider(_currentUrl!) : null);
-
-    // Avatar size used previously
-    const double avatarRadius = 60; // => 120px
-
-    Widget avatarCore;
-
-    // If user picked a local image, show it (so they preview before saving)
-    if (localProvider != null) {
-      avatarCore = Hero(
-        tag: heroTag,
-        child: ClipOval(
-          child: SizedBox(
-            width: avatarRadius * 2,
-            height: avatarRadius * 2,
-            child: Image(
-              image: localProvider,
-              fit: BoxFit.cover,
-              filterQuality: FilterQuality.high,
-            ),
-          ),
-        ),
-      );
-    } else {
-      // Otherwise: use MwAvatar (network + fallback asset + ring/hero if supported)
-      avatarCore = MwAvatar(
-        heroTag: heroTag,
-        radius: avatarRadius,
-        avatarType: _avatarType,
-        profileUrl: _currentUrl,
-        hideRealAvatar: false,
-        showRing: true,
-        showOnlineDot: false,
-        showOnlineGlow: false,
-        // Keep cache policy normal for profile page; it updates after upload anyway.
-        cachePolicy: MwAvatarCachePolicy.normal,
-      );
-    }
-
-    return ScaleTransition(
-      scale: _scale,
-      child: Column(
-        children: [
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: tapProvider == null
-                ? null
-                : () => _openAvatarFullScreen(
-              provider: tapProvider,
-              heroTag: heroTag,
-            ),
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                // Subtle background circle (keeps prior feel, avoids “damaged” look on some devices)
-                Container(
-                  width: avatarRadius * 2 + 8,
-                  height: avatarRadius * 2 + 8,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: kSurfaceAltColor.withOpacity(0.9),
-                    border: Border.all(color: Colors.white.withOpacity(0.10)),
-                  ),
-                ),
-
-                // Actual avatar
-                avatarCore,
-
-                if (tapProvider != null && !_uploadingImage)
-                  Positioned(
-                    bottom: 2,
-                    right: 2,
-                    child: Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.60),
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white.withOpacity(0.12)),
-                      ),
-                      child: const Icon(
-                        Icons.zoom_in_rounded,
-                        size: 18,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-
-          if (_uploadingImage) ...[
-            const SizedBox(height: 10),
-            LinearProgressIndicator(value: _uploadProgress),
-          ],
-
-          // Keep your existing "remove photo" behavior
-          if ((localProvider != null || hasNetwork) && !_uploadingImage) ...[
-            const SizedBox(height: 6),
-            TextButton.icon(
-              onPressed: _saving ? null : _removeImage,
-              icon: const Icon(Icons.delete_outline, color: Colors.red),
-              label: Text(
-                l10n.removePhoto,
-                style: const TextStyle(color: Colors.red),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  String _birthdayLabel(AppLocalizations l10n) {
-    if (_birthday == null) return l10n.selectBirthday;
-    return '${_birthday!.year}-${_birthday!.month.toString().padLeft(2, '0')}-${_birthday!.day.toString().padLeft(2, '0')}';
-  }
-
-  Widget _buildFooter(
-      BuildContext context,
-      AppLocalizations l10n, {
-        required bool isWide,
-      }) {
-    final theme = Theme.of(context);
-    final textStyle = theme.textTheme.bodySmall?.copyWith(
-      color: Colors.white70,
-      fontSize: 11,
-    );
-    final versionStyle = textStyle?.copyWith(
-      color: Colors.white38,
-    );
-
-    return Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: isWide ? 16 : 12,
-        vertical: 8,
-      ),
-      child: Wrap(
-        spacing: 10,
-        runSpacing: 4,
-        alignment: WrapAlignment.center,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          Text(
-            l10n.appBrandingBeta,
-            style: textStyle,
-            textAlign: TextAlign.center,
-          ),
-          Text(
-            _appVersion,
-            style: versionStyle,
-            textAlign: TextAlign.center,
-          ),
-          InkWell(
-            onTap: _openMwWebsite,
-            borderRadius: BorderRadius.circular(16),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-              child: Text(
-                'mwchats.com',
-                style: textStyle?.copyWith(
-                  decoration: TextDecoration.underline,
-                  fontWeight: FontWeight.w500,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ),
-          ),
-        ],
+        transitionsBuilder: (_, animation, __, child) =>
+            FadeTransition(opacity: animation, child: child),
       ),
     );
   }
@@ -671,6 +460,16 @@ class _ProfileScreenState extends State<ProfileScreen>
     final media = MediaQuery.of(context);
     final width = media.size.width;
     final isWide = width >= 900;
+
+    // Provider used for fullscreen
+    final ImageProvider? localProvider = kIsWeb
+        ? (_imageBytes != null ? MemoryImage(_imageBytes!) : null)
+        : (_imageFile != null ? FileImage(_imageFile!) : null);
+
+    final bool hasNetwork = (_currentUrl?.trim().isNotEmpty ?? false);
+    const heroTag = 'my_profile_photo';
+    final ImageProvider? tapProvider = localProvider ??
+        (hasNetwork ? CachedNetworkImageProvider(_currentUrl!) : null);
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -700,7 +499,6 @@ class _ProfileScreenState extends State<ProfileScreen>
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 900),
               child: Column(
-                mainAxisSize: MainAxisSize.max,
                 children: [
                   const SizedBox(height: 12),
                   Expanded(
@@ -712,9 +510,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                       decoration: BoxDecoration(
                         color: Colors.black.withOpacity(0.65),
                         borderRadius: BorderRadius.circular(24),
-                        border: Border.all(
-                          color: Colors.white.withOpacity(0.08),
-                        ),
+                        border: Border.all(color: Colors.white.withOpacity(0.08)),
                       ),
                       child: SingleChildScrollView(
                         physics: const BouncingScrollPhysics(),
@@ -726,275 +522,98 @@ class _ProfileScreenState extends State<ProfileScreen>
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                _buildAvatar(),
-                                const SizedBox(height: 16),
-                                ElevatedButton.icon(
-                                  onPressed: _saving || _pickingImage ? null : _pickImage,
-                                  icon: _pickingImage
-                                      ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
-                                  )
-                                      : const Icon(Icons.photo_outlined),
-                                  label: Text(l10n.choosePicture),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: kPrimaryGold,
-                                    foregroundColor: Colors.black,
-                                    elevation: 1,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                  ),
+                                ProfileAvatarSection(
+                                  scale: _scale,
+                                  imageBytes: _imageBytes,
+                                  imageFile: _imageFile,
+                                  currentUrl: _currentUrl,
+                                  avatarType: _avatarType,
+                                  uploadingImage: _uploadingImage,
+                                  uploadProgress: _uploadProgress,
+                                  saving: _saving || _pickingImage,
+                                  onPickImage: _pickImage,
+                                  onRemoveImage: _removeImage,
+                                  onOpenFullScreen: tapProvider == null
+                                      ? () {}
+                                      : () => _openAvatarFullScreen(tapProvider, heroTag),
                                 ),
+
                                 const SizedBox(height: 28),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: TextField(
-                                        controller: _firstNameCtrl,
-                                        style: const TextStyle(color: Colors.white),
-                                        decoration: InputDecoration(
-                                          labelText: l10n.firstName,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: TextField(
-                                        controller: _lastNameCtrl,
-                                        style: const TextStyle(color: Colors.white),
-                                        decoration: InputDecoration(
-                                          labelText: l10n.lastName,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
+
+                                ProfileNameSection(
+                                  firstNameCtrl: _firstNameCtrl,
+                                  lastNameCtrl: _lastNameCtrl,
                                 ),
+
                                 const SizedBox(height: 20),
-                                Align(
-                                  alignment: isRtl ? Alignment.centerRight : Alignment.centerLeft,
-                                  child: Text(
-                                    '${l10n.birthday} ${l10n.optional}',
-                                    textDirection: textDirection,
-                                    style: const TextStyle(color: Colors.white70),
-                                  ),
+
+                                ProfileBirthdaySection(
+                                  birthday: _birthday,
+                                  saving: _saving,
+                                  isRtl: isRtl,
+                                  textDirection: textDirection,
+                                  onPickBirthday: _pickBirthday,
                                 ),
-                                const SizedBox(height: 6),
-                                OutlinedButton(
-                                  onPressed: _saving ? null : _pickBirthday,
-                                  style: OutlinedButton.styleFrom(
-                                    side: BorderSide(color: Colors.white.withOpacity(0.3)),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 12,
-                                      horizontal: 14,
-                                    ),
-                                  ),
-                                  child: Row(
-                                    textDirection: textDirection,
-                                    children: [
-                                      const Icon(Icons.cake_outlined, color: Colors.white70),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: Text(
-                                          _birthdayLabel(l10n),
-                                          style: const TextStyle(color: Colors.white),
-                                          textAlign: isRtl ? TextAlign.right : TextAlign.left,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
+
                                 const SizedBox(height: 22),
-                                Align(
-                                  alignment: isRtl ? Alignment.centerRight : Alignment.centerLeft,
-                                  child: Text(
-                                    '${l10n.gender} ${l10n.optional}',
-                                    textDirection: textDirection,
-                                    style: const TextStyle(color: Colors.white70),
+
+                                ProfileGenderSection(
+                                  gender: _gender,
+                                  isRtl: isRtl,
+                                  textDirection: textDirection,
+                                  onGenderChanged: (v) => setState(() => _gender = v),
+                                ),
+
+                                const SizedBox(height: 30),
+
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: ElevatedButton.icon(
+                                    onPressed: _saving ? null : _saveProfile,
+                                    icon: _saving
+                                        ? const SizedBox(
+                                      height: 16,
+                                      width: 16,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    )
+                                        : const Icon(Icons.save),
+                                    label: Text(_saving ? l10n.saving : l10n.save.toUpperCase()),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: kGoldDeep,
+                                      foregroundColor: Colors.black,
+                                      elevation: 2,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
+                                    ),
                                   ),
                                 ),
-                                const SizedBox(height: 8),
-                                Builder(
-                                  builder: (_) {
-                                    final maleChip = ChoiceChip(
-                                      label: Text('${l10n.male} 🐻'),
-                                      selected: _gender == 'male',
-                                      selectedColor: kPrimaryGold,
-                                      backgroundColor: kSurfaceColor,
-                                      labelStyle: TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        color: _gender == 'male' ? Colors.black : Colors.white70,
-                                      ),
-                                      onSelected: (_) => setState(() => _gender = 'male'),
-                                    );
 
-                                    final femaleChip = ChoiceChip(
-                                      label: Text('${l10n.female} 💃'),
-                                      selected: _gender == 'female',
-                                      selectedColor: kGoldDeep,
-                                      backgroundColor: kSurfaceColor,
-                                      labelStyle: TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        color: _gender == 'female' ? Colors.black : Colors.white70,
-                                      ),
-                                      onSelected: (_) => setState(() => _gender = 'female'),
-                                    );
-
-                                    final preferNotChip = ChoiceChip(
-                                      label: Text(l10n.preferNotToSay),
-                                      selected: _gender == 'none',
-                                      selectedColor: kSurfaceAltColor,
-                                      backgroundColor: kSurfaceColor,
-                                      labelStyle: TextStyle(
-                                        fontWeight: FontWeight.w500,
-                                        color: _gender == 'none' ? Colors.white : Colors.white70,
-                                      ),
-                                      onSelected: (_) => setState(() => _gender = 'none'),
-                                    );
-
-                                    final chips = isRtl
-                                        ? <Widget>[femaleChip, maleChip, preferNotChip]
-                                        : <Widget>[maleChip, femaleChip, preferNotChip];
-
-                                    return Wrap(
-                                      spacing: 10,
-                                      runSpacing: 8,
-                                      textDirection: textDirection,
-                                      children: chips,
+                                // ✅ Privacy section added here
+                                ProfilePrivacyTile(
+                                  onTap: () {
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute(builder: (_) => const PresencePrivacyScreen()),
                                     );
                                   },
                                 ),
-                                const SizedBox(height: 30),
-                                ElevatedButton.icon(
-                                  onPressed: _saving ? null : _saveProfile,
-                                  icon: _saving
-                                      ? const SizedBox(
-                                    height: 16,
-                                    width: 16,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
-                                  )
-                                      : const Icon(Icons.save),
-                                  label: Text(
-                                    _saving ? l10n.saving : l10n.save.toUpperCase(),
-                                  ),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: kGoldDeep,
-                                    foregroundColor: Colors.black,
-                                    elevation: 2,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 14,
-                                      horizontal: 24,
-                                    ),
-                                  ),
+
+                                ProfileLegalSection(
+                                  isRtl: isRtl,
+                                  onOpenTerms: () {
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute(builder: (_) => const TermsOfUseScreen()),
+                                    );
+                                  },
                                 ),
-                                const SizedBox(height: 32),
-                                const Divider(height: 32),
-                                Align(
-                                  alignment: isRtl ? Alignment.centerRight : Alignment.centerLeft,
-                                  child: Text(
-                                    l10n.legalTitle,
-                                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-                                Container(
-                                  decoration: BoxDecoration(
-                                    color: kSurfaceColor,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: kBorderColor),
-                                  ),
-                                  child: ListTile(
-                                    leading: const Icon(Icons.gavel_outlined, color: Colors.white70),
-                                    title: Text(
-                                      l10n.termsTitle,
-                                      style: const TextStyle(color: Colors.white),
-                                    ),
-                                    trailing: const Icon(Icons.chevron_right, color: Colors.white54),
-                                    onTap: () {
-                                      Navigator.of(context).push(
-                                        MaterialPageRoute(
-                                          builder: (_) => const TermsOfUseScreen(),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-                                Container(
-                                  decoration: BoxDecoration(
-                                    color: kSurfaceColor,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: kBorderColor),
-                                  ),
-                                  child: ListTile(
-                                    leading: const Icon(Icons.mail_outline, color: Colors.white70),
-                                    title: Text(
-                                      l10n.contactSupport,
-                                      style: const TextStyle(color: Colors.white),
-                                    ),
-                                    subtitle: Text(
-                                      l10n.contactSupportSubtitle,
-                                      style: const TextStyle(
-                                        color: Colors.white70,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ),
-                                ),
+
                                 const SizedBox(height: 40),
-                                const Divider(height: 32),
-                                Align(
-                                  alignment: isRtl ? Alignment.centerRight : Alignment.centerLeft,
-                                  child: Text(
-                                    l10n.dangerZone,
-                                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                      color: Colors.redAccent,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Align(
-                                  alignment: isRtl ? Alignment.centerRight : Alignment.centerLeft,
-                                  child: Text(
-                                    l10n.deleteAccountDescription,
-                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      color: Colors.white60,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(height: 16),
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: OutlinedButton.icon(
-                                    icon: const Icon(Icons.delete_forever),
-                                    label: Text(
-                                      _deletingAccount
-                                          ? l10n.deletingAccount
-                                          : l10n.deleteMyAccount,
-                                    ),
-                                    style: OutlinedButton.styleFrom(
-                                      foregroundColor: Colors.red,
-                                      side: const BorderSide(color: Colors.red),
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 12,
-                                        horizontal: 16,
-                                      ),
-                                    ),
-                                    onPressed:
-                                    _deletingAccount ? null : _confirmDeleteAccount,
-                                  ),
+
+                                ProfileDangerZoneSection(
+                                  isRtl: isRtl,
+                                  deletingAccount: _deletingAccount,
+                                  onDeletePressed: _confirmDeleteAccount,
                                 ),
                               ],
                             ),
@@ -1004,188 +623,16 @@ class _ProfileScreenState extends State<ProfileScreen>
                     ),
                   ),
                   const SizedBox(height: 6),
-                  _buildFooter(context, l10n, isWide: isWide),
+                  ProfileFooter(
+                    l10n: l10n,
+                    isWide: isWide,
+                    appVersion: _appVersion,
+                    onOpenWebsite: _openMwWebsite,
+                  ),
                 ],
               ),
             ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-// ✅ Full-screen image viewer for ImageProvider (File/Memory/CachedNetwork)
-// - pinch zoom + pan
-// - double-tap zoom
-// - swipe-down to dismiss (only when not zoomed)
-class _FullScreenImageViewer extends StatefulWidget {
-  final ImageProvider provider;
-  final String heroTag;
-
-  const _FullScreenImageViewer({
-    required this.provider,
-    required this.heroTag,
-  });
-
-  @override
-  State<_FullScreenImageViewer> createState() => _FullScreenImageViewerState();
-}
-
-class _FullScreenImageViewerState extends State<_FullScreenImageViewer> {
-  final TransformationController _transform = TransformationController();
-  TapDownDetails? _doubleTapDetails;
-
-  double _dragDy = 0.0;
-  bool _isDraggingDown = false;
-
-  static const double _dismissThreshold = 140.0;
-  static const double _maxBgFadeDistance = 420.0;
-
-  double get _currentScale => _transform.value.storage[0];
-  bool get _isZoomed => _currentScale > 1.01;
-
-  void _resetZoom() {
-    _transform.value = Matrix4.identity();
-  }
-
-  void _handleDoubleTap() {
-    if (_isZoomed) {
-      setState(_resetZoom);
-      return;
-    }
-
-    final d = _doubleTapDetails;
-    if (d == null) return;
-
-    const double scale = 2.6;
-    final tap = d.localPosition;
-
-    final zoomed = Matrix4.identity()
-      ..translate(-tap.dx * (scale - 1), -tap.dy * (scale - 1))
-      ..scale(scale);
-
-    setState(() => _transform.value = zoomed);
-  }
-
-  void _onVerticalDragStart(DragStartDetails d) {
-    if (_isZoomed) return;
-    _isDraggingDown = true;
-  }
-
-  void _onVerticalDragUpdate(DragUpdateDetails d) {
-    if (!_isDraggingDown || _isZoomed) return;
-    setState(() {
-      _dragDy += d.delta.dy;
-      if (_dragDy < 0) _dragDy = 0;
-    });
-  }
-
-  void _onVerticalDragEnd(DragEndDetails d) {
-    if (!_isDraggingDown || _isZoomed) return;
-
-    final velocity = d.primaryVelocity ?? 0.0;
-    final shouldDismiss = _dragDy > _dismissThreshold || velocity > 1200;
-
-    if (shouldDismiss) {
-      Navigator.of(context).maybePop();
-    } else {
-      setState(() {
-        _dragDy = 0.0;
-        _isDraggingDown = false;
-      });
-    }
-  }
-
-  double _backgroundOpacity() {
-    final t = (_dragDy / _maxBgFadeDistance).clamp(0.0, 1.0);
-    return (1.0 - (t * 0.75)).clamp(0.25, 1.0);
-  }
-
-  double _contentScaleDuringDrag() {
-    final t = (_dragDy / _maxBgFadeDistance).clamp(0.0, 1.0);
-    return (1.0 - (t * 0.10)).clamp(0.90, 1.0);
-  }
-
-  @override
-  void dispose() {
-    _transform.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final bgOpacity = _backgroundOpacity();
-    final dragScale = _contentScaleDuringDrag();
-
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: SafeArea(
-        child: Stack(
-          children: [
-            // Background (tap to close)
-            Positioned.fill(
-              child: AnimatedOpacity(
-                duration: const Duration(milliseconds: 90),
-                opacity: bgOpacity,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => Navigator.of(context).maybePop(),
-                  child: Container(color: Colors.black),
-                ),
-              ),
-            ),
-
-            // Content (double tap + swipe down)
-            Center(
-              child: GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onDoubleTapDown: (d) => _doubleTapDetails = d,
-                onDoubleTap: _handleDoubleTap,
-                onVerticalDragStart: _onVerticalDragStart,
-                onVerticalDragUpdate: _onVerticalDragUpdate,
-                onVerticalDragEnd: _onVerticalDragEnd,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 110),
-                  curve: Curves.easeOut,
-                  transform: Matrix4.identity()
-                    ..translate(0.0, _dragDy)
-                    ..scale(dragScale),
-                  child: Hero(
-                    tag: widget.heroTag,
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InteractiveViewer(
-                        transformationController: _transform,
-                        panEnabled: true,
-                        minScale: 1.0,
-                        maxScale: 5.0,
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(16),
-                          child: Image(
-                            image: widget.provider,
-                            fit: BoxFit.contain,
-                            filterQuality: FilterQuality.high,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-
-            // Close button
-            Positioned(
-              top: 10,
-              right: 10,
-              child: IconButton(
-                onPressed: () => Navigator.of(context).maybePop(),
-                icon: const Icon(Icons.close_rounded, color: Colors.white, size: 28),
-                tooltip: 'Close',
-              ),
-            ),
-          ],
         ),
       ),
     );

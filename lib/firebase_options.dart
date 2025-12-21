@@ -36,6 +36,13 @@ class DefaultFirebaseOptions {
     }
   }
 
+  // ✅ IMPORTANT: set this to your Realtime Database URL from Firebase Console
+  // Example formats:
+  // https://mw-chat-prod-default-rtdb.firebaseio.com
+  // https://mw-chat-prod-default-rtdb.<region>.firebasedatabase.app
+  static const String _databaseUrl =
+      'https://mw-chat-prod-default-rtdb.firebaseio.com';
+
   static const FirebaseOptions web = FirebaseOptions(
     apiKey: 'AIzaSyDTS4pouaoBIH2QF-iq-Flce9qWayDZGxc',
     appId: '1:1007212667628:web:ada75a68a6f79d9e2b7bc9',
@@ -44,6 +51,8 @@ class DefaultFirebaseOptions {
     authDomain: 'mw-chat-prod.firebaseapp.com',
     storageBucket: 'mw-chat-prod.firebasestorage.app',
     measurementId: 'G-PRGEPSB3D2',
+    // ✅ ADD
+    databaseURL: _databaseUrl,
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
@@ -53,6 +62,8 @@ class DefaultFirebaseOptions {
     projectId: 'mw-chat-prod',
     storageBucket: 'mw-chat-prod.firebasestorage.app',
     iosBundleId: 'com.mwchat.app',
+    // ✅ ADD
+    databaseURL: _databaseUrl,
   );
 
   static const FirebaseOptions android = FirebaseOptions(
@@ -61,6 +72,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '1007212667628',
     projectId: 'mw-chat-prod',
     storageBucket: 'mw-chat-prod.firebasestorage.app',
+    // ✅ ADD
+    databaseURL: _databaseUrl,
   );
-
 }

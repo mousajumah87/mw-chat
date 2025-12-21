@@ -1,20 +1,40 @@
-// lib/widgets/chat/typing_indicator.dart
-
 import 'dart:math' as math;
 import 'dart:ui';
-import 'package:flutter/foundation.dart' show kIsWeb;
+
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb, kDebugMode;
 import 'package:flutter/material.dart';
+
 import '../../theme/app_theme.dart';
+
+enum TypingAvatarGender { male, female, other }
+
+///  supports "typing" and "recording voice"
+enum ChatActivityIndicatorMode { typing, recording }
 
 class TypingIndicator extends StatefulWidget {
   final bool isVisible;
   final String text;
 
+  /// Gender of the user who is typing (fallback only).
+  final TypingAvatarGender gender;
+
+  /// Avatar type of the user who is typing (PRIMARY selector).
+  /// Expected values: "bear", "smurf" (case-insensitive).
+  final String? avatarType;
+
+  /// controls indicator animation (dots vs waveform)
+  final ChatActivityIndicatorMode mode;
+
   const TypingIndicator({
     super.key,
     required this.isVisible,
     required this.text,
+    this.gender = TypingAvatarGender.other,
+    this.avatarType,
+    this.mode = ChatActivityIndicatorMode.typing,
   });
+
+  bool get isRecording => mode == ChatActivityIndicatorMode.recording;
 
   @override
   State<TypingIndicator> createState() => _TypingIndicatorState();
@@ -22,18 +42,44 @@ class TypingIndicator extends StatefulWidget {
 
 class _TypingIndicatorState extends State<TypingIndicator>
     with TickerProviderStateMixin {
-  late final AnimationController _bearController;
+  late final AnimationController _avatarController;
   late final AnimationController _dotsController;
 
   bool _isFastMode = false;
 
   static const String _bearAssetPath = 'assets/typing/bear_keyboard.png';
+  static const String _smurfAssetPath = 'assets/typing/smurf_keyboard.png';
+
+  String _normalizeAvatarType(String? raw) {
+    return (raw ?? '').toString().trim().toLowerCase();
+  }
+
+  String get _assetPath {
+    // PRIMARY: avatarType (what the user selected)
+    final t = _normalizeAvatarType(widget.avatarType);
+    if (t == 'smurf') return _smurfAssetPath;
+    if (t == 'bear') return _bearAssetPath;
+
+    // FALLBACK: gender mapping
+    switch (widget.gender) {
+      case TypingAvatarGender.female:
+        return _smurfAssetPath;
+      case TypingAvatarGender.male:
+      case TypingAvatarGender.other:
+        return _bearAssetPath;
+    }
+  }
+
+  void _log(String msg) {
+    if (!kDebugMode) return;
+    debugPrint('[TypingIndicator] $msg');
+  }
 
   @override
   void initState() {
     super.initState();
 
-    _bearController = AnimationController(
+    _avatarController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
     )..repeat();
@@ -42,34 +88,54 @@ class _TypingIndicatorState extends State<TypingIndicator>
       vsync: this,
       duration: const Duration(milliseconds: 950),
     )..repeat();
+
+    _isFastMode = widget.text.length > 14;
+
+    // _log(
+    //   'init gender=${widget.gender} avatarType=${widget.avatarType} mode=${widget.mode} asset=$_assetPath fast=$_isFastMode text="${widget.text}"',
+    // );
   }
 
   @override
   void didUpdateWidget(covariant TypingIndicator oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    final isNowFast = widget.text.length > 14;
+    final oldType = _normalizeAvatarType(oldWidget.avatarType);
+    final newType = _normalizeAvatarType(widget.avatarType);
 
+    if (oldWidget.gender != widget.gender ||
+        oldType != newType ||
+        oldWidget.mode != widget.mode) {
+      // _log(
+      //   'changed gender ${oldWidget.gender} -> ${widget.gender}, avatarType ${oldWidget.avatarType} -> ${widget.avatarType}, mode ${oldWidget.mode} -> ${widget.mode}, asset=$_assetPath',
+      // );
+    }
+
+    final isNowFast = widget.text.length > 14;
     if (isNowFast != _isFastMode) {
       _isFastMode = isNowFast;
 
-      _bearController.duration =
-      _isFastMode ? const Duration(milliseconds: 520) : const Duration(milliseconds: 900);
-      _bearController
+      _avatarController.duration = _isFastMode
+          ? const Duration(milliseconds: 520)
+          : const Duration(milliseconds: 900);
+      _avatarController
         ..reset()
         ..repeat();
 
-      _dotsController.duration =
-      _isFastMode ? const Duration(milliseconds: 700) : const Duration(milliseconds: 950);
+      _dotsController.duration = _isFastMode
+          ? const Duration(milliseconds: 700)
+          : const Duration(milliseconds: 950);
       _dotsController
         ..reset()
         ..repeat();
+
+      // _log('fastMode changed -> $_isFastMode');
     }
   }
 
   @override
   void dispose() {
-    _bearController.dispose();
+    _avatarController.dispose();
     _dotsController.dispose();
     super.dispose();
   }
@@ -79,14 +145,18 @@ class _TypingIndicatorState extends State<TypingIndicator>
 
   @override
   Widget build(BuildContext context) {
-    // If parent hides it, keep size stable when invisible to avoid layout jump
+    final assetKey = _assetPath;
+
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 180),
       switchInCurve: Curves.easeOut,
       switchOutCurve: Curves.easeIn,
       child: widget.isVisible
           ? LayoutBuilder(
-        key: const ValueKey('typing-visible'),
+        // IMPORTANT: force rebuild when avatar changes
+        key: ValueKey(
+          'typing-visible::$assetKey::mode=${widget.mode.name}',
+        ),
         builder: (context, constraints) {
           final media = MediaQuery.of(context);
           final availableW = constraints.hasBoundedWidth
@@ -94,55 +164,57 @@ class _TypingIndicatorState extends State<TypingIndicator>
               : media.size.width;
 
           final maxBubbleWidth = availableW * 0.88;
-
-          // Bear size based on available width
-          final bearSize = _clamp(availableW * 0.13, 50, 66);
-
-          // Bubble padding totals (vertical) = 10(top) + 10(bottom)
-          // But bear also has its own size → needed height roughly:
-          final neededHeight = bearSize + 20;
-
-          // If parent gives tiny height (your Web bug), scale bubble down instead of clipping
+          final avatarSize = _clamp(availableW * 0.14, 56, 74);
+          final neededHeight = avatarSize + 20;
           double scale = 1.0;
           if (constraints.hasBoundedHeight &&
               constraints.maxHeight > 0 &&
               constraints.maxHeight < neededHeight) {
-            scale = _clamp(constraints.maxHeight / neededHeight, 0.55, 1.0);
+            scale =
+                _clamp(constraints.maxHeight / neededHeight, 0.55, 1.0);
           }
 
-          final enableBlur = !kIsWeb; // blur only on mobile by default
+          final enableBlur = !kIsWeb;
           final blurSigma = _isFastMode ? 9.0 : 10.0;
 
-          final textStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
-            fontSize: 12.5,
-            color: kTextSecondary,
-            height: 1.15,
-          ) ??
-              const TextStyle(fontSize: 12.5, color: kTextSecondary, height: 1.15);
-
-          final bubble = ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: maxBubbleWidth),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(18),
-              child: enableBlur
-                  ? BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
-                child: _buildBubble(bearSize, textStyle),
-              )
-                  : _buildBubble(bearSize, textStyle),
+          final bubble = KeyedSubtree(
+            // extra safety: rebuild bubble when asset/mode changes
+            key: ValueKey(
+              'typing-bubble::$assetKey::mode=${widget.mode.name}',
+            ),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: maxBubbleWidth),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(18),
+                child: enableBlur
+                    ? BackdropFilter(
+                  filter: ImageFilter.blur(
+                    sigmaX: blurSigma,
+                    sigmaY: blurSigma,
+                  ),
+                  child: _buildBubble(avatarSize, assetKey),
+                )
+                    : _buildBubble(avatarSize, assetKey),
+              ),
             ),
           );
 
-          return Padding(
-            padding: const EdgeInsetsDirectional.fromSTEB(18, 4, 16, 8),
-            child: SizedBox(
-              width: double.infinity,
-              child: Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: Transform.scale(
-                  scale: scale,
+          final semanticsFallback =
+          widget.isRecording ? 'Recording voice' : 'Typing';
+
+          return Semantics(
+            label: widget.text.isNotEmpty ? widget.text : semanticsFallback,
+            child: Padding(
+              padding: const EdgeInsetsDirectional.fromSTEB(14, 4, 16, 8),
+              child: SizedBox(
+                width: double.infinity,
+                child: Align(
                   alignment: AlignmentDirectional.centerStart,
-                  child: bubble,
+                  child: Transform.scale(
+                    scale: scale,
+                    alignment: AlignmentDirectional.centerStart,
+                    child: bubble,
+                  ),
                 ),
               ),
             ),
@@ -157,7 +229,10 @@ class _TypingIndicatorState extends State<TypingIndicator>
     );
   }
 
-  Widget _buildBubble(double bearSize, TextStyle textStyle) {
+  Widget _buildBubble(double avatarSize, String assetPath) {
+    // cache-busting key based on the actual asset path
+    final cacheKey = ValueKey('typingAsset:$assetPath');
+
     return DecoratedBox(
       decoration: mwTypingGlassDecoration(radius: 18),
       child: Padding(
@@ -167,14 +242,15 @@ class _TypingIndicatorState extends State<TypingIndicator>
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             AnimatedBuilder(
-              animation: _bearController,
+              animation: _avatarController,
               builder: (context, child) {
-                final t = _bearController.value * math.pi * 2;
+                final t = _avatarController.value * math.pi * 2;
 
                 final bounceY = -math.sin(t) * (_isFastMode ? 2.2 : 1.6);
-                final shakeX = _isFastMode ? math.sin(t * 3) * 1.8 : 0.0;
+                final shakeX = _isFastMode ? math.sin(t * 2) * 0.6 : 0.0;
                 final tilt = math.sin(t) * (_isFastMode ? 0.055 : 0.035);
-                final scale = 1.0 + (math.sin(t) * (_isFastMode ? 0.06 : 0.04));
+                final scale =
+                    1.0 + (math.sin(t) * (_isFastMode ? 0.06 : 0.04));
 
                 return Transform.translate(
                   offset: Offset(shakeX, bounceY),
@@ -188,8 +264,8 @@ class _TypingIndicatorState extends State<TypingIndicator>
                 alignment: Alignment.center,
                 children: [
                   Container(
-                    width: bearSize,
-                    height: bearSize,
+                    width: avatarSize,
+                    height: avatarSize,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       boxShadow: [
@@ -202,15 +278,19 @@ class _TypingIndicatorState extends State<TypingIndicator>
                     ),
                   ),
                   Image.asset(
-                    _bearAssetPath,
-                    width: bearSize,
-                    height: bearSize,
+                    assetPath,
+                    key: cacheKey,
+                    width: avatarSize,
+                    height: avatarSize,
                     fit: BoxFit.contain,
+                    gaplessPlayback: true,
                     errorBuilder: (context, error, stackTrace) {
-                      debugPrint('❌ TypingIndicator asset failed: $_bearAssetPath\n$error');
+                      debugPrint(
+                        '❌ TypingIndicator asset failed: $assetPath\n$error',
+                      );
                       return Icon(
                         Icons.keyboard,
-                        size: _clamp(bearSize * 0.75, 32, 44),
+                        size: _clamp(avatarSize * 0.75, 32, 44),
                         color: kTextSecondary,
                       );
                     },
@@ -218,25 +298,12 @@ class _TypingIndicatorState extends State<TypingIndicator>
                 ],
               ),
             ),
-            const SizedBox(width: 10),
-            Flexible(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Flexible(
-                    child: Text(
-                      widget.text,
-                      style: textStyle,
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
-                      softWrap: false,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  _TypingDots(controller: _dotsController),
-                ],
-              ),
-            ),
+            const SizedBox(width: 12),
+
+            // waveform for recording, dots for typing
+            widget.isRecording
+                ? _RecordingWaves(controller: _dotsController)
+                : _TypingDots(controller: _dotsController),
           ],
         ),
       ),
@@ -292,6 +359,59 @@ class _TypingDots extends StatelessWidget {
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: [dot(0), dot(1), dot(2)],
+        );
+      },
+    );
+  }
+}
+
+///  Recording indicator (audio waveform bars) using same gold neon styling
+class _RecordingWaves extends StatelessWidget {
+  final AnimationController controller;
+  const _RecordingWaves({required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) {
+        final t = controller.value * math.pi * 2;
+
+        Widget bar(double phase) {
+          final a = (math.sin(t + phase) * 0.5 + 0.5).clamp(0.0, 1.0);
+          final h = 6.0 + (a * 10.0); // 6..16
+          final opacity = 0.35 + (a * 0.65);
+
+          return Opacity(
+            opacity: opacity,
+            child: Container(
+              width: 3.2,
+              height: h,
+              margin: const EdgeInsets.symmetric(horizontal: 1.8),
+              decoration: BoxDecoration(
+                color: kPrimaryGold.withOpacity(0.95),
+                borderRadius: BorderRadius.circular(99),
+                boxShadow: [
+                  BoxShadow(
+                    color: kGoldDeep.withOpacity(0.14),
+                    blurRadius: 8,
+                    spreadRadius: 0.5,
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            bar(0.0),
+            bar(1.2),
+            bar(2.4),
+            bar(3.6),
+          ],
         );
       },
     );
