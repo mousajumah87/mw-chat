@@ -33,3 +33,5 @@ ios/Runner.xcodeproj/project.xcworkspace/
 # Xcode user state (never commit)
 ios/**/xcuserdata/
 ios/**/UserInterfaceState.xcuserstate
+ios/Runner.xcworkspace/xcuserdata/
+*.xcuserstate
