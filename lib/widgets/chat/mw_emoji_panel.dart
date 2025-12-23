@@ -37,7 +37,7 @@ class MwEmojiPanel extends StatelessWidget {
     this.height,
     this.padding = const EdgeInsets.fromLTRB(10, 10, 10, 14),
     this.emojiSize = 96,
-    this.columns = 8,
+    this.columns = 4,
   });
 
   static const mwItems = <MwEmojiItem>[

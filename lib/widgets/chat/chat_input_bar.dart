@@ -410,7 +410,7 @@ class _ChatInputBarState extends State<ChatInputBar>
     // ✅ Make typing text feel correct on iPhone:
     // Keep a larger minimum font size so it doesn't look tiny inside a tall field.
     final scaler = MediaQuery.textScalerOf(context);
-    final scaled = scaler.scale(18); // base target
+    final scaled = scaler.scale(2); // base target
     final double effectiveFont = scaled < 18 ? 18.0 : scaled;
 
     // ✅ NO SafeArea here anymore — ChatScreen dock handles it.

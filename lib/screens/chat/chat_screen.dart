@@ -790,6 +790,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     if (!_guardCanSendWithSnackbar()) return;
 
+    _closeEmojiPanelIfOpen();
+
     final text = _msgController.text.trim();
     if (text.isEmpty) return;
 
@@ -1250,8 +1252,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     final bool showPanel = _panelVisible && !keyboardOpen;
 
-    const double indicatorReserve = 112;
-    const double composerReserve = 92;
+    const double indicatorReserve = 20;
+    const double composerReserve = 10;
 
     Widget composerWidget;
 
@@ -1288,11 +1290,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           setState(() => _panelVisible = newVisible);
 
           if (newVisible) {
-            await Future.delayed(const Duration(milliseconds: 90));
+            await Future.delayed(const Duration(milliseconds: 60));
             if (!mounted || _disposed) return;
           } else {
             WidgetsBinding.instance.addPostFrameCallback((_) async {
-              await Future.delayed(const Duration(milliseconds: 40));
+              await Future.delayed(const Duration(milliseconds: 50));
               if (!mounted || _disposed) return;
               _composerFocusNode.requestFocus();
             });
@@ -1313,7 +1315,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       );
     } else {
       composerWidget = Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Text(
           cannotSendText(),
           textAlign: TextAlign.center,
@@ -1330,7 +1332,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         (showPanel ? _panelHeight : 0);
 
     final bottomBar = AnimatedPadding(
-      duration: const Duration(milliseconds: 180),
+      duration: const Duration(milliseconds: 120),
       curve: Curves.easeOut,
       padding: EdgeInsets.only(bottom: keyboardInset),
       child: SafeArea(
@@ -1340,7 +1342,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           children: [
             if (!_isAnyBlock)
               AnimatedSize(
-                duration: const Duration(milliseconds: 180),
+                duration: const Duration(milliseconds: 120),
                 curve: Curves.easeOut,
                 alignment: Alignment.bottomCenter,
                 child: showIndicator
@@ -1439,7 +1441,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       setState(() => _panelVisible = false);
     }
   }
+
+  void _closeEmojiPanelIfOpen() {
+    if (_panelVisible) {
+      if (!mounted || _disposed) return;
+      setState(() => _panelVisible = false);
+    }
+  }
+
 }
+
 
 extension _FirstOrNullExt<T> on List<T> {
   T? get firstOrNull => isEmpty ? null : first;
