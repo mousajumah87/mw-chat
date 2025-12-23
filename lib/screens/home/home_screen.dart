@@ -28,15 +28,19 @@ class _HomeScreenState extends State<HomeScreen>
   static const String _appVersion = 'v1.0';
   static const String _websiteUrl = 'https://www.mwchats.com';
 
+  bool _termsCheckedOnce = false;
+
   @override
   void initState() {
     super.initState();
 
-    // ✅ 2 tabs: Friends + All MW Users
     _tabController = TabController(length: 2, vsync: this);
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _ensureUserAcceptedTerms();
+    // ✅ Run once after first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (_termsCheckedOnce) return;
+      _termsCheckedOnce = true;
+      await _ensureUserAcceptedTerms();
     });
   }
 
@@ -165,7 +169,6 @@ class _HomeScreenState extends State<HomeScreen>
                           controller: _tabController,
                           physics: const ClampingScrollPhysics(),
                           children: [
-                            // ✅ Build immediately
                             _KeepAlive(
                               child: MwFriendsTab(
                                 currentUser: currentUser,
@@ -173,7 +176,7 @@ class _HomeScreenState extends State<HomeScreen>
                               ),
                             ),
 
-                            // ✅ Lazy-build “People on MW” (major perf win)
+                            // ✅ Still lazy-build the MW users tab (big perf win)
                             _KeepAlive(
                               child: _LazyTab(
                                 controller: _tabController,
@@ -346,9 +349,6 @@ class _KeepAliveState extends State<_KeepAlive>
   }
 }
 
-/// ✅ Lazy builds a tab only when selected once.
-/// This prevents the “People on MW” Firestore stream + list building from
-/// running on initial HomeScreen load.
 class _LazyTab extends StatefulWidget {
   final TabController controller;
   final int index;

@@ -14,21 +14,16 @@ import '../../widgets/ui/mw_avatar.dart';
 import '../../widgets/ui/mw_search_field.dart';
 import '../chat/chat_screen.dart';
 import '../chat/chat_friendship_service.dart';
-
-// ✅ NEW: separate page for incoming requests
 import 'mw_friend_requests_screen.dart';
 
-/// ✅ New: determines which list to show
 enum MwFriendsTabMode {
-  friendsOnly, // show accepted + requested (incoming moved to a separate page)
-  mwUsersOnly, // show MW users excluding friends + excluding pending/incoming
+  friendsOnly,
+  mwUsersOnly,
 }
 
 class MwFriendsTab extends StatefulWidget {
   final User currentUser;
   final MwFriendsTabMode mode;
-
-  // NEW: callback for switching HomeScreen tab
   final VoidCallback? onSwitchToFriendsTab;
 
   const MwFriendsTab({
@@ -49,20 +44,15 @@ class _MwFriendsTabState extends State<MwFriendsTab>
   Map<String, int> _unreadCache = {};
   Set<String> _blockedUserIds = {};
 
-  final Map<String, String?> _photoUrlCache = {}; // uid -> url or null
-  final Set<String> _photoDenied = {}; // uid -> permission denied
+  final Map<String, String?> _photoUrlCache = {};
+  final Set<String> _photoDenied = {};
 
-  // ----------------------------
-  // Friend requests seen tracking
-  // ----------------------------
   static const String _fieldFriendRequestsLastSeenAt =
       'friendRequestsLastSeenAt';
   Timestamp? _friendRequestsLastSeenAt;
 
-  // Track updatedAt per friend doc (for unseen request badge)
   final Map<String, Timestamp?> _friendUpdatedAt = {};
 
-  /// friendUid -> status (canonical: accepted/requested/incoming)
   Map<String, String> _friendStatuses = {};
   bool _friendsLoaded = false;
 
@@ -70,18 +60,19 @@ class _MwFriendsTabState extends State<MwFriendsTab>
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _userDocSub;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _friendsSub;
 
-  // Pagination ONLY for mwUsersOnly
+  // ✅ MW USERS tab: cursor pagination (FAST)
   static const int _pageSize = 40;
-  int _currentLimit = _pageSize;
-  bool _isLoadingMore = false;
-  bool _hasMore = true;
+  final List<QueryDocumentSnapshot<Map<String, dynamic>>> _mwUserDocs = [];
+  DocumentSnapshot<Map<String, dynamic>>? _mwUsersCursor;
+  bool _mwUsersLoading = false;
+  bool _mwUsersHasMore = true;
+  bool _mwUsersBootstrapped = false;
 
   final ScrollController _scrollController = ScrollController();
   Timer? _loadMoreDebounce;
 
   final Set<String> _resettingRooms = <String>{};
 
-  // ✅ Search
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
 
@@ -91,47 +82,31 @@ class _MwFriendsTabState extends State<MwFriendsTab>
   bool get _isFriendsOnly => widget.mode == MwFriendsTabMode.friendsOnly;
   bool get _isMwUsersOnly => widget.mode == MwFriendsTabMode.mwUsersOnly;
 
-  // Presence privacy values
   static const String _presenceFriends = 'friends';
   static const String _presenceNobody = 'nobody';
 
-  // Profile & Add friend privacy values
   static const String _privacyEveryone = 'everyone';
   static const String _privacyFriends = 'friends';
   static const String _privacyNobody = 'nobody';
 
-  // New field names
   static const String _fieldProfileVisibility = 'profileVisibility';
   static const String _fieldAddFriendVisibility = 'addFriendVisibility';
 
-  // Legacy field names (your screenshot shows friendRequests)
   static const String _legacyFriendRequestsField = 'friendRequests';
   static const String _legacyShowOnlineStatusField = 'showOnlineStatus';
 
-  /// Cache addFriendVisibility so we don't re-read the same doc repeatedly.
   final Map<String, String> _addFriendVisibilityCache = {};
 
-  // ----------------------------
-  // Private photo prefetch throttle
-  // ----------------------------
   final Set<String> _photoPrefetchQueue = <String>{};
   bool _photoPrefetchRunning = false;
 
-  // Animations can be expensive on web (especially with glass/blur backgrounds).
   Duration get _tileAnim =>
       kIsWeb ? Duration.zero : const Duration(milliseconds: 200);
   Duration get _trailingAnim =>
       kIsWeb ? Duration.zero : const Duration(milliseconds: 250);
 
-  // ----------------------------
-  // ✅ FIX: Keep Online/Offline sections accurate (rebucket on changes)
-  // ----------------------------
-  // We cache presence/activity for friends and whenever a friend switches
-  // online/offline (or active/inactive), we trigger a debounced rebuild
-  // so the friend moves to the correct section.
-  final Map<String, bool> _friendOnlineDisplayCache = {}; // uid -> online (visible)
-  final Map<String, bool> _friendActiveCache = {}; // uid -> isActive
-
+  final Map<String, bool> _friendOnlineDisplayCache = {};
+  final Map<String, bool> _friendActiveCache = {};
   Timer? _friendsRebucketDebounce;
 
   void _scheduleFriendsRebucketRebuild() {
@@ -140,9 +115,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     _friendsRebucketDebounce?.cancel();
     _friendsRebucketDebounce = Timer(const Duration(milliseconds: 220), () {
       if (!mounted) return;
-      setState(() {
-        // Just rebuild to re-split into Online/Offline using updated caches.
-      });
+      setState(() {});
     });
   }
 
@@ -154,30 +127,24 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     final prevOnline = _friendOnlineDisplayCache[uid];
     final prevActive = _friendActiveCache[uid];
 
-    // Update caches in-memory (NO immediate setState)
     _friendOnlineDisplayCache[uid] = isOnlineForDisplay;
     _friendActiveCache[uid] = isActive;
 
     final changed =
         (prevOnline != isOnlineForDisplay) || (prevActive != isActive);
 
-    if (changed) {
-      _scheduleFriendsRebucketRebuild();
-    }
+    if (changed) _scheduleFriendsRebucketRebuild();
   }
 
   int _compareFriendIdsForFriendsSection(String a, String b) {
-    // Active first (so deactivated friends go down)
     final bool aActive = _friendActiveCache[a] ?? true;
     final bool bActive = _friendActiveCache[b] ?? true;
     if (aActive != bActive) return aActive ? -1 : 1;
 
-    // Online first (ONLY what you can see by privacy rules)
     final bool aOnline = _friendOnlineDisplayCache[a] ?? false;
     final bool bOnline = _friendOnlineDisplayCache[b] ?? false;
     if (aOnline != bOnline) return aOnline ? -1 : 1;
 
-    // Stable fallback
     return a.compareTo(b);
   }
 
@@ -193,13 +160,16 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     _listenBlockedUsers();
     _listenFriends();
 
+    _scrollController.addListener(_onScroll);
     if (_isMwUsersOnly) {
-      _scrollController.addListener(_onScrollLoadMore);
+      // ✅ bootstrap first page (no realtime stream)
+      unawaited(_bootstrapMwUsers());
     }
   }
 
-  void _onScrollLoadMore() {
-    if (!_hasMore || _isLoadingMore) return;
+  void _onScroll() {
+    if (!_isMwUsersOnly) return;
+    if (!_mwUsersHasMore || _mwUsersLoading) return;
     if (!_scrollController.hasClients) return;
 
     final pos = _scrollController.position;
@@ -209,16 +179,74 @@ class _MwFriendsTabState extends State<MwFriendsTab>
   }
 
   void _requestLoadMore() {
-    if (_isLoadingMore || !_hasMore) return;
+    if (_mwUsersLoading || !_mwUsersHasMore) return;
     if (_loadMoreDebounce?.isActive ?? false) return;
 
-    _loadMoreDebounce = Timer(const Duration(milliseconds: 200), () {
+    _loadMoreDebounce = Timer(const Duration(milliseconds: 220), () async {
+      if (!mounted) return;
+      await _fetchMoreMwUsers();
+    });
+  }
+
+  Future<void> _bootstrapMwUsers() async {
+    if (_mwUsersBootstrapped) return;
+    _mwUsersBootstrapped = true;
+    await _fetchMoreMwUsers(reset: true);
+  }
+
+  Future<void> _fetchMoreMwUsers({bool reset = false}) async {
+    if (_mwUsersLoading) return;
+    if (!mounted) return;
+
+    setState(() => _mwUsersLoading = true);
+
+    try {
+      Query<Map<String, dynamic>> q =
+      FirebaseFirestore.instance.collection('users').orderBy(
+        FieldPath.documentId,
+      );
+
+      if (!reset && _mwUsersCursor != null) {
+        q = q.startAfterDocument(_mwUsersCursor!);
+      }
+
+      q = q.limit(_pageSize);
+
+      final snap = await q.get();
+      final docs = snap.docs;
+
+      if (!mounted) return;
+
+      setState(() {
+        if (reset) {
+          _mwUserDocs.clear();
+          _mwUsersCursor = null;
+          _mwUsersHasMore = true;
+        }
+
+        if (docs.isNotEmpty) {
+          _mwUsersCursor = docs.last;
+        }
+
+        // ✅ append (do NOT include me)
+        for (final d in docs) {
+          if (d.id == _currentUid) continue;
+          _mwUserDocs.add(d);
+        }
+
+        // hasMore if we got a full page
+        _mwUsersHasMore = docs.length >= _pageSize;
+      });
+    } catch (_) {
       if (!mounted) return;
       setState(() {
-        _isLoadingMore = true;
-        _currentLimit += _pageSize;
+        // stop infinite spinner on errors
+        _mwUsersHasMore = false;
       });
-    });
+    } finally {
+      if (!mounted) return;
+      setState(() => _mwUsersLoading = false);
+    }
   }
 
   void _listenUnreadCounts() {
@@ -239,7 +267,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
 
         final dynamic raw = unreadMap[_currentUid];
         final int myUnread = (raw is num) ? raw.toInt() : 0;
-
         newCache[doc.id] = myUnread;
       }
 
@@ -265,8 +292,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
       if (data == null) return;
 
       final list = data['blockedUserIds'] as List<dynamic>?;
-      final newSet =
-      list == null ? <String>{} : list.whereType<String>().toSet();
+      final newSet = list == null ? <String>{} : list.whereType<String>().toSet();
 
       final ts = data[_fieldFriendRequestsLastSeenAt];
       final Timestamp? seen = ts is Timestamp ? ts : null;
@@ -299,7 +325,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
       final updatedAtMap = <String, Timestamp?>{};
 
       for (final doc in snapshot.docs) {
-        // ✅ FIX: ignore any accidental "self" friend document
         if (doc.id == _currentUid) continue;
 
         final data = doc.data();
@@ -326,13 +351,11 @@ class _MwFriendsTabState extends State<MwFriendsTab>
 
         _friendsLoaded = true;
 
-        // Keep caches small
         _friendOnlineDisplayCache
             .removeWhere((uid, _) => !statusMap.containsKey(uid));
         _friendActiveCache.removeWhere((uid, _) => !statusMap.containsKey(uid));
       });
 
-      // ✅ NEW: If list changed, rebuild once so online/offline split updates cleanly.
       _scheduleFriendsRebucketRebuild();
     });
   }
@@ -360,7 +383,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
   // ----------------------------
   // Search helpers
   // ----------------------------
-
   String _normalizeQ(String s) => s.trim().toLowerCase();
 
   bool _matchesSearch(Map<String, dynamic> data, String userId) {
@@ -385,7 +407,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
 
   Widget _buildSearchBar(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-
     final hint = _isFriendsOnly ? l10n.searchFriendsHint : l10n.searchPeopleHint;
 
     return Padding(
@@ -406,12 +427,11 @@ class _MwFriendsTabState extends State<MwFriendsTab>
   }
 
   // ----------------------------
-  // Privacy helpers (aligned with rules)
+  // Privacy helpers
   // ----------------------------
-
   String _normalizePrivacy(String? raw) {
     final v = raw?.trim().toLowerCase();
-    if (v == null || v.isEmpty) return _privacyEveryone; // backward compatible
+    if (v == null || v.isEmpty) return _privacyEveryone;
     if (v == _privacyFriends) return _privacyFriends;
     if (v == _privacyNobody) return _privacyNobody;
     return _privacyEveryone;
@@ -444,9 +464,62 @@ class _MwFriendsTabState extends State<MwFriendsTab>
   }
 
   // ----------------------------
+  // Block / Unblock (FIX #3)
+  // ----------------------------
+  Future<void> _unblockUser(String uid) async {
+    if (uid.isEmpty) return;
+    if (!_blockedUserIds.contains(uid)) return;
+
+    final l10n = AppLocalizations.of(context)!;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF14141F),
+        title: Text(
+          l10n.unblockUserTitle ?? 'Unblock user?',
+          style: const TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          l10n.unblockUserDescription ?? 'They will be able to interact with you again.',
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(l10n.cancel ?? 'Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(
+              l10n.unblockUserConfirm ?? 'Unblock',
+              style: const TextStyle(color: Colors.greenAccent),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true) return;
+
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(_currentUid).set(
+        {
+          'blockedUserIds': FieldValue.arrayRemove([uid]),
+        },
+        SetOptions(merge: true),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.profileBlockSnackbarError ?? 'Failed to unblock user.')),
+      );
+    }
+  }
+
+  // ----------------------------
   // Friend actions
   // ----------------------------
-
   Future<void> _sendFriendRequest(String friendUid) async {
     final l10n = AppLocalizations.of(context)!;
     if (friendUid.isEmpty || friendUid == _currentUid) return;
@@ -622,7 +695,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     if (_photoPrefetchRunning) return;
     _photoPrefetchRunning = true;
 
-    // Web needs extra throttling.
     final int maxConcurrent = kIsWeb ? 1 : 3;
 
     try {
@@ -633,8 +705,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
         }
 
         await Future.wait(batch.map(_prefetchPrivateProfilePhoto));
-
-        // yield between batches
         await Future<void>.delayed(const Duration(milliseconds: 16));
       }
     } finally {
@@ -649,7 +719,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
       }) {
     final l10n = AppLocalizations.of(context)!;
 
-    // respect search: if user typed something and it doesn't match uid, hide
     final q = _searchQuery.trim().toLowerCase();
     if (q.isNotEmpty && !uid.toLowerCase().contains(q)) {
       return const SizedBox.shrink();
@@ -658,7 +727,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     final isRequested = ChatFriendshipService.isRequested(friendStatus);
     final isIncoming = ChatFriendshipService.isIncoming(friendStatus);
 
-    // Only allow cancel/decline on non-accepted states
     final canRemove = isRequested || isIncoming;
     final showUid = kDebugMode;
 
@@ -668,7 +736,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
       elevation: 1,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: Colors.white24),
+        side: const BorderSide(color: Colors.white24),
       ),
       child: ListTile(
         leading: MwAvatar(
@@ -736,9 +804,8 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     if (_photoUrlCache.containsKey(uid) || _photoDenied.contains(uid)) return;
 
     try {
-      final snap = await FirebaseFirestore.instance
-          .doc('users/$uid/private/profile')
-          .get();
+      final snap =
+      await FirebaseFirestore.instance.doc('users/$uid/private/profile').get();
       final data = snap.data();
       final url = (data?['profileUrl'] as String?)?.trim();
       if (!mounted) return;
@@ -761,15 +828,12 @@ class _MwFriendsTabState extends State<MwFriendsTab>
           _photoUrlCache[uid] = null;
         });
       }
-    } catch (_) {
-      // ignore
-    }
+    } catch (_) {}
   }
 
   // ----------------------------
   // Presence privacy
   // ----------------------------
-
   String _readPresenceVisibility(Map<String, dynamic> data) {
     final dynamic rawShow = data[_legacyShowOnlineStatusField];
     if (rawShow is bool && rawShow == false) return _presenceNobody;
@@ -777,7 +841,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     final raw = (data['presenceVisibility'] as String?)?.trim().toLowerCase();
     if (raw == _presenceNobody) return _presenceNobody;
 
-    return _presenceFriends; // privacy-first default
+    return _presenceFriends;
   }
 
   bool _canSeePresence({
@@ -789,14 +853,12 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     if (!isActive) return false;
     if (isBlockedRelationship) return false;
     if (presenceVisibility == _presenceNobody) return false;
-
     return ChatFriendshipService.isFriends(friendStatus);
   }
 
   // ----------------------------
   // Profile + Add friend privacy
   // ----------------------------
-
   String _readPrivacyValue(Map<String, dynamic> data, String field) {
     final String? rawNew = data[field] as String?;
 
@@ -880,7 +942,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     final String effectiveAvatarType =
     hideRealAvatar ? 'bear' : (avatarType ?? 'bear');
 
-    // ✅ MW-consistent ring colors
     final ring = isOnline
         ? kAccentColor.withOpacity(0.85)
         : kGoldDeep.withOpacity(0.70);
@@ -927,20 +988,20 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     }
   }
 
-  bool _isRelationshipBlocked(Map<String, dynamic> data, String userId) {
-    final bool isBlockedByMe = _blockedUserIds.contains(userId);
+  // ✅ Split the block relationship (FIX #3)
+  bool _isBlockedByMe(String userId) => _blockedUserIds.contains(userId);
+
+  bool _hasBlockedMe(Map<String, dynamic> data, String userId) {
     final List<dynamic>? theirBlocked = data['blockedUserIds'] as List<dynamic>?;
-    final bool hasBlockedMe =
-        theirBlocked?.whereType<String>().contains(_currentUid) ?? false;
-    return isBlockedByMe || hasBlockedMe;
+    return theirBlocked?.whereType<String>().contains(_currentUid) ?? false;
+  }
+
+  bool _isRelationshipBlocked(Map<String, dynamic> data, String userId) {
+    return _isBlockedByMe(userId) || _hasBlockedMe(data, userId);
   }
 
   bool _isActiveUser(Map<String, dynamic> data) => data['isActive'] != false;
 
-  /// ✅ MW USERS TAB must NOT contain:
-  /// - accepted friends
-  /// - incoming requests
-  /// - requested (sent) requests
   bool _shouldHideFromMwUsersTab(String? status) {
     if (status == null) return false;
     return ChatFriendshipService.isFriends(status) ||
@@ -961,19 +1022,19 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     final legacyPublicUrl = (data['profileUrl'] as String?)?.trim();
     final privateUrl = _photoUrlCache[userId]?.trim();
 
-    final String? profileUrl =
-    (legacyPublicUrl != null && legacyPublicUrl.isNotEmpty)
+    final String? profileUrl = (legacyPublicUrl != null && legacyPublicUrl.isNotEmpty)
         ? legacyPublicUrl
         : (privateUrl != null && privateUrl.isNotEmpty ? privateUrl : null);
 
     final avatarType = data['avatarType'] as String?;
     final bool isActive = _isActiveUser(data);
 
-    final bool isBlockedRelationship = _isRelationshipBlocked(data, userId);
+    final bool blockedByMe = _isBlockedByMe(userId);
+    final bool blockedMe = _hasBlockedMe(data, userId);
+    final bool isBlockedRelationship = blockedByMe || blockedMe;
 
     final profileVisibility = _readPrivacyValue(data, _fieldProfileVisibility);
-    final addFriendVisibility =
-    _readPrivacyValue(data, _fieldAddFriendVisibility);
+    final addFriendVisibility = _readPrivacyValue(data, _fieldAddFriendVisibility);
 
     if (_addFriendVisibilityCache[userId] != addFriendVisibility) {
       _addFriendVisibilityCache[userId] = addFriendVisibility;
@@ -997,6 +1058,8 @@ class _MwFriendsTabState extends State<MwFriendsTab>
         ChatFriendshipService.isRequested(friendStatus) ||
         ChatFriendshipService.isIncoming(friendStatus);
 
+    // ✅ If blockedByMe or blockedMe, don't open chat.
+    // ✅ But STILL show tile and allow Unblock when blockedByMe.
     final bool canOpenChat = isActive &&
         !isBlockedRelationship &&
         (hasRelationship || profileVisibility == _privacyEveryone);
@@ -1017,16 +1080,22 @@ class _MwFriendsTabState extends State<MwFriendsTab>
         ? (data['lastSeen'] as Timestamp)
         : null;
 
-    final subtitleText = _buildSubtitle(
+    final subtitleText = blockedMe
+        ? (l10n.blockedByUserBanner ?? 'This user has blocked you.')
+        : (blockedByMe
+        ? (l10n.userBlocked ?? 'You blocked this user.')
+        : _buildSubtitle(
       context,
       isActive: isActive,
       canSeePresence: canSeePresence,
       isOnline: isOnlineForDisplay,
       lastSeen: lastSeen,
-    );
+    ));
 
     final subtitleColor = !isActive
         ? Colors.grey
+        : (blockedMe || blockedByMe)
+        ? Colors.redAccent.withOpacity(0.85)
         : (isOnlineForDisplay ? Colors.greenAccent : Colors.white70);
 
     final roomId = buildRoomId(_currentUid, userId);
@@ -1034,7 +1103,20 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     final bool hasUnread = !isBlockedRelationship && unreadCount > 0;
 
     Widget buildTrailing() {
-      if (_blockedUserIds.contains(userId)) {
+      // ✅ FIX #3: unblock button if blocked by me
+      if (blockedByMe) {
+        return TextButton.icon(
+          onPressed: () => _unblockUser(userId),
+          icon: const Icon(Icons.lock_open_rounded, color: Colors.greenAccent),
+          label: Text(
+            l10n.unblockUserTitle ?? 'Unblock',
+            style: const TextStyle(color: Colors.greenAccent),
+          ),
+        );
+      }
+
+      // blocked by them
+      if (blockedMe) {
         return const Icon(Icons.block, color: Colors.redAccent);
       }
 
@@ -1048,8 +1130,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
           children: [
             IconButton(
               tooltip: l10n.friendAcceptTooltip,
-              icon: Icon(Icons.check_circle,
-                  color: kPrimaryGold.withOpacity(0.95)),
+              icon: Icon(Icons.check_circle, color: kPrimaryGold.withOpacity(0.95)),
               onPressed: isActive ? () => _acceptFriend(userId) : null,
             ),
             IconButton(
@@ -1117,7 +1198,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
 
     return AnimatedOpacity(
       duration: _tileAnim,
-      opacity: isActive ? (isBlockedRelationship ? 0.6 : 1.0) : 0.5,
+      opacity: isActive ? (isBlockedRelationship ? 0.75 : 1.0) : 0.5,
       child: Card(
         margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
         color: Colors.white.withOpacity(0.08),
@@ -1170,8 +1251,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                if (!canViewProfile &&
-                    !ChatFriendshipService.isFriends(friendStatus))
+                if (!canViewProfile && !ChatFriendshipService.isFriends(friendStatus))
                   const Padding(
                     padding: EdgeInsetsDirectional.only(start: 8),
                     child: Icon(
@@ -1199,9 +1279,8 @@ class _MwFriendsTabState extends State<MwFriendsTab>
   }
 
   // ----------------------------
-  // FRIENDS ONLY UI (lazy builder)
+  // FRIENDS ONLY UI
   // ----------------------------
-
   int _computeUnseenRequestsCount(List<String> incomingIds) {
     int unseen = 0;
     for (final uid in incomingIds) {
@@ -1240,8 +1319,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
                 if (count > 0) ...[
                   const SizedBox(width: 6),
                   Container(
-                    padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
                       color: Colors.white12,
                       borderRadius: BorderRadius.circular(999),
@@ -1264,7 +1342,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     );
   }
 
-  // Smaller sub-header for Online/Offline
   Widget _subSectionHeader(String title, int count) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 2),
@@ -1307,7 +1384,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance.collection('users').doc(uid).snapshots(),
       builder: (context, snap) {
-        // ✅ If user doc is missing/unreadable -> show fallback tile instead of hiding
         if (!snap.hasData || snap.data?.data() == null) {
           final friendStatus = _friendStatuses[uid];
           return _buildMissingUserTile(
@@ -1325,7 +1401,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
           _queuePrivatePhotoPrefetch(uid);
         }
 
-        // ✅ update presence caches -> triggers debounced rebuild when status changes
         final friendStatus = _friendStatuses[uid];
         final bool isActive = _isActiveUser(data);
         final bool isBlockedRelationship = _isRelationshipBlocked(data, uid);
@@ -1380,12 +1455,10 @@ class _MwFriendsTabState extends State<MwFriendsTab>
       }
     });
 
-    // ✅ stable sorting
     friendIds.sort(_compareFriendIdsForFriendsSection);
     requestedIds.sort();
     incomingIds.sort();
 
-    // ✅ split into Online / Offline based on cache (kept accurate by debounced rebuild)
     final onlineFriendIds = <String>[];
     final offlineFriendIds = <String>[];
 
@@ -1399,9 +1472,8 @@ class _MwFriendsTabState extends State<MwFriendsTab>
 
     final unseenRequests = _computeUnseenRequestsCount(incomingIds);
 
-    final hasAnyRelationships = friendIds.isNotEmpty ||
-        requestedIds.isNotEmpty ||
-        incomingIds.isNotEmpty;
+    final hasAnyRelationships =
+        friendIds.isNotEmpty || requestedIds.isNotEmpty || incomingIds.isNotEmpty;
 
     if (!hasAnyRelationships) {
       return Column(
@@ -1497,8 +1569,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
                   );
                 },
                 child: Container(
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                   decoration: BoxDecoration(
                     color: Colors.white.withOpacity(0.08),
                     borderRadius: BorderRadius.circular(16),
@@ -1524,16 +1595,13 @@ class _MwFriendsTabState extends State<MwFriendsTab>
                       if (row.unseenCount > 0)
                         Container(
                           margin: const EdgeInsetsDirectional.only(end: 8),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 3),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
                             color: Colors.redAccent,
                             borderRadius: BorderRadius.circular(999),
                           ),
                           child: Text(
-                            row.unseenCount > 99
-                                ? '99+'
-                                : '${row.unseenCount}',
+                            row.unseenCount > 99 ? '99+' : '${row.unseenCount}',
                             style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w800,
@@ -1562,227 +1630,122 @@ class _MwFriendsTabState extends State<MwFriendsTab>
   }
 
   // ----------------------------
-  // MW USERS ONLY UI (builder list)
+  // MW USERS ONLY UI (FAST PAGED LIST)
   // ----------------------------
-
-  void _updatePaginationFlags({required bool newHasMore}) {
-    if (!mounted) return;
-    if (_hasMore == newHasMore && !_isLoadingMore) return;
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      setState(() {
-        _hasMore = newHasMore;
-        _isLoadingMore = false;
-      });
-    });
-  }
-
   Widget _buildMwUsersOnlyTab(BuildContext context) {
-    final usersStream = FirebaseFirestore.instance
-        .collection('users')
-        .orderBy(FieldPath.documentId)
-        .limit(_currentLimit)
-        .snapshots();
+    final l10n = AppLocalizations.of(context)!;
 
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: usersStream,
-      builder: (context, snapshot) {
-        final l10n = AppLocalizations.of(context)!;
+    // Ensure bootstrap
+    if (!_mwUsersBootstrapped) {
+      unawaited(_bootstrapMwUsers());
+    }
 
-        if (!snapshot.hasData) {
-          return const Center(
-            child: CircularProgressIndicator(color: Colors.white),
-          );
-        }
+    // Filter (exclude relationships)
+    final filtered = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+    for (final d in _mwUserDocs) {
+      final status = _friendStatuses[d.id];
+      if (_shouldHideFromMwUsersTab(status)) continue;
+      filtered.add(d);
+    }
 
-        final rawDocs = snapshot.data!.docs;
-        final bool newHasMore = rawDocs.length >= _currentLimit;
+    // Search filter
+    final searched = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+    for (final d in filtered) {
+      final data = d.data();
+      if (_matchesSearch(data, d.id)) searched.add(d);
+    }
 
-        final docs =
-        rawDocs.where((d) => d.id != _currentUid).toList(growable: false);
+    if (searched.isEmpty && !_mwUsersLoading) {
+      return Column(
+        children: [
+          _buildSearchBar(context),
+          Expanded(
+            child: Center(
+              child: Text(
+                _searchQuery.trim().isNotEmpty ? l10n.noSearchResults : l10n.noOtherUsers,
+                style: const TextStyle(color: Colors.white70),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
 
-        _updatePaginationFlags(newHasMore: newHasMore);
+    final rows = <_MwUsersRow>[];
+    rows.add(const _MwUsersRow.search());
 
-        final filtered = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
-        for (final d in docs) {
-          final status = _friendStatuses[d.id];
-          if (_shouldHideFromMwUsersTab(status)) continue;
-          filtered.add(d);
-        }
+    for (final doc in searched) {
+      rows.add(_MwUsersRow.user(doc: doc));
+    }
 
-        final searched = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
-        for (final d in filtered) {
-          final data = d.data();
-          if (_matchesSearch(data, d.id)) {
-            searched.add(d);
-          }
-        }
+    if (_mwUsersHasMore || _mwUsersLoading) {
+      rows.add(const _MwUsersRow.loadMore());
+    }
 
-        if (searched.isEmpty) {
-          return Column(
-            children: [
-              _buildSearchBar(context),
-              Expanded(
-                child: Center(
-                  child: Text(
-                    _searchQuery.trim().isNotEmpty
-                        ? l10n.noSearchResults
-                        : l10n.noOtherUsers,
-                    style: const TextStyle(color: Colors.white70),
+    return ListView.builder(
+      controller: _scrollController,
+      padding: const EdgeInsets.fromLTRB(8, 6, 8, 24),
+      physics: const BouncingScrollPhysics(),
+      itemCount: rows.length,
+      itemBuilder: (context, index) {
+        final row = rows[index];
+
+        switch (row.kind) {
+          case _MwUsersRowKind.search:
+            return _buildSearchBar(context);
+
+          case _MwUsersRowKind.user:
+            final doc = row.doc!;
+            final data = doc.data();
+            final status = _friendStatuses[doc.id];
+
+            final publicUrl = (data['profileUrl'] as String?)?.trim();
+            if ((publicUrl == null || publicUrl.isEmpty) && !_photoDenied.contains(doc.id)) {
+              _queuePrivatePhotoPrefetch(doc.id);
+            }
+
+            return _buildUserTile(
+              context,
+              data,
+              doc.id,
+              friendStatus: status,
+            );
+
+          case _MwUsersRowKind.loadMore:
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
+              child: Center(
+                child: SizedBox(
+                  width: 240,
+                  child: OutlinedButton(
+                    onPressed: _mwUsersLoading ? null : _requestLoadMore,
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Colors.white24),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    child: _mwUsersLoading
+                        ? Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                        const SizedBox(width: 10),
+                        Text(l10n.loading),
+                      ],
+                    )
+                        : Text(_mwUsersHasMore ? l10n.loadMore : (l10n.noSearchResults ?? 'No more users')),
                   ),
                 ),
               ),
-            ],
-          );
+            );
         }
-
-        final activeDocs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
-        final inactiveDocs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
-
-        for (final d in searched) {
-          final data = d.data();
-          if (_isActiveUser(data)) {
-            activeDocs.add(d);
-          } else {
-            inactiveDocs.add(d);
-          }
-        }
-
-        final rows = <_MwUsersRow>[];
-        rows.add(const _MwUsersRow.search());
-
-        for (final doc in activeDocs) {
-          rows.add(_MwUsersRow.user(doc: doc));
-        }
-
-        if (inactiveDocs.isNotEmpty) {
-          rows.add(_MwUsersRow.inactiveHeader(count: inactiveDocs.length));
-          for (final doc in inactiveDocs) {
-            rows.add(_MwUsersRow.user(doc: doc));
-          }
-        }
-
-        if (_hasMore || _isLoadingMore) {
-          rows.add(const _MwUsersRow.loadMore());
-        }
-
-        return ListView.builder(
-          controller: _scrollController,
-          padding: const EdgeInsets.fromLTRB(8, 6, 8, 24),
-          physics: const BouncingScrollPhysics(),
-          itemCount: rows.length,
-          itemBuilder: (context, index) {
-            final row = rows[index];
-
-            switch (row.kind) {
-              case _MwUsersRowKind.search:
-                return _buildSearchBar(context);
-
-              case _MwUsersRowKind.inactiveHeader:
-                return Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.06),
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(color: Colors.white24),
-                        ),
-                        child: Row(
-                          children: [
-                            Text(
-                              l10n.friendSectionInactiveUsers,
-                              style: const TextStyle(
-                                color: Colors.white70,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 13,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: Colors.white12,
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                              child: Text(
-                                '${row.count}',
-                                style: const TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-
-              case _MwUsersRowKind.user:
-                final doc = row.doc!;
-                final data = doc.data();
-                final status = _friendStatuses[doc.id];
-
-                final publicUrl = (data['profileUrl'] as String?)?.trim();
-                if ((publicUrl == null || publicUrl.isEmpty) &&
-                    !_photoDenied.contains(doc.id)) {
-                  _queuePrivatePhotoPrefetch(doc.id);
-                }
-
-                return _buildUserTile(
-                  context,
-                  data,
-                  doc.id,
-                  friendStatus: status,
-                );
-
-              case _MwUsersRowKind.loadMore:
-                return Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
-                  child: Center(
-                    child: SizedBox(
-                      width: 220,
-                      child: OutlinedButton(
-                        onPressed: _isLoadingMore ? null : _requestLoadMore,
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: Colors.white24),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                        ),
-                        child: _isLoadingMore
-                            ? Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 2),
-                            ),
-                            const SizedBox(width: 10),
-                            Text(l10n.loading),
-                          ],
-                        )
-                            : Text(l10n.loadMore),
-                      ),
-                    ),
-                  ),
-                );
-            }
-          },
-        );
       },
     );
   }
@@ -1800,19 +1763,13 @@ class _MwFriendsTabState extends State<MwFriendsTab>
               scrollbars: false,
               physics: const BouncingScrollPhysics(),
             ),
-            child: _isFriendsOnly
-                ? _buildFriendsOnlyTab(context)
-                : _buildMwUsersOnlyTab(context),
+            child: _isFriendsOnly ? _buildFriendsOnlyTab(context) : _buildMwUsersOnlyTab(context),
           ),
         ),
       ),
     );
   }
 }
-
-// ----------------------------
-// Row models for lazy list building
-// ----------------------------
 
 enum _FriendsRowKind { search, requestsBanner, header, subHeader, user }
 
@@ -1822,8 +1779,6 @@ class _FriendsRow {
   final int count;
   final int unseenCount;
   final String? uid;
-
-  // ✅ flexible titles (supports Online/Offline easily)
   final String? titleText;
 
   const _FriendsRow._(
@@ -1867,23 +1822,19 @@ class _FriendsRow {
       : this._(_FriendsRowKind.user, uid: uid);
 }
 
-enum _MwUsersRowKind { search, user, inactiveHeader, loadMore }
+enum _MwUsersRowKind { search, user, loadMore }
 
 class _MwUsersRow {
   final _MwUsersRowKind kind;
   final QueryDocumentSnapshot<Map<String, dynamic>>? doc;
-  final int count;
 
-  const _MwUsersRow._(this.kind, {this.doc, this.count = 0});
+  const _MwUsersRow._(this.kind, {this.doc});
 
   const _MwUsersRow.search() : this._(_MwUsersRowKind.search);
 
   const _MwUsersRow.user({
     required QueryDocumentSnapshot<Map<String, dynamic>> doc,
   }) : this._(_MwUsersRowKind.user, doc: doc);
-
-  const _MwUsersRow.inactiveHeader({required int count})
-      : this._(_MwUsersRowKind.inactiveHeader, count: count);
 
   const _MwUsersRow.loadMore() : this._(_MwUsersRowKind.loadMore);
 }

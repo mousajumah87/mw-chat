@@ -12,16 +12,26 @@ import 'voice_record_bar.dart';
 class ChatInputBar extends StatefulWidget {
   final TextEditingController controller;
   final bool sending;
-  final VoidCallback onAttach;
+
+  /// ✅ ChatScreen owns attach-sheet + media service. Keep it there.
+  /// In ChatInputBar we only: close input states then call onAttach().
+  final Future<void> Function() onAttach;
+
   final VoidCallback onSend;
   final ValueChanged<String>? onTextChanged;
+
+  /// ✅ Parent (ChatScreen) should pass ONE shared focus node.
+  final FocusNode? focusNode;
+
+  /// ✅ Emoji/custom panel state is controlled by ChatScreen.
+  final bool panelVisible;
+  final VoidCallback? onTogglePanel;
 
   // ✅ Voice
   final VoiceRecorderController? voiceController;
   final Future<void> Function(VoiceDraft draft)? onVoiceSend;
 
   // ✅ OPTIONAL: let parent update Firestore recording state
-  // (e.g., set recording_<uid> true/false)
   final VoidCallback? onVoiceRecordStart;
   final VoidCallback? onVoiceRecordStop;
 
@@ -40,6 +50,9 @@ class ChatInputBar extends StatefulWidget {
     this.onVoiceRecordStart,
     this.onVoiceRecordStop,
     this.uploadProgress,
+    this.focusNode,
+    this.panelVisible = false,
+    this.onTogglePanel,
   });
 
   @override
@@ -49,7 +62,9 @@ class ChatInputBar extends StatefulWidget {
 class _ChatInputBarState extends State<ChatInputBar>
     with SingleTickerProviderStateMixin {
   bool _hasText = false;
-  final FocusNode _messageFocusNode = FocusNode(debugLabel: 'chatInput');
+
+  /// 🔴 IMPORTANT: local fallback focus node only.
+  final FocusNode _fallbackFocusNode = FocusNode(debugLabel: 'chatInput');
 
   bool _disposed = false;
 
@@ -60,8 +75,9 @@ class _ChatInputBarState extends State<ChatInputBar>
 
   VoiceRecorderController? get _vc => widget.voiceController;
 
-  // ✅ FIX: keep the voice UI visible not only while recording/draft,
-  // but ALSO while "preparing" (permissions/init). This prevents flicker/disappear.
+  /// ✅ The ONLY focus node used by TextField
+  FocusNode get _activeFocusNode => widget.focusNode ?? _fallbackFocusNode;
+
   bool get _showVoiceBar {
     final vc = _vc;
     if (vc == null) return false;
@@ -73,43 +89,71 @@ class _ChatInputBarState extends State<ChatInputBar>
     await MwFeedback.show(context, message: message);
   }
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // ✅ Voice helpers: ensure onVoiceRecordStart/Stop are always consistent
-  // ────────────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Voice: tap-to-toggle (start/stop). No long-press anymore.
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  Future<void> _toggleVoice() async {
+    if (_uiLocked) return;
+    final vc = _vc;
+    if (vc == null) return;
+
+    // If emoji/custom panel open, close it (snapchat behavior)
+    if (widget.panelVisible) {
+      widget.onTogglePanel?.call();
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+    }
+
+    // If currently recording -> stop to preview
+    if (vc.isRecording || vc.isPreparing) {
+      await _stopVoiceToPreview();
+      return;
+    }
+
+    // If a draft already exists -> just keep voice bar visible
+    if (vc.hasDraft) {
+      if (!mounted || _disposed) return;
+      setState(() {});
+      return;
+    }
+
+    // Start recording
+    await _startVoice();
+  }
 
   Future<void> _startVoice() async {
     if (_uiLocked) return;
     final vc = _vc;
     if (vc == null) return;
 
-    // guard
     if (vc.isRecording || vc.isPreparing || vc.hasDraft) return;
 
-    // Unfocus text input so the keyboard doesn't fight with recording UI.
-    if (_messageFocusNode.hasFocus) _messageFocusNode.unfocus();
+    // ✅ Close keyboard before starting voice
+    if (_activeFocusNode.hasFocus) _activeFocusNode.unfocus();
     FocusManager.instance.primaryFocus?.unfocus();
 
-    // ✅ Show UI immediately (so user sees "recording/preparing" right away)
+    // ✅ Also close emoji panel if open
+    if (widget.panelVisible) {
+      widget.onTogglePanel?.call();
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+    }
+
     if (mounted && !_disposed) setState(() {});
 
     bool started = false;
     try {
       await vc.start();
-      started = vc.isRecording; // only true if start actually succeeded
+      started = vc.isRecording;
 
       if (started) {
-        // ✅ Signal parent: recording started (Firestore recording_<uid>=true)
         widget.onVoiceRecordStart?.call();
       } else {
-        // start didn't succeed => ensure remote flag is not stuck
         widget.onVoiceRecordStop?.call();
       }
     } catch (_) {
-      // start failed => ensure remote flag is not stuck
       widget.onVoiceRecordStop?.call();
     } finally {
       if (!mounted || _disposed) return;
-      // voice controller notifies, but keep UI snappy
       setState(() {});
     }
   }
@@ -120,7 +164,6 @@ class _ChatInputBarState extends State<ChatInputBar>
     if (vc == null) return;
 
     if (!vc.isRecording && !vc.isPreparing) {
-      // if we somehow reach here while not recording, still ensure remote false
       widget.onVoiceRecordStop?.call();
       return;
     }
@@ -128,9 +171,8 @@ class _ChatInputBarState extends State<ChatInputBar>
     try {
       await vc.stopToPreview();
     } catch (_) {
-      // ignore, controller handles reset
+      // ignore
     } finally {
-      // ✅ ALWAYS clear Firestore recording flag
       widget.onVoiceRecordStop?.call();
       if (!mounted || _disposed) return;
       setState(() {});
@@ -146,20 +188,21 @@ class _ChatInputBarState extends State<ChatInputBar>
     } catch (_) {
       // ignore
     } finally {
-      // ✅ ALWAYS clear Firestore recording flag
       widget.onVoiceRecordStop?.call();
       if (!mounted || _disposed) return;
       setState(() {});
     }
   }
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Lifecycle
+  // ─────────────────────────────────────────────────────────────────────────────
+
   @override
   void initState() {
     super.initState();
     _syncTextState();
     widget.controller.addListener(_syncTextState);
-
-    // re-render when voice controller changes state
     _vc?.addListener(_onVoiceChanged);
   }
 
@@ -177,7 +220,6 @@ class _ChatInputBarState extends State<ChatInputBar>
       oldWidget.voiceController?.removeListener(_onVoiceChanged);
       widget.voiceController?.addListener(_onVoiceChanged);
 
-      // If controller swapped while recording, be safe: clear flag
       if (oldWidget.voiceController?.isRecording == true ||
           oldWidget.voiceController?.isPreparing == true) {
         widget.onVoiceRecordStop?.call();
@@ -194,7 +236,6 @@ class _ChatInputBarState extends State<ChatInputBar>
   void dispose() {
     _disposed = true;
 
-    // ✅ If disposed while recording/preparing, ensure Firestore flag is cleared
     if (widget.voiceController?.isRecording == true ||
         widget.voiceController?.isPreparing == true) {
       widget.onVoiceRecordStop?.call();
@@ -202,7 +243,8 @@ class _ChatInputBarState extends State<ChatInputBar>
 
     widget.controller.removeListener(_syncTextState);
     widget.voiceController?.removeListener(_onVoiceChanged);
-    _messageFocusNode.dispose();
+
+    _fallbackFocusNode.dispose();
     super.dispose();
   }
 
@@ -214,10 +256,13 @@ class _ChatInputBarState extends State<ChatInputBar>
     }
   }
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Send / Attach / Emoji panel coordination
+  // ─────────────────────────────────────────────────────────────────────────────
+
   void _handleSendPressed() {
     if (_uiLocked) return;
 
-    // If voice preview/recording is active, do not send text.
     if (_showVoiceBar) {
       _toast('Finish or cancel the voice note first.');
       return;
@@ -225,29 +270,38 @@ class _ChatInputBarState extends State<ChatInputBar>
 
     widget.onSend();
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _disposed) return;
-      _messageFocusNode.requestFocus();
-    });
+    // 🔴 CRITICAL FIX: DO NOT requestFocus after send.
+    // Let focus remain naturally; ChatScreen controls layout insets.
   }
 
   Future<void> _handleAttachPressed() async {
     if (_uiLocked) return;
 
-    // If voice preview/recording is active, do not interrupt.
     if (_showVoiceBar) {
-      // ✅ keep simple string to avoid missing l10n key issues
       await _toast('Finish or cancel the voice note first.');
       return;
     }
 
-    if (_messageFocusNode.hasFocus) _messageFocusNode.unfocus();
-    FocusManager.instance.primaryFocus?.unfocus();
-    await Future<void>.delayed(const Duration(milliseconds: 60));
+    // Close emoji panel first so it doesn't eat gestures / overlay sheet
+    if (widget.panelVisible) {
+      widget.onTogglePanel?.call();
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+    }
 
+    // Close keyboard before opening sheet (prevents flip / weird jump)
+    if (_activeFocusNode.hasFocus) _activeFocusNode.unfocus();
+    FocusManager.instance.primaryFocus?.unfocus();
+
+    await Future<void>.delayed(const Duration(milliseconds: 80));
     if (!mounted || _disposed) return;
-    widget.onAttach();
+
+    // ✅ IMPORTANT: await to avoid re-entrance glitches
+    await widget.onAttach();
   }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // UI helpers
+  // ─────────────────────────────────────────────────────────────────────────────
 
   Widget _buildGoldCircleButton({
     required VoidCallback? onTap,
@@ -306,7 +360,6 @@ class _ChatInputBarState extends State<ChatInputBar>
       );
     }
 
-    // If no voice controller wired, keep the mic disabled gracefully
     if (_vc == null) {
       return Container(
         margin: const EdgeInsets.only(right: 6),
@@ -320,169 +373,151 @@ class _ChatInputBarState extends State<ChatInputBar>
       );
     }
 
-    // Web: tap to start/stop to preview
-    if (kIsWeb) {
-      return GestureDetector(
-        onTap: () async {
-          if (_uiLocked) return;
-          final vc = _vc!;
-          if (vc.isRecording || vc.isPreparing) {
-            await _stopVoiceToPreview();
-          } else if (!vc.hasDraft) {
-            await _startVoice();
-          }
-        },
-        child: Container(
-          margin: const EdgeInsets.only(right: 6),
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: (_vc!.isRecording || _vc!.isPreparing)
-                ? Colors.redAccent.withOpacity(0.22)
-                : Colors.white.withOpacity(0.06),
-            shape: BoxShape.circle,
-            border: Border.all(color: kBorderColor.withOpacity(0.35)),
-          ),
-          child: Icon(
-            (_vc!.isRecording || _vc!.isPreparing) ? Icons.stop : Icons.mic_rounded,
-            color: Colors.white.withOpacity(0.92),
-          ),
-        ),
-      );
-    }
+    final vc = _vc!;
+    final bool isRec = vc.isRecording || vc.isPreparing;
 
-    // Mobile: long-press to record -> release to preview
     return GestureDetector(
-      onLongPressStart: (_) async {
-        if (_uiLocked) return;
-        final vc = _vc!;
-        if (vc.isRecording || vc.isPreparing || vc.hasDraft) return;
-        await _startVoice();
-      },
-      onLongPressEnd: (_) async {
-        if (_uiLocked) return;
-        if (_vc?.isRecording == true || _vc?.isPreparing == true) {
-          await _stopVoiceToPreview();
-        } else {
-          // gesture ended but not recording => ensure remote false
-          widget.onVoiceRecordStop?.call();
-        }
-      },
-      // ✅ Critical: if gesture cancels (scroll, route pop, interruption),
-      // onLongPressEnd may NOT fire. This is a common “stuck recording” cause.
-      onLongPressCancel: () async {
-        if (_vc?.isRecording == true || _vc?.isPreparing == true) {
-          await _cancelVoice();
-        } else {
-          widget.onVoiceRecordStop?.call();
-        }
-      },
+      behavior: HitTestBehavior.opaque,
+      onTap: _toggleVoice,
+      onLongPress: null, // explicitly disable hold behavior
       child: Container(
         margin: const EdgeInsets.only(right: 6),
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.06),
+          color: isRec
+              ? Colors.redAccent.withOpacity(0.22)
+              : Colors.white.withOpacity(0.06),
           shape: BoxShape.circle,
           border: Border.all(color: kBorderColor.withOpacity(0.35)),
         ),
-        child: Icon(Icons.mic_rounded, color: Colors.white.withOpacity(0.92)),
+        child: Icon(
+          isRec ? Icons.stop : Icons.mic_rounded,
+          color: Colors.white.withOpacity(0.92),
+        ),
       ),
     );
   }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Build
+  // ─────────────────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final bool isUploading = _isUploading;
 
-    final textScale = MediaQuery.textScalerOf(context);
-    final baseFont = textScale.scale(16);
-    final effectiveFont = baseFont < 16 ? 16.0 : baseFont;
+    // ✅ Make typing text feel correct on iPhone:
+    // Keep a larger minimum font size so it doesn't look tiny inside a tall field.
+    final scaler = MediaQuery.textScalerOf(context);
+    final scaled = scaler.scale(18); // base target
+    final double effectiveFont = scaled < 18 ? 18.0 : scaled;
 
-    return SafeArea(
-      top: false,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (isUploading)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: LinearProgressIndicator(value: widget.uploadProgress),
-            ),
+    // ✅ NO SafeArea here anymore — ChatScreen dock handles it.
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (isUploading)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: LinearProgressIndicator(value: widget.uploadProgress),
+          ),
 
-          // ✅ Voice recording / preview bar (progress + preview + send)
-          // ✅ Shows during preparing too (via _showVoiceBar)
-          if (_showVoiceBar && _vc != null && widget.onVoiceSend != null)
-            VoiceRecordBar(
-              controller: _vc!,
-              onSend: widget.onVoiceSend!,
-              onRecordStart: widget.onVoiceRecordStart,
-              onRecordStop: widget.onVoiceRecordStop,
-            ),
+        if (_showVoiceBar && _vc != null && widget.onVoiceSend != null)
+          VoiceRecordBar(
+            controller: _vc!,
+            onSend: widget.onVoiceSend!,
+            onRecordStart: widget.onVoiceRecordStart,
+            onRecordStop: widget.onVoiceRecordStop,
+          ),
 
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-            decoration: BoxDecoration(
-              color: kChatInputBarBg,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: kChatInputBarBorder.withOpacity(0.55)),
-            ),
-            child: Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.attach_file),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+          decoration: BoxDecoration(
+            color: kChatInputBarBg,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: kChatInputBarBorder.withOpacity(0.55)),
+          ),
+          child: Row(
+            children: [
+              // ✅ LEFT must be ATTACH
+              IconButton(
+                onPressed: _uiLocked ? null : _handleAttachPressed,
+                icon: const Icon(Icons.add_circle_outline, color: Colors.white70),
+                tooltip: l10n.attachFile,
+              ),
+
+              // ✅ Emoji/Keyboard toggle
+              IconButton(
+                onPressed: widget.onTogglePanel,
+                icon: Icon(
+                  widget.panelVisible
+                      ? Icons.keyboard
+                      : Icons.emoji_emotions_outlined,
                   color: Colors.white70,
-                  onPressed: _uiLocked ? null : _handleAttachPressed,
                 ),
-                Expanded(
-                  child: TextField(
-                    key: const ValueKey('chat_input_textfield'),
-                    controller: widget.controller,
-                    focusNode: _messageFocusNode,
-                    onChanged: widget.onTextChanged,
-                    onSubmitted: (_) => _handleSendPressed(),
-                    minLines: 1,
-                    maxLines: 4,
-                    textInputAction: TextInputAction.newline,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: effectiveFont,
+              ),
+
+              Expanded(
+                child: TextField(
+                  key: const ValueKey('chat_input_textfield'),
+                  controller: widget.controller,
+                  focusNode: _activeFocusNode,
+                  onTap: () {
+                    // ✅ If panel open, close it when user taps text field
+                    if (widget.panelVisible) {
+                      widget.onTogglePanel?.call();
+                    }
+                  },
+                  onChanged: widget.onTextChanged,
+                  onSubmitted: (_) => _handleSendPressed(),
+                  minLines: 1,
+                  maxLines: 4,
+                  textInputAction: TextInputAction.newline,
+                  textAlignVertical: TextAlignVertical.center, // ✅ center text
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: effectiveFont, // ✅ bigger
+                    height: 1.25,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  keyboardAppearance: Brightness.dark,
+                  decoration: InputDecoration(
+                    hintText: l10n.typeMessageHint,
+                    hintStyle: TextStyle(
+                      color: Colors.white54,
+                      fontSize: effectiveFont, // ✅ same size as typing
                       height: 1.25,
+                      fontWeight: FontWeight.w500,
                     ),
-                    keyboardAppearance: Brightness.dark,
-                    decoration: InputDecoration(
-                      hintText: l10n.typeMessageHint,
-                      hintStyle: TextStyle(
-                        color: Colors.white54,
-                        fontSize: effectiveFont - 1,
-                      ),
-                      filled: true,
-                      fillColor: kChatInputFieldBg,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                        borderSide: BorderSide.none,
-                      ),
+                    filled: true,
+                    fillColor: kChatInputFieldBg,
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14, // ✅ slightly taller + balanced
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: BorderSide.none,
                     ),
                   ),
                 ),
-                const SizedBox(width: 6),
-                if (_hasText || widget.sending || isUploading)
-                  _buildGoldCircleButton(
-                    onTap: _uiLocked ? null : _handleSendPressed,
-                    icon: Icons.send,
-                    size: 44,
-                    iconSize: 20,
-                  )
-                else
-                  _buildMicButton(),
-              ],
-            ),
+              ),
+              const SizedBox(width: 6),
+              if (_hasText || widget.sending || isUploading)
+                _buildGoldCircleButton(
+                  onTap: _uiLocked ? null : _handleSendPressed,
+                  icon: Icons.send,
+                  size: 44,
+                  iconSize: 20,
+                )
+              else
+                _buildMicButton(),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

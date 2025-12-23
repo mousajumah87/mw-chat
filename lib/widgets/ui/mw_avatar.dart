@@ -1,4 +1,9 @@
+// lib/widgets/ui/mw_avatar.dart
+
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 
 /// MW Avatar (single pattern everywhere):
 /// - Network profile photo if allowed + available
@@ -6,6 +11,10 @@ import 'package:flutter/material.dart';
 /// - Fallback to icon if asset missing
 /// - Optional gold ring, online glow + dot, Hero animation
 /// - Optional cache control via URL cache-busting and custom headers
+///
+/// ✅ FIX: If profileUrl is a Firebase Storage URL and rules require auth,
+/// we load bytes via FirebaseStorage(refFromURL).getData() so the request is authenticated.
+/// This prevents HTTP 403 in Image.network for private buckets/objects.
 class MwAvatar extends StatelessWidget {
   const MwAvatar({
     super.key,
@@ -138,6 +147,25 @@ class MwAvatar extends StatelessWidget {
     return merged;
   }
 
+  bool _looksLikeFirebaseStorageUrl(String url) {
+    final u = url.trim();
+    if (u.startsWith('gs://')) return true;
+    // Typical download URL host
+    if (u.contains('firebasestorage.googleapis.com')) return true;
+    return false;
+  }
+
+  Future<Uint8List?> _fetchFirebaseStorageBytes(String url) async {
+    try {
+      final ref = FirebaseStorage.instance.refFromURL(url.trim());
+      // 2MB cap (avatars should be small; prevents memory blowups)
+      final data = await ref.getData(2 * 1024 * 1024);
+      return data;
+    } catch (_) {
+      return null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final bg = backgroundColor ?? Colors.white10;
@@ -177,9 +205,62 @@ class MwAvatar extends StatelessWidget {
       );
     }
 
+    // Common loading UI (keep your current look)
+    Widget buildLoadingStack() {
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          buildAssetAvatar(),
+          Center(
+            child: SizedBox(
+              width: radius * 0.9,
+              height: radius * 0.9,
+              child: const CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+        ],
+      );
+    }
+
     // --- Network avatar (with loading + error fallback) ---
     Widget buildNetworkAvatar(String url) {
-      final resolvedUrl = _applyCachePolicyToUrl(url);
+      final trimmed = url.trim();
+
+      // ✅ If it’s Firebase Storage, load via Firebase SDK (authenticated).
+      // This prevents 403 when Storage rules require auth.
+      if (_looksLikeFirebaseStorageUrl(trimmed)) {
+        return ClipOval(
+          child: SizedBox(
+            width: size,
+            height: size,
+            child: FutureBuilder<Uint8List?>(
+              future: _fetchFirebaseStorageBytes(trimmed),
+              builder: (context, snap) {
+                if (snap.connectionState == ConnectionState.waiting) {
+                  return buildLoadingStack();
+                }
+
+                final bytes = snap.data;
+                if (bytes == null || bytes.isEmpty) {
+                  // fallback (asset) if forbidden/missing/any error
+                  return buildAssetAvatar();
+                }
+
+                return Image.memory(
+                  bytes,
+                  fit: BoxFit.cover,
+                  filterQuality: FilterQuality.high,
+                  gaplessPlayback: true,
+                  errorBuilder: (_, __, ___) => buildAssetAvatar(),
+                );
+              },
+            ),
+          ),
+        );
+      }
+
+      // ✅ Otherwise keep your existing Image.network behavior.
+      final resolvedUrl = _applyCachePolicyToUrl(trimmed);
       final headers = _headersForPolicy();
 
       return ClipOval(
@@ -194,19 +275,7 @@ class MwAvatar extends StatelessWidget {
             gaplessPlayback: true,
             loadingBuilder: (context, child, progress) {
               if (progress == null) return child;
-              return Stack(
-                fit: StackFit.expand,
-                children: [
-                  buildAssetAvatar(),
-                  Center(
-                    child: SizedBox(
-                      width: radius * 0.9,
-                      height: radius * 0.9,
-                      child: const CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  ),
-                ],
-              );
+              return buildLoadingStack();
             },
             errorBuilder: (_, __, ___) => buildAssetAvatar(),
           ),

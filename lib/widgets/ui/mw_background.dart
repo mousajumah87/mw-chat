@@ -1,14 +1,18 @@
 // lib/widgets/ui/mw_background.dart
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
-
 import '../../theme/app_theme.dart';
 
 class MwBackground extends StatefulWidget {
   final Widget child;
 
-  const MwBackground({super.key, required this.child});
+  /// ✅ When true: pauses glow animation (better performance during typing)
+  final bool reduceEffects;
+
+  const MwBackground({
+    super.key,
+    required this.child,
+    this.reduceEffects = false,
+  });
 
   @override
   State<MwBackground> createState() => _MwBackgroundState();
@@ -27,7 +31,7 @@ class _MwBackgroundState extends State<MwBackground>
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 12),
-    )..repeat(reverse: true);
+    );
 
     _glowShift = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
@@ -35,6 +39,27 @@ class _MwBackgroundState extends State<MwBackground>
         curve: Curves.easeInOutSine,
       ),
     );
+
+    // Start animation only if effects enabled
+    if (!widget.reduceEffects) {
+      _controller.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant MwBackground oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (oldWidget.reduceEffects != widget.reduceEffects) {
+      if (widget.reduceEffects) {
+        // ✅ pause + reset to stable state
+        _controller.stop();
+        _controller.value = 0.0;
+      } else {
+        _controller.repeat(reverse: true);
+      }
+      setState(() {});
+    }
   }
 
   @override
@@ -47,110 +72,95 @@ class _MwBackgroundState extends State<MwBackground>
   Widget build(BuildContext context) {
     final isLarge = _isLargeScreen;
 
+    // If reduced effects, don’t rebuild on animation ticks
+    final animated = widget.reduceEffects ? null : _glowShift;
+
+    Widget buildStack(double glowValue) {
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          Positioned.fill(
+            child: Image.asset(
+              'assets/images/mw_bg.png',
+              fit: BoxFit.cover,
+              alignment: Alignment.center,
+              filterQuality: FilterQuality.low,
+            ),
+          ),
+
+          Positioned.fill(
+            child: IgnorePointer(
+              ignoring: true,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    stops: const [0.0, 0.5, 1.0],
+                    colors: [
+                      kPrimaryGold.withOpacity(0.12 + 0.06 * (1 - glowValue)),
+                      Colors.transparent,
+                      kGoldDeep.withOpacity(0.12 + 0.06 * glowValue),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          Positioned.fill(
+            child: IgnorePointer(
+              ignoring: true,
+              child: const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Color(0x1A000000),
+                      Color(0x4D000000),
+                      Color(0x99000000),
+                    ],
+                    stops: [0.0, 0.6, 1.0],
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          Positioned.fill(
+            child: IgnorePointer(
+              ignoring: true,
+              child: const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: Alignment.center,
+                    radius: 0.9,
+                    colors: [
+                      Colors.transparent,
+                      Color(0x66000000),
+                    ],
+                    stops: [0.8, 1.0],
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // Keep blur disabled on mobile for performance (yours already commented)
+          // if (isLarge) ...
+
+          Positioned.fill(child: widget.child),
+        ],
+      );
+    }
+
     return RepaintBoundary(
-      child: AnimatedBuilder(
-        animation: _glowShift,
-        builder: (context, _) {
-          return Stack(
-            fit: StackFit.expand,
-            children: [
-              // === Full-screen background image ===
-              Positioned.fill(
-                child: Image.asset(
-                  'assets/images/mw_bg.png',
-                  fit: BoxFit.cover,          // <- always fills screen
-                  alignment: Alignment.center,
-                  filterQuality: FilterQuality.low,
-                ),
-              ),
-
-              // === Dynamic ambient glow overlay ===
-              Positioned.fill(
-                child: IgnorePointer(
-                  ignoring: true,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        stops: const [0.0, 0.5, 1.0],
-                        colors: [
-                          // Soft warm gold glow (top-left)
-                          kPrimaryGold.withOpacity(
-                            0.12 + 0.06 * (1 - _glowShift.value),
-                          ),
-
-                          Colors.transparent,
-
-                          // Deeper amber glow (bottom-right)
-                          kGoldDeep.withOpacity(
-                            0.12 + 0.06 * _glowShift.value,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-
-              // === Dark vignette & fade for contrast ===
-              Positioned.fill(
-                child: IgnorePointer(
-                  ignoring: true,
-                  child: const DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Color(0x1A000000),
-                          Color(0x4D000000),
-                          Color(0x99000000),
-                        ],
-                        stops: [0.0, 0.6, 1.0],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-
-              // === Subtle radial vignette ===
-              Positioned.fill(
-                child: IgnorePointer(
-                  ignoring: true,
-                  child: const DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: RadialGradient(
-                        center: Alignment.center,
-                        radius: 0.9,
-                        colors: [
-                          Colors.transparent,
-                          Color(0x66000000),
-                        ],
-                        stops: [0.8, 1.0],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-
-              // === Optional adaptive blur (desktop/tablet only) ===
-              // if (isLarge)
-                // Positioned.fill(
-                //   child: BackdropFilter(
-                //     filter: ImageFilter.blur(
-                //       sigmaX: 1.0 + (0.5 * _glowShift.value),
-                //       sigmaY: 1.0 + (0.5 * _glowShift.value),
-                //     ),
-                //     child: const SizedBox.shrink(),
-                //   ),
-                // ),
-
-              // === Foreground content (your screen) ===
-              Positioned.fill(child: widget.child),
-            ],
-          );
-        },
+      child: animated == null
+          ? buildStack(0.0)
+          : AnimatedBuilder(
+        animation: animated,
+        builder: (context, _) => buildStack(_glowShift.value),
       ),
     );
   }

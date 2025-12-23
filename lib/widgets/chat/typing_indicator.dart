@@ -8,7 +8,7 @@ import '../../theme/app_theme.dart';
 
 enum TypingAvatarGender { male, female, other }
 
-///  supports "typing" and "recording voice"
+/// supports "typing" and "recording voice"
 enum ChatActivityIndicatorMode { typing, recording }
 
 class TypingIndicator extends StatefulWidget {
@@ -90,10 +90,6 @@ class _TypingIndicatorState extends State<TypingIndicator>
     )..repeat();
 
     _isFastMode = widget.text.length > 14;
-
-    // _log(
-    //   'init gender=${widget.gender} avatarType=${widget.avatarType} mode=${widget.mode} asset=$_assetPath fast=$_isFastMode text="${widget.text}"',
-    // );
   }
 
   @override
@@ -106,9 +102,7 @@ class _TypingIndicatorState extends State<TypingIndicator>
     if (oldWidget.gender != widget.gender ||
         oldType != newType ||
         oldWidget.mode != widget.mode) {
-      // _log(
-      //   'changed gender ${oldWidget.gender} -> ${widget.gender}, avatarType ${oldWidget.avatarType} -> ${widget.avatarType}, mode ${oldWidget.mode} -> ${widget.mode}, asset=$_assetPath',
-      // );
+      // _log('changed ... asset=$_assetPath');
     }
 
     final isNowFast = widget.text.length > 14;
@@ -128,8 +122,6 @@ class _TypingIndicatorState extends State<TypingIndicator>
       _dotsController
         ..reset()
         ..repeat();
-
-      // _log('fastMode changed -> $_isFastMode');
     }
   }
 
@@ -154,18 +146,19 @@ class _TypingIndicatorState extends State<TypingIndicator>
       child: widget.isVisible
           ? LayoutBuilder(
         // IMPORTANT: force rebuild when avatar changes
-        key: ValueKey(
-          'typing-visible::$assetKey::mode=${widget.mode.name}',
-        ),
+        key: ValueKey('typing-visible::$assetKey::mode=${widget.mode.name}'),
         builder: (context, constraints) {
           final media = MediaQuery.of(context);
           final availableW = constraints.hasBoundedWidth
               ? constraints.maxWidth
               : media.size.width;
 
-          final maxBubbleWidth = availableW * 0.88;
-          final avatarSize = _clamp(availableW * 0.14, 56, 74);
-          final neededHeight = avatarSize + 20;
+          final maxBubbleWidth = availableW * 0.92;
+
+          // ✅ BIGGER, MORE VISIBLE AVATAR (was 0.16, 64..88)
+          final avatarSize = _clamp(availableW * 0.20, 84, 112);
+
+          final neededHeight = avatarSize + 26;
           double scale = 1.0;
           if (constraints.hasBoundedHeight &&
               constraints.maxHeight > 0 &&
@@ -174,18 +167,17 @@ class _TypingIndicatorState extends State<TypingIndicator>
                 _clamp(constraints.maxHeight / neededHeight, 0.55, 1.0);
           }
 
-          final enableBlur = !kIsWeb;
+          final bool isSmallPhone = media.size.shortestSide < 390;
+          final enableBlur = !kIsWeb && !isSmallPhone;
+
           final blurSigma = _isFastMode ? 9.0 : 10.0;
 
           final bubble = KeyedSubtree(
-            // extra safety: rebuild bubble when asset/mode changes
-            key: ValueKey(
-              'typing-bubble::$assetKey::mode=${widget.mode.name}',
-            ),
+            key: ValueKey('typing-bubble::$assetKey::mode=${widget.mode.name}'),
             child: ConstrainedBox(
               constraints: BoxConstraints(maxWidth: maxBubbleWidth),
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(18),
+                borderRadius: BorderRadius.circular(20),
                 child: enableBlur
                     ? BackdropFilter(
                   filter: ImageFilter.blur(
@@ -205,7 +197,7 @@ class _TypingIndicatorState extends State<TypingIndicator>
           return Semantics(
             label: widget.text.isNotEmpty ? widget.text : semanticsFallback,
             child: Padding(
-              padding: const EdgeInsetsDirectional.fromSTEB(14, 4, 16, 8),
+              padding: const EdgeInsetsDirectional.fromSTEB(14, 6, 16, 10),
               child: SizedBox(
                 width: double.infinity,
                 child: Align(
@@ -230,13 +222,13 @@ class _TypingIndicatorState extends State<TypingIndicator>
   }
 
   Widget _buildBubble(double avatarSize, String assetPath) {
-    // cache-busting key based on the actual asset path
     final cacheKey = ValueKey('typingAsset:$assetPath');
 
     return DecoratedBox(
-      decoration: mwTypingGlassDecoration(radius: 18),
+      decoration: mwTypingGlassDecoration(radius: 20),
       child: Padding(
-        padding: const EdgeInsetsDirectional.fromSTEB(12, 10, 14, 10),
+        // ✅ slightly larger padding for the bigger avatar
+        padding: const EdgeInsetsDirectional.fromSTEB(14, 12, 16, 12),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,
@@ -263,34 +255,42 @@ class _TypingIndicatorState extends State<TypingIndicator>
               child: Stack(
                 alignment: Alignment.center,
                 children: [
+                  // ✅ Stronger visibility ring for dark glass
                   Container(
                     width: avatarSize,
                     height: avatarSize,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
+                      color: Colors.black.withOpacity(0.10),
+                      border: Border.all(
+                        color: kPrimaryGold.withOpacity(0.32),
+                        width: 1.3,
+                      ),
                       boxShadow: [
                         BoxShadow(
-                          color: kGoldDeep.withOpacity(0.22),
-                          blurRadius: 18,
+                          color: kGoldDeep.withOpacity(0.10),
+                          blurRadius: 16,
                           spreadRadius: 1,
+                          offset: const Offset(0, 6),
                         ),
                       ],
                     ),
                   ),
+
                   Image.asset(
                     assetPath,
                     key: cacheKey,
-                    width: avatarSize,
-                    height: avatarSize,
+                    width: avatarSize * 0.98,
+                    height: avatarSize * 0.98,
                     fit: BoxFit.contain,
                     gaplessPlayback: true,
+                    filterQuality: FilterQuality.high, // ✅ sharper
                     errorBuilder: (context, error, stackTrace) {
                       debugPrint(
-                        '❌ TypingIndicator asset failed: $assetPath\n$error',
-                      );
+                          '❌ TypingIndicator asset failed: $assetPath\n$error');
                       return Icon(
                         Icons.keyboard,
-                        size: _clamp(avatarSize * 0.75, 32, 44),
+                        size: _clamp(avatarSize * 0.75, 44, 64),
                         color: kTextSecondary,
                       );
                     },
@@ -298,9 +298,8 @@ class _TypingIndicatorState extends State<TypingIndicator>
                 ],
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 14),
 
-            // waveform for recording, dots for typing
             widget.isRecording
                 ? _RecordingWaves(controller: _dotsController)
                 : _TypingDots(controller: _dotsController),
@@ -337,9 +336,9 @@ class _TypingDots extends StatelessWidget {
             child: Transform.scale(
               scale: scale,
               child: Container(
-                width: 4.6,
-                height: 4.6,
-                margin: const EdgeInsets.symmetric(horizontal: 1.6),
+                width: 4.8,
+                height: 4.8,
+                margin: const EdgeInsets.symmetric(horizontal: 1.8),
                 decoration: BoxDecoration(
                   color: kPrimaryGold.withOpacity(0.95),
                   shape: BoxShape.circle,
@@ -365,7 +364,7 @@ class _TypingDots extends StatelessWidget {
   }
 }
 
-///  Recording indicator (audio waveform bars) using same gold neon styling
+/// Recording indicator (audio waveform bars) using same gold neon styling
 class _RecordingWaves extends StatelessWidget {
   final AnimationController controller;
   const _RecordingWaves({required this.controller});

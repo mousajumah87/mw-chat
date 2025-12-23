@@ -9,6 +9,7 @@ import 'package:video_player/video_player.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../theme/app_theme.dart';
+import 'mw_token_text.dart';
 
 class MessageBubble extends StatefulWidget {
   final String text;
@@ -204,6 +205,73 @@ class _MessageBubbleState extends State<MessageBubble>
     if (audioExts.contains(ext)) return l10n.voiceMessageLabel;
 
     return l10n.genericFileLabel;
+  }
+
+  // =============================
+  // ✅ Custom inline "emoji tokens" (assets)
+  // =============================
+
+  static const Map<String, String> _emojiTokenToAsset = {
+    ':mw_girl:': 'assets/images/smurf.png',
+    // Add more later:
+    // ':mw_bear:': 'assets/images/bear.png',
+  };
+
+  RegExp get _tokenRegex {
+    final tokens = _emojiTokenToAsset.keys
+        .map(RegExp.escape)
+        .toList()
+      ..sort((a, b) => b.length.compareTo(a.length)); // longest first
+    return RegExp('(${tokens.join('|')})');
+  }
+
+  bool _containsAnyToken(String s) => _tokenRegex.hasMatch(s);
+
+  Widget _buildTextWithInlineAssets({
+    required String text,
+    required TextDirection msgDir,
+    required TextAlign textAlign,
+    required TextStyle style,
+  }) {
+    // Split into parts: normal text + tokens
+    final parts = text.split(_tokenRegex);
+
+    final spans = <InlineSpan>[];
+
+    for (final part in parts) {
+      if (part.isEmpty) continue;
+
+      final asset = _emojiTokenToAsset[part];
+      if (asset != null) {
+        spans.add(
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2),
+              child: Image.asset(
+                asset,
+                width: 18,
+                height: 18,
+                fit: BoxFit.contain,
+              ),
+            ),
+          ),
+        );
+      } else {
+        // Keep bidi stable for each text chunk
+        final fixedChunk = _isolateBidi(part, msgDir);
+        spans.add(TextSpan(text: fixedChunk));
+      }
+    }
+
+    return RichText(
+      textDirection: msgDir,
+      textAlign: textAlign,
+      text: TextSpan(
+        style: style,
+        children: spans,
+      ),
+    );
   }
 
   // ==============================
@@ -907,14 +975,18 @@ class _MessageBubbleState extends State<MessageBubble>
             if (hasAttachment && isAudio) _buildAudioBubble(),
             if (hasAttachment && isGenericFile) _buildFileBubble(),
             if (displayText.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Text(
-                  fixedText,
-                  textDirection: msgDir,
-                  textAlign: textAlign,
-                  style: TextStyle(color: _onBubblePrimary),
-                ),
+              mwContainsAnyToken(displayText)
+                  ? MwTokenText(
+                text: fixedText,
+                style: TextStyle(color: _onBubblePrimary),
+                textDirection: msgDir,
+                textAlign: textAlign,
+              )
+                  : Text(
+                fixedText,
+                textDirection: msgDir,
+                textAlign: textAlign,
+                style: TextStyle(color: _onBubblePrimary),
               ),
             if (widget.showTimestamp)
               Padding(

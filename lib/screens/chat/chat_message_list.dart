@@ -419,6 +419,8 @@ class _ChatMessageListState extends State<ChatMessageList> {
 
     final selected = await showModalBottomSheet<_MessageAction>(
       context: context,
+      useRootNavigator: true,
+      useSafeArea: true,
       backgroundColor: kSurfaceAltColor,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
@@ -543,7 +545,10 @@ class _ChatMessageListState extends State<ChatMessageList> {
       ..sort((a, b) => _effectiveTs(b).compareTo(_effectiveTs(a)));
 
     if (visibleDocs.isNotEmpty) {
-      _scheduleMarkMessagesAsSeen(visibleDocs);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _scheduleMarkMessagesAsSeen(visibleDocs);
+      });
     }
 
     final listPadding =
@@ -622,35 +627,30 @@ class _ChatMessageListState extends State<ChatMessageList> {
           final displayText =
           ChatAttachmentUtils.displayTextForMessage(data['text'], att);
 
-          return KeyedSubtree(
-            key: _messageKey(doc, data, att),
-            child: RepaintBoundary(
-              child: Align(
-                alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-                child: GestureDetector(
-                  onLongPress: () => _onMessageLongPress(context, doc, isMe),
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(maxWidth: maxWidth),
-                    child: MessageBubble(
-                      text: displayText,
-                      timeLabel: _formatDocTime(doc),
-                      isMe: isMe,
-                      isSeen: widget.otherUserId != null &&
-                          widget.otherUserId!.isNotEmpty &&
-                          seenBy.contains(widget.otherUserId),
-                      fileUrl: att.url,
-                      // ✅ hide device filenames for image/video
-                      fileName: ChatAttachmentUtils.uiFileNameForAttachment(att),
-                      // ✅ always pass inferred type so bubble shows correct kind
-                      fileType: att.type,
-                    ),
+          return RepaintBoundary(
+            key: ValueKey(doc.id),
+            child: Align(
+              alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+              child: GestureDetector(
+                onLongPress: () => _onMessageLongPress(context, doc, isMe),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: maxWidth),
+                  child: MessageBubble(
+                    text: displayText,
+                    timeLabel: _formatDocTime(doc),
+                    isMe: isMe,
+                    isSeen: widget.otherUserId != null &&
+                        widget.otherUserId!.isNotEmpty &&
+                        seenBy.contains(widget.otherUserId),
+                    fileUrl: att.url,
+                    fileName: ChatAttachmentUtils.uiFileNameForAttachment(att),
+                    fileType: att.type,
                   ),
                 ),
               ),
             ),
           );
         }
-
         final extraIndex = index - visibleDocs.length;
         return extraItems[extraIndex];
       },

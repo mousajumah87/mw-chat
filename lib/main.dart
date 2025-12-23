@@ -29,12 +29,46 @@ GlobalKey<ScaffoldMessengerState>();
 /// Global instance of CurrentChatTracker used both by Provider and FCM logic.
 final CurrentChatTracker currentChatTracker = CurrentChatTracker.instance;
 
+/// ------------------------------
+/// Firebase Init Guard (FIXES: [DEFAULT] already exists)
+/// ------------------------------
+/// Ensures Firebase is initialized exactly once per isolate.
+/// Also handles the iOS case where native code already configured Firebase
+/// (AppDelegate contains FirebaseApp.configure()) which would otherwise cause
+/// [core/duplicate-app] if Dart tries to initialize again with options.
+Future<FirebaseApp>? _firebaseInitFuture;
+
+Future<FirebaseApp> _ensureFirebaseInitialized() {
+  final existing = _firebaseInitFuture;
+  if (existing != null) return existing;
+
+  _firebaseInitFuture = () async {
+    // Fast path if Firebase is already visible from Dart
+    if (Firebase.apps.isNotEmpty) {
+      return Firebase.apps.first;
+    }
+
+    try {
+      // Normal FlutterFire init
+      return await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+    } on FirebaseException catch (e) {
+      // ✅ iOS edge case: DEFAULT already exists (native side already configured)
+      if (e.code == 'duplicate-app') {
+        return Firebase.app(); // returns existing [DEFAULT]
+      }
+      rethrow;
+    }
+  }();
+
+  return _firebaseInitFuture!;
+}
+
 /// REQUIRED for background notifications (mobile only)
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await _ensureFirebaseInitialized();
 
   debugPrint('🔔 BACKGROUND MESSAGE: ${message.messageId}');
   debugPrint('🔔 DATA: ${message.data}');
@@ -43,7 +77,6 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 /// ------------------------------
 /// FCM Token Sync (deduped)
 /// ------------------------------
-/// We store token only when it changes, and never from widget build() to avoid spam.
 String? _lastStoredFcmToken;
 String? _lastStoredUid;
 
@@ -85,9 +118,7 @@ Future<void> _syncCurrentTokenIfPossible() async {
     await _storeTokenForUserIfChanged(uid: user.uid, token: token);
   } on FirebaseException catch (e) {
     if (e.code == 'apns-token-not-set') {
-      debugPrint(
-        '⏳ APNs token not ready yet, will rely on onTokenRefresh.',
-      );
+      debugPrint('⏳ APNs token not ready yet, will rely on onTokenRefresh.');
     } else {
       debugPrint('⚠️ FCM getToken failed: ${e.code} ${e.message}');
     }
@@ -104,30 +135,15 @@ void _setupAuthDrivenTokenSync() {
   _authTokenSyncSub?.cancel();
   _authTokenSyncSub = FirebaseAuth.instance.authStateChanges().listen((user) {
     if (user == null) return;
-    // Fire-and-forget; safe and deduped.
     unawaited(_syncCurrentTokenIfPossible());
   });
-}
-
-Future<void> _configureFirestore() async {
-  if (kIsWeb) {
-    // Prevent Firestore web IndexedDB from getting corrupted during dev/rules changes
-    FirebaseFirestore.instance.settings = const Settings(
-      persistenceEnabled: false,
-      cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
-    );
-  }
 }
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Firebase
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
-
-  await _configureFirestore();
+  // ✅ Firebase init ONCE (safe even if iOS native already configured)
+  await _ensureFirebaseInitialized();
 
   // Register background handler (NOT on web)
   if (!kIsWeb) {
@@ -179,26 +195,21 @@ Future<void> _initPushNotifications() async {
 
   final messaging = FirebaseMessaging.instance;
 
-  // Auto Init
   await messaging.setAutoInitEnabled(true);
 
-  // Permission
   final settings = await messaging.requestPermission(
     alert: true,
     badge: true,
     sound: true,
   );
-
   debugPrint('🔔 Notification permission: ${settings.authorizationStatus}');
 
-  // Do NOT show OS notification UI in foreground (we show our own banner)
   await messaging.setForegroundNotificationPresentationOptions(
     alert: false,
     badge: false,
     sound: false,
   );
 
-  // Token Refresh (subscribe once)
   await _tokenRefreshSub?.cancel();
   _tokenRefreshSub = FirebaseMessaging.instance.onTokenRefresh.listen(
         (newToken) async {
@@ -209,10 +220,8 @@ Future<void> _initPushNotifications() async {
     },
   );
 
-  // Try to get initial token (deduped)
   await _syncCurrentTokenIfPossible();
 
-  // ✅ FOREGROUND MESSAGE → conditional SnackBar
   FirebaseMessaging.onMessage.listen((RemoteMessage message) {
     final activeRoomId = currentChatTracker.activeRoomId;
     final roomIdFromPush = message.data['roomId'];
@@ -221,7 +230,6 @@ Future<void> _initPushNotifications() async {
       '🔔 FOREGROUND MESSAGE | activeRoom=$activeRoomId, pushRoom=$roomIdFromPush',
     );
 
-    // If push is for the chat the user is currently viewing → suppress UI
     if (roomIdFromPush != null &&
         roomIdFromPush.isNotEmpty &&
         roomIdFromPush == activeRoomId) {
@@ -254,17 +262,13 @@ Future<void> _initPushNotifications() async {
     );
   });
 
-  // BACKGROUND → APP OPENED
   FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
     debugPrint('🔔 OPENED FROM NOTIFICATION');
-    // Optional: navigate to message.data['roomId']
   });
 
-  // TERMINATED LAUNCH
   final initial = await FirebaseMessaging.instance.getInitialMessage();
   if (initial != null) {
     debugPrint('🔔 APP OPENED FROM TERMINATED PUSH');
-    // Optional: navigate based on initial.data['roomId']
   }
 }
 
@@ -311,7 +315,6 @@ class AuthGate extends StatelessWidget {
         final user = authSnap.data;
         if (user == null) return const AuthScreen();
 
-        // Confirm activation from SERVER once
         return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
           future: FirebaseFirestore.instance
               .collection('users')
@@ -341,7 +344,6 @@ class AuthGate extends StatelessWidget {
               );
             }
 
-            // If server fetch fails (offline), fall back to stream behavior safely.
             if (serverSnap.hasError) {
               return _UserDocStreamGate(userId: user.uid);
             }
@@ -356,12 +358,10 @@ class AuthGate extends StatelessWidget {
             final serverData = serverDoc.data() ?? {};
             final serverIsActive = serverData['isActive'] == true;
 
-            // If server says ACTIVE → go directly Home (no inactive flash)
             if (serverIsActive) {
               return const HomeScreen();
             }
 
-            // If server says NOT active → keep listening for activation
             return _UserDocStreamGate(userId: user.uid);
           },
         );
@@ -370,7 +370,6 @@ class AuthGate extends StatelessWidget {
   }
 }
 
-/// After initial server confirmation, listen for live changes (auto-updates when admin activates).
 class _UserDocStreamGate extends StatelessWidget {
   final String userId;
   const _UserDocStreamGate({required this.userId});
@@ -380,7 +379,6 @@ class _UserDocStreamGate extends StatelessWidget {
     final l10n = AppLocalizations.of(context)!;
 
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      // ✅ Less noise than includeMetadataChanges:true
       stream: FirebaseFirestore.instance.collection('users').doc(userId).snapshots(),
       builder: (context, userSnap) {
         if (!userSnap.hasData || !userSnap.data!.exists) {
@@ -389,8 +387,7 @@ class _UserDocStreamGate extends StatelessWidget {
           );
         }
 
-        final snap = userSnap.data!;
-        final data = snap.data() ?? {};
+        final data = userSnap.data!.data() ?? {};
         final isActive = data['isActive'] == true;
 
         if (!isActive) {
@@ -414,7 +411,6 @@ class _UserDocStreamGate extends StatelessWidget {
   }
 }
 
-/// Modern inactive UI (no infinite spinner) + manual check + logout
 class _PendingActivationScreen extends StatelessWidget {
   final String userId;
   final Future<void> Function() onCheckAgain;

@@ -34,6 +34,29 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
     this.onClearChat,
   });
 
+  String _norm(String? v) => (v ?? '').trim().toLowerCase();
+
+  String _avatarFromGender(dynamic rawGender) {
+    final g = _norm(rawGender?.toString());
+    // accept common variants to be backward compatible
+    if (g == 'female' || g == 'f' || g == 'woman' || g == 'girl') return 'smurf';
+    if (g == 'male' || g == 'm' || g == 'man' || g == 'boy') return 'bear';
+    return 'bear';
+  }
+
+  String _resolveAvatarType({
+    required String? avatarType,
+    required dynamic gender,
+    required bool hideRealAvatar,
+  }) {
+    if (hideRealAvatar) return 'bear';
+
+    final a = _norm(avatarType);
+    if (a.isNotEmpty) return a; // "bear" or "smurf" (or future types)
+    return _avatarFromGender(gender);
+  }
+
+
   @override
   Size get preferredSize => const Size.fromHeight(kToolbarHeight + 8);
 
@@ -160,9 +183,14 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
   Widget _buildOtherAvatar({
     required String? profileUrl,
     required String? avatarType,
+    required dynamic gender,
     required bool hideRealAvatar,
   }) {
-    final String effectiveAvatarType = hideRealAvatar ? 'bear' : (avatarType ?? 'bear');
+    final String effectiveAvatarType = _resolveAvatarType(
+      avatarType: avatarType,
+      gender: gender,
+      hideRealAvatar: hideRealAvatar,
+    );
 
     return MwAvatar(
       radius: 18,
@@ -172,6 +200,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
       backgroundColor: Colors.white10,
     );
   }
+
 
   Widget _buildTitle(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
@@ -276,6 +305,8 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
 
                 final profileUrl = otherData['profileUrl'] as String?;
                 final avatarType = otherData['avatarType'] as String?;
+                final gender = otherData['gender']; // could be "male"/"female" or anything
+
 
                 // Hide avatar if they blocked me OR profile is not viewable
                 final hideRealAvatar = hasBlockedMe || !canViewProfile;
@@ -310,6 +341,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
                           _buildOtherAvatar(
                             profileUrl: profileUrl,
                             avatarType: avatarType,
+                            gender: gender,
                             hideRealAvatar: hideRealAvatar,
                           ),
                           Positioned(
@@ -555,6 +587,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
 
     await showModalBottomSheet<void>(
       context: parentContext,
+      useRootNavigator: true,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       useSafeArea: true,
