@@ -1,34 +1,21 @@
 #!/bin/bash
 set -euo pipefail
 
-echo "=== Xcode Cloud: PRE-XCODEBUILD (Flutter) ==="
-echo "PWD: $(pwd)"
-ls -la
+echo "=== Xcode Cloud: ci_pre_xcodebuild.sh ==="
+cd "$(git rev-parse --show-toplevel)"
 
-# Install Flutter (stable)
-if [ ! -d "$HOME/flutter" ]; then
-  echo "Cloning Flutter..."
-  git clone https://github.com/flutter/flutter.git -b stable --depth 1 "$HOME/flutter"
+# Ensure Generated.xcconfig exists
+if [ ! -f "ios/Flutter/Generated.xcconfig" ]; then
+  echo "Generated.xcconfig missing -> flutter pub get"
+  flutter pub get
 fi
-export PATH="$HOME/flutter/bin:$PATH"
 
-flutter --version
+# Ensure Pods exist (xcfilelists come from pod install)
+if [ ! -d "ios/Pods" ]; then
+  echo "Pods missing -> pod install"
+  cd ios
+  pod install --repo-update
+  cd ..
+fi
 
-# Flutter deps
-flutter pub get
-
-# Generate Generated.xcconfig
-flutter build ios --no-codesign
-
-echo "Check Generated.xcconfig..."
-ls -la ios/Flutter || true
-test -f ios/Flutter/Generated.xcconfig
-
-# Pods
-cd ios
-pod repo update
-pod install
-cd ..
-
-echo "=== PRE-XCODEBUILD done ==="
-
+echo "=== Done: ci_pre_xcodebuild.sh ==="
