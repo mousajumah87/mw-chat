@@ -1,4 +1,6 @@
 #!/bin/bash
+echo "🔥🔥🔥 CI POST CLONE SCRIPT IS RUNNING 🔥🔥🔥"
+
 set -euo pipefail
 
 echo "=== Xcode Cloud: ci_post_clone.sh ==="
@@ -25,3 +27,4 @@ pod --version
 pod install --repo-update
 
 echo "=== Done: ci_post_clone.sh ==="
+echo "CI COMMIT: $(git rev-parse HEAD)"
