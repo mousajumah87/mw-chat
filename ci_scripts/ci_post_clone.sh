@@ -1,64 +1,81 @@
 #!/bin/bash
 set -euo pipefail
 
-echo "🔥🔥🔥 CI POST CLONE SCRIPT IS RUNNING 🔥🔥🔥"
+echo "🔥🔥🔥 XCODE CLOUD: ci_post_clone.sh START 🔥🔥🔥"
 echo "PWD: $(pwd)"
-echo "CI COMMIT: ${CI_COMMIT:-unknown}"
+echo "CI: ${CI:-}"
+echo "XCODE_VERSION: ${XCODE_VERSION:-}"
+echo "DEVELOPER_DIR: ${DEVELOPER_DIR:-}"
 
-# -------- Flutter setup --------
+# ----------------------------
+# 1) Ensure Flutter is available
+# ----------------------------
 if ! command -v flutter >/dev/null 2>&1; then
-  echo "Flutter not found. Installing..."
+  echo "Flutter not found. Installing (stable)..."
   git clone https://github.com/flutter/flutter.git -b stable --depth 1 "$HOME/flutter"
   export PATH="$HOME/flutter/bin:$PATH"
-else
-  echo "Flutter found: $(which flutter)"
 fi
 
 flutter --version
-flutter precache --ios || true
 
-# -------- Get Dart deps --------
+# Precache iOS artifacts (helps on clean CI machines)
+flutter precache --ios
+
+# ----------------------------
+# 2) Flutter deps + generate iOS config
+# ----------------------------
+echo "Running flutter pub get..."
 flutter pub get
 
-# -------- Generate iOS Flutter config (creates ios/Flutter/Generated.xcconfig) --------
-# Prefer config-only (fast). If not supported, fallback to a no-codesign build.
-set +e
+# Ensure ios/Flutter/Generated.xcconfig exists (this is the file your build is missing)
+# --config-only is fast and specifically meant for CI/Xcode integration
+echo "Generating iOS config (flutter build ios --config-only)..."
 flutter build ios --config-only
-CONFIG_ONLY_RC=$?
-set -e
 
-if [ $CONFIG_ONLY_RC -ne 0 ]; then
-  echo "flutter build ios --config-only not supported or failed; falling back..."
-  flutter build ios --release --no-codesign
-fi
-
-# Confirm Generated.xcconfig exists
+# Validate the file exists
 if [ ! -f "ios/Flutter/Generated.xcconfig" ]; then
-  echo "ERROR: ios/Flutter/Generated.xcconfig still missing"
+  echo "❌ ERROR: ios/Flutter/Generated.xcconfig was not created."
+  echo "Listing ios/Flutter:"
   ls -la ios/Flutter || true
   exit 1
 fi
 
-echo "Generated.xcconfig OK ✅"
+echo "✅ Found ios/Flutter/Generated.xcconfig"
 
-# -------- CocoaPods --------
-cd ios
-
-# Xcode Cloud usually has Ruby + CocoaPods already, but keep it safe:
+# ----------------------------
+# 3) Ensure CocoaPods is available (NO sudo on Xcode Cloud)
+# ----------------------------
 if ! command -v pod >/dev/null 2>&1; then
-  echo "CocoaPods not found. Installing..."
-  sudo gem install cocoapods -N
+  echo "CocoaPods not found. Installing with --user-install (no sudo)..."
+  gem install cocoapods -N --user-install
+  # Add Ruby user gem bin to PATH
+  export PATH="$HOME/.gem/ruby/$(ruby -e 'print RUBY_VERSION')/bin:$PATH"
 fi
 
 pod --version
-pod repo update || true
-pod install --verbose
 
-# Confirm Pods xcfilelists exist (your exact failure)
-if [ ! -f "Pods/Target Support Files/Pods-Runner/Pods-Runner-frameworks-Release-input-files.xcfilelist" ]; then
-  echo "ERROR: Pods xcfilelist still missing after pod install"
-  find Pods/Target\ Support\ Files/Pods-Runner -maxdepth 1 -type f -name "*.xcfilelist" -print || true
+# ----------------------------
+# 4) Install pods (this generates Pods-Runner xcconfigs + xcfilelists)
+# ----------------------------
+echo "Running pod install..."
+cd ios
+
+# Clean stale pods state (safe + often fixes CI pod weirdness)
+rm -rf Pods
+rm -f Podfile.lock
+
+pod repo update
+pod install --repo-update
+
+# Validate pod-generated files that your error mentions
+if [ ! -d "Pods/Target Support Files/Pods-Runner" ]; then
+  echo "❌ ERROR: Pods-Runner support files not created."
+  ls -la "Pods/Target Support Files" || true
   exit 1
 fi
 
-echo "Pods OK ✅"
+echo "✅ CocoaPods installed and Pods support files generated."
+
+cd ..
+
+echo "🔥🔥🔥 XCODE CLOUD: ci_post_clone.sh DONE 🔥🔥🔥"
