@@ -35,3 +35,7 @@ ios/**/xcuserdata/
 ios/**/UserInterfaceState.xcuserstate
 ios/Runner.xcworkspace/xcuserdata/
 *.xcuserstate
+ios/Runner.xcworkspace/xcuserdata/
+*.xcuserstate
+ci_scripts_backup_*/
+ci_scripts_backup_*/
