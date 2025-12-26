@@ -15,7 +15,6 @@ import '../../utils/presence_service.dart';
 import 'package:mw/utils/voice_recorder_controller.dart' as vrc;
 
 import '../../widgets/chat/mw_emoji_panel.dart';
-import '../../widgets/ui/mw_swipe_back.dart';
 import 'chat_app_bar.dart';
 import 'chat_friendship_service.dart';
 import 'chat_media_service.dart';
@@ -1396,38 +1395,28 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         }
             : null,
       ),
-      body: MwSwipeBack(
-        enabled: !_panelVisible && MediaQuery.of(context).viewInsets.bottom == 0,
-        onExit: () {
+      body: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () {
           FocusManager.instance.primaryFocus?.unfocus();
           if (_panelVisible) setState(() => _panelVisible = false);
-          if (Navigator.of(context).canPop()) {
-            Navigator.of(context).maybePop();
-          }
         },
-        child: GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onTap: () {
-            FocusManager.instance.primaryFocus?.unfocus();
-            if (_panelVisible) setState(() => _panelVisible = false);
-          },
-          child: MwBackground(
-            child: Column(
-              children: [
-                _buildFriendshipBanner(l10n),
-                Expanded(
-                  child: _isLoadingBlock
-                      ? const Center(child: CircularProgressIndicator())
-                      : ChatMessageList(
-                    roomId: widget.roomId,
-                    currentUserId: _currentUserId,
-                    otherUserId: otherUserId,
-                    isBlocked: _isAnyBlock,
-                    bottomInset: listBottomInset,
-                  ),
+        child: MwBackground(
+          child: Column(
+            children: [
+              _buildFriendshipBanner(l10n),
+              Expanded(
+                child: _isLoadingBlock
+                    ? const Center(child: CircularProgressIndicator())
+                    : ChatMessageList(
+                  roomId: widget.roomId,
+                  currentUserId: _currentUserId,
+                  otherUserId: otherUserId,
+                  isBlocked: _isAnyBlock,
+                  bottomInset: listBottomInset,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),

@@ -487,6 +487,86 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
     );
   }
 
+  Widget _buildDeletedAccountTile(
+      BuildContext context, {
+        required String uid,
+      }) {
+    final l10n = AppLocalizations.of(context)!;
+
+    // Search: for deleted accounts we can only match uid (no profile data)
+    final q = _searchQuery.trim().toLowerCase();
+    if (q.isNotEmpty && !uid.toLowerCase().contains(q)) {
+      return const SizedBox.shrink();
+    }
+
+    final border = Colors.white.withOpacity(0.12);
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.55),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: border),
+      ),
+      child: Row(
+        children: [
+          MwAvatar(
+            avatarType: 'bear',
+            profileUrl: null,
+            radius: 22,
+            showRing: true,
+            ringColor: _mwRingColorForTheme(),
+            ringWidth: 2.2,
+            isOnline: false,
+            showOnlineDot: false,
+            showOnlineGlow: false,
+            backgroundColor: kSurfaceAltColor.withOpacity(0.85),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  (l10n.deletedAccount ?? 'Deleted account'),
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  (l10n.accountUnavailableSubtitle ??
+                      'This account is no longer available.'),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Colors.white70,
+                    height: 1.2,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 2,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+
+          // Only action: remove/decline (cleans both sides)
+          _actionCircle(
+            context: context,
+            icon: Icons.delete_outline_rounded,
+            tooltip: (l10n.removeFriendConfirm ?? 'Remove'),
+            onTap: () => _declineAndRemove(uid),
+            bg: Colors.white.withOpacity(0.06),
+            fg: Colors.redAccent.withOpacity(0.95),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
@@ -537,7 +617,8 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
                       decoration: BoxDecoration(
                         color: Colors.black.withOpacity(0.65),
                         borderRadius: BorderRadius.circular(24),
-                        border: Border.all(color: Colors.white.withOpacity(0.08)),
+                        border:
+                        Border.all(color: Colors.white.withOpacity(0.08)),
                       ),
                       child: Column(
                         children: [
@@ -551,14 +632,16 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
                               child: Center(
                                 child: Text(
                                   l10n.friendRequestsEmpty,
-                                  style: const TextStyle(color: Colors.white70),
+                                  style:
+                                  const TextStyle(color: Colors.white70),
                                 ),
                               ),
                             )
                           else
                             Expanded(
                               child: ListView.builder(
-                                padding: const EdgeInsets.fromLTRB(4, 6, 4, 16),
+                                padding:
+                                const EdgeInsets.fromLTRB(4, 6, 4, 16),
                                 physics: const BouncingScrollPhysics(),
                                 itemCount: incoming.length,
                                 itemBuilder: (context, index) {
@@ -578,11 +661,21 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
                                         .doc(uid)
                                         .snapshots(),
                                     builder: (context, snap) {
+                                      if (snap.hasError) {
+                                        return const SizedBox.shrink();
+                                      }
                                       if (!snap.hasData) {
                                         return const SizedBox.shrink();
                                       }
+
                                       final data = snap.data!.data();
-                                      if (data == null) return const SizedBox.shrink();
+                                      if (data == null) {
+                                        // ✅ Account deleted (profile doc missing)
+                                        return _buildDeletedAccountTile(
+                                          context,
+                                          uid: uid,
+                                        );
+                                      }
 
                                       if (!_matchesLocalSearch(data, uid)) {
                                         return const SizedBox.shrink();

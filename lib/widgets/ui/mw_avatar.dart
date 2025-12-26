@@ -1,5 +1,6 @@
 // lib/widgets/ui/mw_avatar.dart
 
+import 'dart:collection';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -12,10 +13,14 @@ import 'package:firebase_storage/firebase_storage.dart';
 /// - Optional gold ring, online glow + dot, Hero animation
 /// - Optional cache control via URL cache-busting and custom headers
 ///
-/// ✅ FIX: If profileUrl is a Firebase Storage URL and rules require auth,
-/// we load bytes via FirebaseStorage(refFromURL).getData() so the request is authenticated.
-/// This prevents HTTP 403 in Image.network for private buckets/objects.
-class MwAvatar extends StatelessWidget {
+/// ✅ FIXES:
+/// 1) Avoid re-downloading Firebase Storage bytes on every parent rebuild:
+///    - MwAvatar is now Stateful
+///    - Future is memoized and only changes when URL changes
+///    - small in-memory LRU cache for Firebase bytes
+/// 2) Avoid accidental infinite reload:
+///    - MwAvatarCachePolicy.refresh MUST use a stable cacheBustKey (otherwise it changes every build)
+class MwAvatar extends StatefulWidget {
   const MwAvatar({
     super.key,
     required this.avatarType,
@@ -24,7 +29,7 @@ class MwAvatar extends StatelessWidget {
     this.radius = 18,
     this.backgroundColor,
 
-    // ✅ Ring + Online UX
+    // Ring + Online UX
     this.showRing = false,
     this.ringColor,
     this.ringWidth = 2.0,
@@ -38,10 +43,10 @@ class MwAvatar extends StatelessWidget {
     this.dotSize = 11,
     this.dotBorderWidth = 2,
 
-    // ✅ Hero animation
+    // Hero animation
     this.heroTag,
 
-    // ✅ Cache control
+    // Cache control
     this.cachePolicy = MwAvatarCachePolicy.normal,
     this.cacheBustKey,
     this.networkHeaders,
@@ -88,90 +93,181 @@ class MwAvatar extends StatelessWidget {
   final MwAvatarCachePolicy cachePolicy;
 
   /// Optional key appended to URL when cachePolicy == refresh
-  /// If null, DateTime.now().millisecondsSinceEpoch is used.
+  /// IMPORTANT: must be stable (e.g., profileUpdatedAt) or it will refresh every rebuild.
   final String? cacheBustKey;
 
   /// Optional headers for Image.network (best-effort; some platforms may ignore)
   final Map<String, String>? networkHeaders;
 
+  @override
+  State<MwAvatar> createState() => _MwAvatarState();
+}
+
+enum MwAvatarCachePolicy {
+  normal,
+  refresh,
+  noCache,
+}
+
+class _MwAvatarState extends State<MwAvatar> {
   static const String _bearAsset = 'assets/images/bear.png';
   static const String _smurfAsset = 'assets/images/smurf.png';
 
   // Default MW gold (no dependency on app_theme.dart)
   static const Color _defaultGold = Color(0xFFD6B25E);
 
+  // Small in-memory LRU cache for Firebase bytes to avoid re-fetching
+  // across list rebuilds / scrolls.
+  static final _firebaseBytesCache = _LruBytesCache(maxEntries: 120);
+
+  Future<Uint8List?>? _firebaseBytesFuture;
+  String? _firebaseUrlKey;
+
+  // We also memoize the resolved network URL to avoid rebuilding it every build.
+  String? _resolvedNetworkUrlKey;
+  String? _resolvedNetworkUrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _prepareMemoizedResources();
+  }
+
+  @override
+  void didUpdateWidget(covariant MwAvatar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    // If anything affecting URL/visibility changes, recompute.
+    final oldEffective = _effectiveUrl(oldWidget);
+    final newEffective = _effectiveUrl(widget);
+
+    final cachePolicyChanged = oldWidget.cachePolicy != widget.cachePolicy ||
+        oldWidget.cacheBustKey != widget.cacheBustKey ||
+        !_mapEquals(oldWidget.networkHeaders, widget.networkHeaders);
+
+    if (oldEffective != newEffective || cachePolicyChanged) {
+      _prepareMemoizedResources();
+    }
+  }
+
+  bool _mapEquals(Map<String, String>? a, Map<String, String>? b) {
+    if (identical(a, b)) return true;
+    if (a == null || b == null) return a == b;
+    if (a.length != b.length) return false;
+    for (final e in a.entries) {
+      if (b[e.key] != e.value) return false;
+    }
+    return true;
+  }
+
   String get _assetPath {
-    final t = avatarType.toLowerCase().trim();
+    final t = widget.avatarType.toLowerCase().trim();
     return t == 'smurf' ? _smurfAsset : _bearAsset;
   }
 
-  bool get _isSmurf => avatarType.toLowerCase().trim() == 'smurf';
+  bool get _isSmurf => widget.avatarType.toLowerCase().trim() == 'smurf';
 
-  String? get _effectiveUrl {
-    if (hideRealAvatar) return null;
-    final url = profileUrl?.trim();
+  String? _effectiveUrl(MwAvatar w) {
+    if (w.hideRealAvatar) return null;
+    final url = w.profileUrl?.trim();
     if (url == null || url.isEmpty) return null;
     return url;
   }
 
+  bool _looksLikeFirebaseStorageUrl(String url) {
+    final u = url.trim();
+    if (u.startsWith('gs://')) return true;
+    if (u.contains('firebasestorage.googleapis.com')) return true;
+    return false;
+  }
+
   String _applyCachePolicyToUrl(String url) {
-    final policy = cachePolicy;
+    final policy = widget.cachePolicy;
 
     if (policy == MwAvatarCachePolicy.normal) return url;
 
-    // Best cross-platform cache control: URL cache busting.
     if (policy == MwAvatarCachePolicy.refresh) {
-      final key = (cacheBustKey?.trim().isNotEmpty == true)
-          ? cacheBustKey!.trim()
-          : DateTime.now().millisecondsSinceEpoch.toString();
+      // IMPORTANT: if cacheBustKey is null/empty, do NOT auto-generate a timestamp.
+      // That would change every rebuild and force constant reload/flicker.
+      final key = widget.cacheBustKey?.trim();
+      if (key == null || key.isEmpty) return url;
 
-      // Append ?v= or &v=
       final sep = url.contains('?') ? '&' : '?';
       return '$url${sep}v=$key';
     }
 
     // noCache: try headers; still return original URL.
-    // (Web may ignore cache headers; this is best-effort.)
     return url;
   }
 
   Map<String, String>? _headersForPolicy() {
-    if (cachePolicy != MwAvatarCachePolicy.noCache) return networkHeaders;
+    if (widget.cachePolicy != MwAvatarCachePolicy.noCache) return widget.networkHeaders;
     final merged = <String, String>{};
-    if (networkHeaders != null) merged.addAll(networkHeaders!);
+    if (widget.networkHeaders != null) merged.addAll(widget.networkHeaders!);
 
-    // Best-effort. Some platforms / CDNs may ignore.
     merged.putIfAbsent('Cache-Control', () => 'no-cache, no-store, must-revalidate');
     merged.putIfAbsent('Pragma', () => 'no-cache');
     merged.putIfAbsent('Expires', () => '0');
     return merged;
   }
 
-  bool _looksLikeFirebaseStorageUrl(String url) {
-    final u = url.trim();
-    if (u.startsWith('gs://')) return true;
-    // Typical download URL host
-    if (u.contains('firebasestorage.googleapis.com')) return true;
-    return false;
-  }
-
   Future<Uint8List?> _fetchFirebaseStorageBytes(String url) async {
+    // LRU cache hit
+    final cached = _firebaseBytesCache.get(url);
+    if (cached != null && cached.isNotEmpty) return cached;
+
     try {
       final ref = FirebaseStorage.instance.refFromURL(url.trim());
-      // 2MB cap (avatars should be small; prevents memory blowups)
+      // 2MB cap
       final data = await ref.getData(2 * 1024 * 1024);
+      if (data != null && data.isNotEmpty) {
+        _firebaseBytesCache.put(url, data);
+      }
       return data;
     } catch (_) {
       return null;
     }
   }
 
+  void _prepareMemoizedResources() {
+    final url = _effectiveUrl(widget);
+    if (url == null) {
+      _firebaseBytesFuture = null;
+      _firebaseUrlKey = null;
+      _resolvedNetworkUrlKey = null;
+      _resolvedNetworkUrl = null;
+      return;
+    }
+
+    final trimmed = url.trim();
+
+    if (_looksLikeFirebaseStorageUrl(trimmed)) {
+      // Only create a new future if URL actually changed.
+      if (_firebaseUrlKey != trimmed) {
+        _firebaseUrlKey = trimmed;
+        _firebaseBytesFuture = _fetchFirebaseStorageBytes(trimmed);
+      }
+      _resolvedNetworkUrlKey = null;
+      _resolvedNetworkUrl = null;
+      return;
+    }
+
+    // Non-firebase network: memoize resolved URL
+    final urlKey = '${trimmed}|${widget.cachePolicy.name}|${widget.cacheBustKey ?? ''}';
+    if (_resolvedNetworkUrlKey != urlKey) {
+      _resolvedNetworkUrlKey = urlKey;
+      _resolvedNetworkUrl = _applyCachePolicyToUrl(trimmed);
+    }
+
+    _firebaseBytesFuture = null;
+    _firebaseUrlKey = null;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final bg = backgroundColor ?? Colors.white10;
-    final size = radius * 2;
+    final bg = widget.backgroundColor ?? Colors.white10;
+    final size = widget.radius * 2;
 
-    // --- Fallback icon (ultra-safe) ---
     Widget buildFallbackIcon() {
       return Container(
         width: size,
@@ -183,13 +279,12 @@ class MwAvatar extends StatelessWidget {
         ),
         child: Icon(
           _isSmurf ? Icons.face_retouching_natural : Icons.pets,
-          size: radius,
+          size: widget.radius,
           color: Colors.white70,
         ),
       );
     }
 
-    // --- Asset avatar ---
     Widget buildAssetAvatar() {
       return ClipOval(
         child: SizedBox(
@@ -205,7 +300,6 @@ class MwAvatar extends StatelessWidget {
       );
     }
 
-    // Common loading UI (keep your current look)
     Widget buildLoadingStack() {
       return Stack(
         fit: StackFit.expand,
@@ -213,8 +307,8 @@ class MwAvatar extends StatelessWidget {
           buildAssetAvatar(),
           Center(
             child: SizedBox(
-              width: radius * 0.9,
-              height: radius * 0.9,
+              width: widget.radius * 0.9,
+              height: widget.radius * 0.9,
               child: const CircularProgressIndicator(strokeWidth: 2),
             ),
           ),
@@ -222,45 +316,37 @@ class MwAvatar extends StatelessWidget {
       );
     }
 
-    // --- Network avatar (with loading + error fallback) ---
-    Widget buildNetworkAvatar(String url) {
-      final trimmed = url.trim();
+    Widget buildFirebaseAvatar(String url) {
+      return ClipOval(
+        child: SizedBox(
+          width: size,
+          height: size,
+          child: FutureBuilder<Uint8List?>(
+            future: _firebaseBytesFuture,
+            builder: (context, snap) {
+              if (snap.connectionState == ConnectionState.waiting) {
+                return buildLoadingStack();
+              }
 
-      // ✅ If it’s Firebase Storage, load via Firebase SDK (authenticated).
-      // This prevents 403 when Storage rules require auth.
-      if (_looksLikeFirebaseStorageUrl(trimmed)) {
-        return ClipOval(
-          child: SizedBox(
-            width: size,
-            height: size,
-            child: FutureBuilder<Uint8List?>(
-              future: _fetchFirebaseStorageBytes(trimmed),
-              builder: (context, snap) {
-                if (snap.connectionState == ConnectionState.waiting) {
-                  return buildLoadingStack();
-                }
+              final bytes = snap.data;
+              if (bytes == null || bytes.isEmpty) {
+                return buildAssetAvatar();
+              }
 
-                final bytes = snap.data;
-                if (bytes == null || bytes.isEmpty) {
-                  // fallback (asset) if forbidden/missing/any error
-                  return buildAssetAvatar();
-                }
-
-                return Image.memory(
-                  bytes,
-                  fit: BoxFit.cover,
-                  filterQuality: FilterQuality.high,
-                  gaplessPlayback: true,
-                  errorBuilder: (_, __, ___) => buildAssetAvatar(),
-                );
-              },
-            ),
+              return Image.memory(
+                bytes,
+                fit: BoxFit.cover,
+                filterQuality: FilterQuality.high,
+                gaplessPlayback: true,
+                errorBuilder: (_, __, ___) => buildAssetAvatar(),
+              );
+            },
           ),
-        );
-      }
+        ),
+      );
+    }
 
-      // ✅ Otherwise keep your existing Image.network behavior.
-      final resolvedUrl = _applyCachePolicyToUrl(trimmed);
+    Widget buildNetworkAvatar(String resolvedUrl) {
       final headers = _headersForPolicy();
 
       return ClipOval(
@@ -273,6 +359,7 @@ class MwAvatar extends StatelessWidget {
             fit: BoxFit.cover,
             filterQuality: FilterQuality.high,
             gaplessPlayback: true,
+            // IMPORTANT: Keep loading UI only while first loading; avoids flicker in many cases.
             loadingBuilder: (context, child, progress) {
               if (progress == null) return child;
               return buildLoadingStack();
@@ -283,30 +370,36 @@ class MwAvatar extends StatelessWidget {
       );
     }
 
-    // --- Core avatar content ---
-    final url = _effectiveUrl;
-    final innerAvatar = (url != null) ? buildNetworkAvatar(url) : buildAssetAvatar();
+    final effective = _effectiveUrl(widget);
 
-    // --- Ring / glow wrapper ---
-    final resolvedRingColor = ringColor ?? _defaultGold;
-    final resolvedGlowColor = onlineGlowColor ?? Colors.greenAccent.withOpacity(0.55);
+    final Widget innerAvatar;
+    if (effective == null) {
+      innerAvatar = buildAssetAvatar();
+    } else if (_looksLikeFirebaseStorageUrl(effective)) {
+      innerAvatar = buildFirebaseAvatar(effective);
+    } else {
+      innerAvatar = buildNetworkAvatar(_resolvedNetworkUrl ?? effective.trim());
+    }
 
-    final bool shouldGlow = isOnline && showOnlineGlow;
-    final bool shouldRing = showRing;
+    final resolvedRingColor = widget.ringColor ?? _defaultGold;
+    final resolvedGlowColor = widget.onlineGlowColor ?? Colors.greenAccent.withOpacity(0.55);
+
+    final bool shouldGlow = widget.isOnline && widget.showOnlineGlow;
+    final bool shouldRing = widget.showRing;
 
     Widget avatarWithDecor = Container(
-      width: shouldRing ? (size + ringWidth * 2) : size,
-      height: shouldRing ? (size + ringWidth * 2) : size,
-      padding: shouldRing ? EdgeInsets.all(ringWidth) : EdgeInsets.zero,
+      width: shouldRing ? (size + widget.ringWidth * 2) : size,
+      height: shouldRing ? (size + widget.ringWidth * 2) : size,
+      padding: shouldRing ? EdgeInsets.all(widget.ringWidth) : EdgeInsets.zero,
       decoration: BoxDecoration(
         color: shouldRing ? resolvedRingColor.withOpacity(0.22) : Colors.transparent,
         shape: BoxShape.circle,
-        border: shouldRing ? Border.all(color: resolvedRingColor, width: ringWidth) : null,
+        border: shouldRing ? Border.all(color: resolvedRingColor, width: widget.ringWidth) : null,
         boxShadow: shouldGlow
             ? [
           BoxShadow(
             color: resolvedGlowColor,
-            blurRadius: onlineGlowBlur,
+            blurRadius: widget.onlineGlowBlur,
             spreadRadius: 1.5,
           ),
         ]
@@ -323,14 +416,12 @@ class MwAvatar extends StatelessWidget {
       ),
     );
 
-    // --- Online dot ---
-    if (showOnlineDot) {
-      final dotColor = isOnline
-          ? (onlineDotColor ?? Colors.greenAccent)
-          : (offlineDotColor ?? Colors.grey);
+    if (widget.showOnlineDot) {
+      final dotColor = widget.isOnline
+          ? (widget.onlineDotColor ?? Colors.greenAccent)
+          : (widget.offlineDotColor ?? Colors.grey);
 
-      // Position dot relative to outer size
-      final outerSize = shouldRing ? (size + ringWidth * 2) : size;
+      final outerSize = shouldRing ? (size + widget.ringWidth * 2) : size;
 
       avatarWithDecor = Stack(
         clipBehavior: Clip.none,
@@ -340,14 +431,14 @@ class MwAvatar extends StatelessWidget {
             right: 1,
             bottom: 1,
             child: Container(
-              width: dotSize,
-              height: dotSize,
+              width: widget.dotSize,
+              height: widget.dotSize,
               decoration: BoxDecoration(
                 color: dotColor,
                 shape: BoxShape.circle,
                 border: Border.all(
                   color: Colors.black,
-                  width: dotBorderWidth,
+                  width: widget.dotBorderWidth,
                 ),
               ),
             ),
@@ -355,7 +446,6 @@ class MwAvatar extends StatelessWidget {
         ],
       );
 
-      // Ensure Stack doesn't shrink weirdly in tight rows
       avatarWithDecor = SizedBox(
         width: outerSize,
         height: outerSize,
@@ -363,12 +453,10 @@ class MwAvatar extends StatelessWidget {
       );
     }
 
-    // --- Hero wrapper ---
-    if (heroTag != null) {
+    if (widget.heroTag != null) {
       avatarWithDecor = Hero(
-        tag: heroTag!,
+        tag: widget.heroTag!,
         flightShuttleBuilder: (flightContext, animation, flightDirection, fromContext, toContext) {
-          // Smooth scale during hero flight
           return ScaleTransition(
             scale: CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
             child: toContext.widget,
@@ -382,14 +470,27 @@ class MwAvatar extends StatelessWidget {
   }
 }
 
-enum MwAvatarCachePolicy {
-  /// Default Flutter cache behavior (cache by URL)
-  normal,
+/// Tiny LRU cache for avatar bytes (Firebase Storage path).
+class _LruBytesCache {
+  _LruBytesCache({required this.maxEntries});
 
-  /// Forces refresh by appending a cache-busting query param (?v=...)
-  /// safest cross-platform cache control
-  refresh,
+  final int maxEntries;
+  final _map = LinkedHashMap<String, Uint8List>();
 
-  /// Best-effort "no-cache" via request headers (may be ignored on web/CDNs)
-  noCache,
+  Uint8List? get(String key) {
+    final v = _map.remove(key);
+    if (v == null) return null;
+    // re-insert as most-recent
+    _map[key] = v;
+    return v;
+  }
+
+  void put(String key, Uint8List value) {
+    _map.remove(key);
+    _map[key] = value;
+    // evict oldest
+    while (_map.length > maxEntries) {
+      _map.remove(_map.keys.first);
+    }
+  }
 }

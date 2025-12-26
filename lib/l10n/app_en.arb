@@ -162,6 +162,7 @@
     "chatDeleted": "Chat deleted successfully",
     "chatHistoryDeleteFailed": "Failed to delete chat history",
     "chatHistoryDeleted": "Chat history deleted successfully",
+    "remove": "Remove",
 
     "invite": "Invite",
     "inviteFriendsTitle": "Invite Friends",
@@ -272,6 +273,7 @@
     "deleteMessageSuccess": "Message deleted",
     "deleteMessageFailed": "Failed to delete message",
     "deletedForMe": "Deleted for me",
+    "deletedAccount": "Deleted account",
 
     "deletingAccount": "Deleting account...",
     "deleteMyAccount": "Delete my account",

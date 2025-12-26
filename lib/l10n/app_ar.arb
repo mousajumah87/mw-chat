@@ -232,6 +232,8 @@
     "deletedForMe": "تم الحذف لدي",
     "deleteMessageSuccess": "تم حذف الرسالة",
     "deleteMessageFailed": "تعذر حذف الرسالة",
+    "deletedAccount": "حساب محذوف",
+
 
     "invite": "دعوة",
     "inviteFriendsTitle": "دعوة الأصدقاء",
@@ -292,6 +294,8 @@
     "deleteAccountFailed": "فشل حذف الحساب.",
     "deleteAccountFailedRetry": "فشل حذف الحساب. يرجى المحاولة مرة أخرى.",
     "accountDeletedSuccessfully": "تم حذف الحساب بنجاح",
+    "remove": "حذف",
+
 
     "termsTitle": "شروط الاستخدام",
     "termsAcceptButton": "أوافق",

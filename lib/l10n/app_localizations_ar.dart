@@ -370,6 +370,9 @@ class AppLocalizationsAr extends AppLocalizations {
   String get chatHistoryDeleted => 'تم حذف سجل المحادثة بنجاح';
 
   @override
+  String get remove => 'حذف';
+
+  @override
   String get invite => 'دعوة';
 
   @override
@@ -647,6 +650,9 @@ class AppLocalizationsAr extends AppLocalizations {
 
   @override
   String get deletedForMe => 'تم الحذف لدي';
+
+  @override
+  String get deletedAccount => 'حساب محذوف';
 
   @override
   String get deletingAccount => 'جاري حذف الحساب...';

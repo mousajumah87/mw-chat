@@ -1,5 +1,3 @@
-// lib/widgets/chat/message_bubble.dart
-
 import 'dart:async';
 
 import 'package:audioplayers/audioplayers.dart';
@@ -58,6 +56,17 @@ class _MessageBubbleState extends State<MessageBubble>
   static const double _mediaSize = 220;
   static const double _bubbleRadius = 16.0;
 
+  // =============================
+  // ✅ Font scale (single source of truth)
+  // =============================
+  static const double _msgFontSize = 16; // main message text
+  static const double _msgLineHeight = 1.25;
+  static const double _timestampFontSize = 11;
+  static const double _fileTitleFontSize = 14;
+  static const double _mediaTitleFontSize = 13;
+  static const double _audioTitleFontSize = 14;
+  static const double _audioTimeFontSize = 12;
+
   bool get hasAttachment => widget.fileUrl?.isNotEmpty == true;
 
   String get _typeLower => (widget.fileType ?? '').trim().toLowerCase();
@@ -85,7 +94,6 @@ class _MessageBubbleState extends State<MessageBubble>
   // ✅ RTL / Emoji stability helpers
   // =============================
 
-  // Arabic + Hebrew ranges (good enough for chat)
   bool _containsRtlChars(String s) {
     return RegExp(
       r'[\u0590-\u05FF\u0600-\u06FF\u0700-\u074F\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]',
@@ -96,9 +104,6 @@ class _MessageBubbleState extends State<MessageBubble>
     return RegExp(r'[A-Za-z]').hasMatch(s);
   }
 
-  /// Decide message direction:
-  /// - If it contains Arabic/Hebrew => RTL (even if it also contains emoji/punctuation)
-  /// - Else LTR
   TextDirection _textDirectionForMessage(String s) {
     final t = s.trim();
     if (t.isEmpty) return Directionality.of(context);
@@ -106,21 +111,15 @@ class _MessageBubbleState extends State<MessageBubble>
     return TextDirection.ltr;
   }
 
-  /// Unicode isolate marks prevent bidi reordering problems with neutrals (emoji, punctuation).
-  /// - LTR isolate: LRI ... PDI
-  /// - RTL isolate: RLI ... PDI
   String _isolateBidi(String s, TextDirection dir) {
     const lri = '\u2066'; // Left-to-Right Isolate
     const rli = '\u2067'; // Right-to-Left Isolate
     const pdi = '\u2069'; // Pop Directional Isolate
 
     if (s.isEmpty) return s;
-
-    // Keep RTL priority when RTL chars exist.
     return dir == TextDirection.rtl ? '$rli$s$pdi' : '$lri$s$pdi';
   }
 
-  // ✅ Locale-first effective direction (works even if parent forced LTR)
   TextDirection _effectiveDir(BuildContext context) {
     final locale = Localizations.localeOf(context);
     final lang = locale.languageCode.toLowerCase();
@@ -129,7 +128,6 @@ class _MessageBubbleState extends State<MessageBubble>
     return Directionality.of(context);
   }
 
-  // Keep digits stable regardless of surrounding bidi.
   String _isolateLtrDigits(String s) {
     const lri = '\u2066';
     const pdi = '\u2069';
@@ -213,15 +211,13 @@ class _MessageBubbleState extends State<MessageBubble>
 
   static const Map<String, String> _emojiTokenToAsset = {
     ':mw_girl:': 'assets/images/smurf.png',
-    // Add more later:
-    // ':mw_bear:': 'assets/images/bear.png',
   };
 
   RegExp get _tokenRegex {
     final tokens = _emojiTokenToAsset.keys
         .map(RegExp.escape)
         .toList()
-      ..sort((a, b) => b.length.compareTo(a.length)); // longest first
+      ..sort((a, b) => b.length.compareTo(a.length));
     return RegExp('(${tokens.join('|')})');
   }
 
@@ -233,7 +229,6 @@ class _MessageBubbleState extends State<MessageBubble>
     required TextAlign textAlign,
     required TextStyle style,
   }) {
-    // Split into parts: normal text + tokens
     final parts = text.split(_tokenRegex);
 
     final spans = <InlineSpan>[];
@@ -250,15 +245,15 @@ class _MessageBubbleState extends State<MessageBubble>
               padding: const EdgeInsets.symmetric(horizontal: 2),
               child: Image.asset(
                 asset,
-                width: 18,
-                height: 18,
+                // ✅ scale token emoji with message text so it doesn't look tiny
+                width: 20,
+                height: 20,
                 fit: BoxFit.contain,
               ),
             ),
           ),
         );
       } else {
-        // Keep bidi stable for each text chunk
         final fixedChunk = _isolateBidi(part, msgDir);
         spans.add(TextSpan(text: fixedChunk));
       }
@@ -297,7 +292,6 @@ class _MessageBubbleState extends State<MessageBubble>
     if (t.length < 3) return true;
 
     if (t.contains('/') || t.contains('\\')) return true;
-
     if (RegExp(r'^\d{10,}$').hasMatch(t)) return true;
 
     if (RegExp(r'^[a-f0-9-]{12,}$', caseSensitive: false).hasMatch(t)) {
@@ -390,7 +384,7 @@ class _MessageBubbleState extends State<MessageBubble>
         style: TextStyle(
           color: kTextPrimary.withOpacity(0.92),
           fontWeight: FontWeight.w800,
-          fontSize: 12,
+          fontSize: _mediaTitleFontSize,
         ),
       ),
     );
@@ -652,8 +646,10 @@ class _MessageBubbleState extends State<MessageBubble>
                   width: _mediaSize,
                   height: _mediaSize,
                   child: Center(
-                    child: Icon(Icons.broken_image,
-                        color: kTextSecondary.withOpacity(0.8)),
+                    child: Icon(
+                      Icons.broken_image,
+                      color: kTextSecondary.withOpacity(0.8),
+                    ),
                   ),
                 ),
               ),
@@ -700,8 +696,11 @@ class _MessageBubbleState extends State<MessageBubble>
                   CircleAvatar(
                     radius: 26,
                     backgroundColor: Colors.black.withOpacity(0.55),
-                    child: const Icon(Icons.play_arrow,
-                        color: kTextPrimary, size: 30),
+                    child: const Icon(
+                      Icons.play_arrow,
+                      color: kTextPrimary,
+                      size: 30,
+                    ),
                   ),
                   const SizedBox(height: 10),
                   Padding(
@@ -714,7 +713,7 @@ class _MessageBubbleState extends State<MessageBubble>
                       style: TextStyle(
                         color: kTextPrimary.withOpacity(0.92),
                         fontWeight: FontWeight.w700,
-                        fontSize: 12,
+                        fontSize: _mediaTitleFontSize,
                       ),
                     ),
                   ),
@@ -723,7 +722,7 @@ class _MessageBubbleState extends State<MessageBubble>
                     l10n.tapToPlay,
                     style: TextStyle(
                       color: kTextSecondary.withOpacity(0.85),
-                      fontSize: 11,
+                      fontSize: 12,
                     ),
                   ),
                 ],
@@ -746,10 +745,6 @@ class _MessageBubbleState extends State<MessageBubble>
     final pos = (_pos > total && total != Duration.zero) ? total : _pos;
     final canSeek = total.inMilliseconds > 0;
 
-    // ✅ IMPORTANT:
-    // Keep the WHOLE audio bubble LTR so slider + play icon never get mirrored on Arabic.
-    // This is the most stable way across Flutter versions and platforms.
-    // We'll still align the title/time nicely and keep digits stable.
     return Directionality(
       textDirection: TextDirection.ltr,
       child: Container(
@@ -783,26 +778,22 @@ class _MessageBubbleState extends State<MessageBubble>
                     ),
                   )
                       : Directionality(
-                    // ✅ FIX: never mirror play/pause icon in RTL
                     textDirection: TextDirection.ltr,
                     child: Icon(
                       _playing ? Icons.pause : Icons.play_arrow,
                       color: kTextPrimary,
                       size: 26,
-                      textDirection: TextDirection.ltr, // extra safety
+                      textDirection: TextDirection.ltr,
                     ),
                   ),
                 ),
               ),
             ),
             const SizedBox(width: 10),
-
             Expanded(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Title row: align based on locale (Arabic right, English left),
-                  // but keep actual direction LTR so layout doesn't flip controls.
                   Align(
                     alignment: dir == TextDirection.rtl
                         ? Alignment.centerRight
@@ -812,29 +803,30 @@ class _MessageBubbleState extends State<MessageBubble>
                       children: [
                         Text(
                           l10n.voiceMessageLabel,
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: kTextPrimary,
                             fontWeight: FontWeight.w800,
-                            fontSize: 13,
+                            fontSize: _audioTitleFontSize,
                           ),
                         ),
                         if (_audioError) ...[
                           const SizedBox(width: 6),
-                          const Icon(Icons.error_outline,
-                              size: 14, color: kErrorColor),
+                          const Icon(
+                            Icons.error_outline,
+                            size: 14,
+                            color: kErrorColor,
+                          ),
                         ],
                       ],
                     ),
                   ),
-
                   const SizedBox(height: 6),
-
-                  // ✅ Slider: always LTR (no transform) so it behaves naturally.
                   SliderTheme(
                     data: SliderTheme.of(context).copyWith(
                       trackHeight: 3,
-                      thumbShape:
-                      const RoundSliderThumbShape(enabledThumbRadius: 7),
+                      thumbShape: const RoundSliderThumbShape(
+                        enabledThumbRadius: 7,
+                      ),
                     ),
                     child: Slider(
                       value: canSeek ? pos.inMilliseconds.toDouble() : 0,
@@ -845,8 +837,6 @@ class _MessageBubbleState extends State<MessageBubble>
                           : null,
                     ),
                   ),
-
-                  // Time row: keep LTR digits, but align row according to locale.
                   Row(
                     children: [
                       if (dir == TextDirection.rtl) const Spacer(),
@@ -855,7 +845,7 @@ class _MessageBubbleState extends State<MessageBubble>
                         textDirection: TextDirection.ltr,
                         style: TextStyle(
                           color: kTextSecondary.withOpacity(0.90),
-                          fontSize: 11,
+                          fontSize: _audioTimeFontSize,
                         ),
                       ),
                       const Spacer(),
@@ -866,7 +856,7 @@ class _MessageBubbleState extends State<MessageBubble>
                         textDirection: TextDirection.ltr,
                         style: TextStyle(
                           color: kTextSecondary.withOpacity(0.90),
-                          fontSize: 11,
+                          fontSize: _audioTimeFontSize,
                         ),
                       ),
                       if (dir != TextDirection.rtl) const Spacer(),
@@ -904,7 +894,11 @@ class _MessageBubbleState extends State<MessageBubble>
               child: Text(
                 title,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: kTextPrimary),
+                style: TextStyle(
+                  color: kTextPrimary,
+                  fontSize: _fileTitleFontSize,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
           ],
@@ -941,12 +935,26 @@ class _MessageBubbleState extends State<MessageBubble>
 
     final displayText = _displayTextForBubble(l10n);
 
-    // ✅ Key fix: compute per-message direction + isolate so emoji stays visually in correct place
     final msgDir = _textDirectionForMessage(displayText);
     final fixedText = _isolateBidi(displayText, msgDir);
 
     final textAlign =
     msgDir == TextDirection.rtl ? TextAlign.right : TextAlign.left;
+
+    // ✅ Unified message style (bigger + consistent)
+    final messageStyle =
+        Theme.of(context).textTheme.bodyLarge?.copyWith(
+          color: _onBubblePrimary,
+          fontSize: _msgFontSize,
+          height: _msgLineHeight,
+          fontWeight: FontWeight.w500,
+        ) ??
+            TextStyle(
+              color: _onBubblePrimary,
+              fontSize: _msgFontSize,
+              height: _msgLineHeight,
+              fontWeight: FontWeight.w500,
+            );
 
     return Align(
       alignment: widget.isMe ? Alignment.centerRight : Alignment.centerLeft,
@@ -978,7 +986,7 @@ class _MessageBubbleState extends State<MessageBubble>
               mwContainsAnyToken(displayText)
                   ? MwTokenText(
                 text: fixedText,
-                style: TextStyle(color: _onBubblePrimary),
+                style: messageStyle,
                 textDirection: msgDir,
                 textAlign: textAlign,
               )
@@ -986,7 +994,7 @@ class _MessageBubbleState extends State<MessageBubble>
                 fixedText,
                 textDirection: msgDir,
                 textAlign: textAlign,
-                style: TextStyle(color: _onBubblePrimary),
+                style: messageStyle,
               ),
             if (widget.showTimestamp)
               Padding(
@@ -997,15 +1005,18 @@ class _MessageBubbleState extends State<MessageBubble>
                     Text(
                       _isolateBidi(widget.timeLabel, TextDirection.ltr),
                       textDirection: TextDirection.ltr,
-                      style:
-                      TextStyle(color: _onBubbleSecondary, fontSize: 10),
+                      style: TextStyle(
+                        color: _onBubbleSecondary,
+                        fontSize: _timestampFontSize,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     if (widget.isMe)
                       Padding(
                         padding: const EdgeInsets.only(left: 4),
                         child: Icon(
                           widget.isSeen ? Icons.done_all : Icons.done,
-                          size: 12,
+                          size: 14,
                           color: widget.isSeen
                               ? kPrimaryGold.withOpacity(0.92)
                               : kPrimaryGold.withOpacity(0.55),

@@ -47,8 +47,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
   final Map<String, String?> _photoUrlCache = {};
   final Set<String> _photoDenied = {};
 
-  static const String _fieldFriendRequestsLastSeenAt =
-      'friendRequestsLastSeenAt';
+  static const String _fieldFriendRequestsLastSeenAt = 'friendRequestsLastSeenAt';
   Timestamp? _friendRequestsLastSeenAt;
 
   final Map<String, Timestamp?> _friendUpdatedAt = {};
@@ -59,6 +58,12 @@ class _MwFriendsTabState extends State<MwFriendsTab>
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _chatStreamSub;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _userDocSub;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _friendsSub;
+
+  // ✅ NEW: background subscriptions for each related user doc (fixes “online only after scroll”)
+  final Map<String, StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>> _friendUserDocSubs =
+  <String, StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>>{};
+  final Map<String, Map<String, dynamic>> _friendUserDataCache = <String, Map<String, dynamic>>{};
+  final Set<String> _missingUserIds = <String>{};
 
   // ✅ MW USERS tab: cursor pagination (FAST)
   static const int _pageSize = 40;
@@ -100,23 +105,147 @@ class _MwFriendsTabState extends State<MwFriendsTab>
   final Set<String> _photoPrefetchQueue = <String>{};
   bool _photoPrefetchRunning = false;
 
-  Duration get _tileAnim =>
-      kIsWeb ? Duration.zero : const Duration(milliseconds: 200);
-  Duration get _trailingAnim =>
-      kIsWeb ? Duration.zero : const Duration(milliseconds: 250);
+  Duration get _tileAnim => kIsWeb ? Duration.zero : const Duration(milliseconds: 180);
+  Duration get _trailingAnim => kIsWeb ? Duration.zero : const Duration(milliseconds: 220);
 
+  // ============================================================
+  // ✅ ZERO-MOVEMENT FRIENDS LIST (NO FLASH / NO JUMP)
+  // ============================================================
+
+  // Real-time presence caches (updated by user doc streams)
   final Map<String, bool> _friendOnlineDisplayCache = {};
   final Map<String, bool> _friendActiveCache = {};
-  Timer? _friendsRebucketDebounce;
 
-  void _scheduleFriendsRebucketRebuild() {
+  // Stable buckets/order used by UI (only updated on "safe moments")
+  final Map<String, bool> _stableOnlineBucket = {}; // uid -> true if currently in Online section
+  List<String> _stableFriendsOrder = const []; // stable order used for friend section sorting
+
+  // Friends-only scroll controller (separate from MW users list)
+  final ScrollController _friendsScrollController = ScrollController();
+  bool _friendsIsScrolling = false;
+  Timer? _friendsScrollIdleTimer;
+
+  // Pending updates while user is interacting
+  bool _pendingFriendsRebucket = false;
+  bool _pendingFriendsResort = false;
+  Timer? _friendsApplyDebounce;
+
+  // Optional periodic "safe" refresh (prevents stale buckets forever)
+  Timer? _friendsPeriodicTimer;
+
+  void _onFriendsScroll() {
+    if (!_isFriendsOnly) return;
+    if (!_friendsScrollController.hasClients) return;
+
+    _friendsIsScrolling = true;
+    _friendsScrollIdleTimer?.cancel();
+    _friendsScrollIdleTimer = Timer(const Duration(milliseconds: 900), () {
+      _friendsIsScrolling = false;
+      _applyPendingFriendsMovesIfSafe();
+    });
+  }
+
+  void _scheduleApplyPendingFriendsMoves() {
     if (!_isFriendsOnly) return;
 
-    _friendsRebucketDebounce?.cancel();
-    _friendsRebucketDebounce = Timer(const Duration(milliseconds: 220), () {
-      if (!mounted) return;
-      setState(() {});
+    _friendsApplyDebounce?.cancel();
+    _friendsApplyDebounce = Timer(const Duration(milliseconds: 650), () {
+      _applyPendingFriendsMovesIfSafe();
     });
+  }
+
+  void _applyPendingFriendsMovesIfSafe() {
+    if (!mounted) return;
+    if (!_isFriendsOnly) return;
+    if (!_friendsLoaded) return;
+
+    if (_friendsIsScrolling) return; // zero movement while scrolling
+
+    bool changed = false;
+
+    // 1) Rebucket (online/offline)
+    if (_pendingFriendsRebucket) {
+      _pendingFriendsRebucket = false;
+
+      for (final uid in _friendStatuses.keys) {
+        final status = _friendStatuses[uid];
+        if (!ChatFriendshipService.isFriends(status)) continue;
+
+        final bool nowOnline =
+        _missingUserIds.contains(uid) ? false : (_friendOnlineDisplayCache[uid] ?? false);
+
+        final prev = _stableOnlineBucket[uid];
+        if (prev == null || prev != nowOnline) {
+          _stableOnlineBucket[uid] = nowOnline;
+          changed = true;
+        }
+      }
+    }
+
+    // 2) Resort
+    if (_pendingFriendsResort) {
+      _pendingFriendsResort = false;
+
+      final friendIds = <String>[];
+      _friendStatuses.forEach((uid, status) {
+        if (uid == _currentUid) return;
+        if (ChatFriendshipService.isFriends(status)) friendIds.add(uid);
+      });
+
+      friendIds.sort(_compareFriendIdsForFriendsSection);
+
+      if (!_listEquals(friendIds, _stableFriendsOrder)) {
+        _stableFriendsOrder = List<String>.unmodifiable(friendIds);
+        changed = true;
+      }
+    }
+
+    if (changed && mounted) {
+      setState(() {});
+    }
+  }
+
+  bool _listEquals(List<String> a, List<String> b) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  void _markFriendsNeedRebucket() {
+    if (!_isFriendsOnly) return;
+    _pendingFriendsRebucket = true;
+    _scheduleApplyPendingFriendsMoves();
+  }
+
+  void _markFriendsNeedResort() {
+    if (!_isFriendsOnly) return;
+    _pendingFriendsResort = true;
+    _scheduleApplyPendingFriendsMoves();
+  }
+
+  void _initializeStableBucketsAndOrderIfNeeded() {
+    if (!_isFriendsOnly) return;
+    if (!_friendsLoaded) return;
+
+    if (_stableFriendsOrder.isEmpty) {
+      final friendIds = <String>[];
+      _friendStatuses.forEach((uid, status) {
+        if (uid == _currentUid) return;
+        if (ChatFriendshipService.isFriends(status)) friendIds.add(uid);
+      });
+      friendIds.sort(_compareFriendIdsForFriendsSection);
+      _stableFriendsOrder = List<String>.unmodifiable(friendIds);
+    }
+
+    for (final uid in _stableFriendsOrder) {
+      _stableOnlineBucket.putIfAbsent(
+        uid,
+            () => _missingUserIds.contains(uid) ? false : (_friendOnlineDisplayCache[uid] ?? false),
+      );
+    }
   }
 
   void _setFriendPresenceCaches({
@@ -130,26 +259,40 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     _friendOnlineDisplayCache[uid] = isOnlineForDisplay;
     _friendActiveCache[uid] = isActive;
 
-    final changed =
-        (prevOnline != isOnlineForDisplay) || (prevActive != isActive);
-
-    if (changed) _scheduleFriendsRebucketRebuild();
+    final changed = (prevOnline != isOnlineForDisplay) || (prevActive != isActive);
+    if (changed) {
+      _markFriendsNeedRebucket();
+      _markFriendsNeedResort();
+    }
   }
 
   int _compareFriendIdsForFriendsSection(String a, String b) {
+    // 0) Missing always last
+    final bool aMissing = _missingUserIds.contains(a);
+    final bool bMissing = _missingUserIds.contains(b);
+    if (aMissing != bMissing) return aMissing ? 1 : -1;
+
+    // 1) Unread first
+    final int unreadA = _unreadCache[buildRoomId(_currentUid, a)] ?? 0;
+    final int unreadB = _unreadCache[buildRoomId(_currentUid, b)] ?? 0;
+    final bool aHasUnread = unreadA > 0;
+    final bool bHasUnread = unreadB > 0;
+    if (aHasUnread != bHasUnread) return aHasUnread ? -1 : 1;
+    if (unreadA != unreadB) return unreadB.compareTo(unreadA);
+
+    // 2) Active next
     final bool aActive = _friendActiveCache[a] ?? true;
     final bool bActive = _friendActiveCache[b] ?? true;
     if (aActive != bActive) return aActive ? -1 : 1;
 
+    // 3) Online next
     final bool aOnline = _friendOnlineDisplayCache[a] ?? false;
     final bool bOnline = _friendOnlineDisplayCache[b] ?? false;
     if (aOnline != bOnline) return aOnline ? -1 : 1;
 
+    // 4) fallback
     return a.compareTo(b);
   }
-
-  bool _isFriendOnlineForDisplay(String uid) =>
-      _friendOnlineDisplayCache[uid] ?? false;
 
   @override
   void initState() {
@@ -161,8 +304,17 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     _listenFriends();
 
     _scrollController.addListener(_onScroll);
+    _friendsScrollController.addListener(_onFriendsScroll);
+
+    _friendsPeriodicTimer = Timer.periodic(const Duration(seconds: 12), (_) {
+      if (!mounted) return;
+      if (!_isFriendsOnly) return;
+      if (!_friendsLoaded) return;
+      if (_friendsIsScrolling) return;
+      _applyPendingFriendsMovesIfSafe();
+    });
+
     if (_isMwUsersOnly) {
-      // ✅ bootstrap first page (no realtime stream)
       unawaited(_bootstrapMwUsers());
     }
   }
@@ -202,9 +354,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
 
     try {
       Query<Map<String, dynamic>> q =
-      FirebaseFirestore.instance.collection('users').orderBy(
-        FieldPath.documentId,
-      );
+      FirebaseFirestore.instance.collection('users').orderBy(FieldPath.documentId);
 
       if (!reset && _mwUsersCursor != null) {
         q = q.startAfterDocument(_mwUsersCursor!);
@@ -228,21 +378,16 @@ class _MwFriendsTabState extends State<MwFriendsTab>
           _mwUsersCursor = docs.last;
         }
 
-        // ✅ append (do NOT include me)
         for (final d in docs) {
           if (d.id == _currentUid) continue;
           _mwUserDocs.add(d);
         }
 
-        // hasMore if we got a full page
         _mwUsersHasMore = docs.length >= _pageSize;
       });
     } catch (_) {
       if (!mounted) return;
-      setState(() {
-        // stop infinite spinner on errors
-        _mwUsersHasMore = false;
-      });
+      setState(() => _mwUsersHasMore = false);
     } finally {
       if (!mounted) return;
       setState(() => _mwUsersLoading = false);
@@ -262,8 +407,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
       for (final doc in snapshot.docs) {
         final data = doc.data();
         final unreadMap =
-            (data['unreadCounts'] as Map?)?.cast<String, dynamic>() ??
-                const <String, dynamic>{};
+            (data['unreadCounts'] as Map?)?.cast<String, dynamic>() ?? const <String, dynamic>{};
 
         final dynamic raw = unreadMap[_currentUid];
         final int myUnread = (raw is num) ? raw.toInt() : 0;
@@ -276,6 +420,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         setState(() => _unreadCache = newCache);
+        _markFriendsNeedResort();
       });
     });
   }
@@ -299,8 +444,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
 
       final bool blockedChanged = !setEquals(newSet, _blockedUserIds);
       final bool seenChanged =
-      (_friendRequestsLastSeenAt?.millisecondsSinceEpoch !=
-          seen?.millisecondsSinceEpoch);
+      (_friendRequestsLastSeenAt?.millisecondsSinceEpoch != seen?.millisecondsSinceEpoch);
 
       if (!blockedChanged && !seenChanged) return;
       if (!mounted) return;
@@ -309,6 +453,10 @@ class _MwFriendsTabState extends State<MwFriendsTab>
         _blockedUserIds = newSet;
         _friendRequestsLastSeenAt = seen;
       });
+
+      // privacy + blocked affects presence visibility -> rebucket/resort
+      _markFriendsNeedRebucket();
+      _markFriendsNeedResort();
     });
   }
 
@@ -342,6 +490,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
       }
 
       if (!mounted) return;
+
       setState(() {
         _friendStatuses = statusMap;
 
@@ -351,13 +500,99 @@ class _MwFriendsTabState extends State<MwFriendsTab>
 
         _friendsLoaded = true;
 
-        _friendOnlineDisplayCache
-            .removeWhere((uid, _) => !statusMap.containsKey(uid));
+        // cleanup old caches
+        _friendOnlineDisplayCache.removeWhere((uid, _) => !statusMap.containsKey(uid));
         _friendActiveCache.removeWhere((uid, _) => !statusMap.containsKey(uid));
+        _friendUserDataCache.removeWhere((uid, _) => !statusMap.containsKey(uid));
+
+        _stableOnlineBucket.removeWhere((uid, _) => !statusMap.containsKey(uid));
+        _stableFriendsOrder =
+            _stableFriendsOrder.where((uid) => statusMap.containsKey(uid)).toList(growable: false);
+
+        _missingUserIds.removeWhere((uid) => !statusMap.containsKey(uid));
       });
 
-      _scheduleFriendsRebucketRebuild();
+      // ✅ CRITICAL FIX: ensure we listen to ALL related users immediately (not only on scroll)
+      _syncFriendUserDocSubscriptions(statusMap.keys.toSet());
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _initializeStableBucketsAndOrderIfNeeded();
+        _markFriendsNeedRebucket();
+        _markFriendsNeedResort();
+      });
     });
+  }
+
+  void _syncFriendUserDocSubscriptions(Set<String> targetIds) {
+    // Exclude self
+    targetIds.remove(_currentUid);
+
+    // Cancel subscriptions not needed anymore
+    final existing = _friendUserDocSubs.keys.toList();
+    for (final uid in existing) {
+      if (!targetIds.contains(uid)) {
+        _friendUserDocSubs[uid]?.cancel();
+        _friendUserDocSubs.remove(uid);
+      }
+    }
+
+    // Add subscriptions for new ids
+    for (final uid in targetIds) {
+      if (_friendUserDocSubs.containsKey(uid)) continue;
+
+      final sub = FirebaseFirestore.instance.collection('users').doc(uid).snapshots().listen((snap) {
+        if (!mounted) return;
+
+        final friendStatus = _friendStatuses[uid];
+        final data = snap.data();
+
+        // missing/deleted
+        if (data == null) {
+          final wasMissing = _missingUserIds.contains(uid);
+          _missingUserIds.add(uid);
+          _friendUserDataCache.remove(uid);
+
+          if (!wasMissing) {
+            _markFriendsNeedRebucket();
+            _markFriendsNeedResort();
+          }
+          return;
+        }
+
+        // became available again
+        final wasMissing = _missingUserIds.remove(uid);
+        _friendUserDataCache[uid] = data;
+
+        // Presence computation WITHOUT waiting for tile build:
+        final bool isActive = _isActiveUser(data);
+        final bool isBlockedRelationship = _isRelationshipBlocked(data, uid);
+
+        final presenceVisibility = _readPresenceVisibility(data);
+        final canSeePresence = _canSeePresence(
+          presenceVisibility: presenceVisibility,
+          friendStatus: friendStatus,
+          isBlockedRelationship: isBlockedRelationship,
+          isActive: isActive,
+        );
+
+        final bool rawIsOnline = isActive && data['isOnline'] == true;
+        final bool isOnlineForDisplay = canSeePresence ? rawIsOnline : false;
+
+        _setFriendPresenceCaches(
+          uid: uid,
+          isActive: isActive,
+          isOnlineForDisplay: isOnlineForDisplay,
+        );
+
+        if (wasMissing) {
+          _markFriendsNeedRebucket();
+          _markFriendsNeedResort();
+        }
+      });
+
+      _friendUserDocSubs[uid] = sub;
+    }
   }
 
   bool _mapsEqual(Map<String, int> a, Map<String, int> b) {
@@ -373,9 +608,19 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     _chatStreamSub?.cancel();
     _userDocSub?.cancel();
     _friendsSub?.cancel();
+
+    for (final sub in _friendUserDocSubs.values) {
+      sub.cancel();
+    }
+    _friendUserDocSubs.clear();
+
     _loadMoreDebounce?.cancel();
-    _friendsRebucketDebounce?.cancel();
+    _friendsScrollIdleTimer?.cancel();
+    _friendsApplyDebounce?.cancel();
+    _friendsPeriodicTimer?.cancel();
+
     _scrollController.dispose();
+    _friendsScrollController.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -394,14 +639,8 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     final String username = (data['username'] as String?) ?? '';
     final String fullName = (data['fullName'] as String?) ?? '';
 
-    final haystack = <String>[
-      userId,
-      email,
-      displayName,
-      username,
-      fullName,
-    ].map(_normalizeQ).join(' ');
-
+    final haystack =
+    <String>[userId, email, displayName, username, fullName].map(_normalizeQ).join(' ');
     return haystack.contains(q);
   }
 
@@ -439,14 +678,12 @@ class _MwFriendsTabState extends State<MwFriendsTab>
 
   Future<String> _fetchAddFriendVisibility(String uid) async {
     try {
-      final snap =
-      await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      final snap = await FirebaseFirestore.instance.collection('users').doc(uid).get();
       final data = snap.data() ?? const <String, dynamic>{};
 
       final rawNew = (data[_fieldAddFriendVisibility] as String?)?.trim();
       final rawLegacy = (data[_legacyFriendRequestsField] as String?)?.trim();
-      final chosen =
-      (rawNew != null && rawNew.isNotEmpty) ? rawNew : rawLegacy;
+      final chosen = (rawNew != null && rawNew.isNotEmpty) ? rawNew : rawLegacy;
 
       return _normalizePrivacy(chosen);
     } catch (_) {
@@ -464,7 +701,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
   }
 
   // ----------------------------
-  // Block / Unblock (FIX #3)
+  // Block / Unblock
   // ----------------------------
   Future<void> _unblockUser(String uid) async {
     if (uid.isEmpty) return;
@@ -504,9 +741,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
 
     try {
       await FirebaseFirestore.instance.collection('users').doc(_currentUid).set(
-        {
-          'blockedUserIds': FieldValue.arrayRemove([uid]),
-        },
+        {'blockedUserIds': FieldValue.arrayRemove([uid])},
         SetOptions(merge: true),
       );
     } catch (_) {
@@ -531,8 +766,8 @@ class _MwFriendsTabState extends State<MwFriendsTab>
       return;
     }
 
-    final targetVisibility = _addFriendVisibilityCache[friendUid] ??
-        await _fetchAddFriendVisibility(friendUid);
+    final targetVisibility =
+        _addFriendVisibilityCache[friendUid] ?? await _fetchAddFriendVisibility(friendUid);
 
     final canRequest = _canRequestFriendByRule(
       targetAddFriendVisibility: targetVisibility,
@@ -712,6 +947,9 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     }
   }
 
+  // ----------------------------
+  // ✅ UNKNOWN / DELETED USER TILE
+  // ----------------------------
   Widget _buildMissingUserTile(
       BuildContext context, {
         required String uid,
@@ -726,9 +964,12 @@ class _MwFriendsTabState extends State<MwFriendsTab>
 
     final isRequested = ChatFriendshipService.isRequested(friendStatus);
     final isIncoming = ChatFriendshipService.isIncoming(friendStatus);
+    final isFriends = ChatFriendshipService.isFriends(friendStatus);
+    final canRemove = isRequested || isIncoming || isFriends;
 
-    final canRemove = isRequested || isIncoming;
     final showUid = kDebugMode;
+    final titleText = (l10n.deletedAccount ?? l10n.unknownUser);
+    final subtitleText = (l10n.accountUnavailableSubtitle ?? 'This account is no longer available.');
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
@@ -753,7 +994,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
           backgroundColor: kSurfaceAltColor.withOpacity(0.85),
         ),
         title: Text(
-          l10n.unknownUser,
+          titleText,
           style: const TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.bold,
@@ -761,9 +1002,10 @@ class _MwFriendsTabState extends State<MwFriendsTab>
           overflow: TextOverflow.ellipsis,
         ),
         subtitle: Text(
-          showUid ? uid : l10n.accountUnavailableSubtitle,
+          showUid ? uid : subtitleText,
           style: const TextStyle(color: Colors.white70, fontSize: 12),
           overflow: TextOverflow.ellipsis,
+          maxLines: 2,
         ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
@@ -786,13 +1028,14 @@ class _MwFriendsTabState extends State<MwFriendsTab>
                 ),
               ),
             if (canRemove) ...[
-              const SizedBox(width: 10),
+              const SizedBox(width: 6),
               IconButton(
-                tooltip: l10n.friendDeclineTooltip,
-                icon: const Icon(Icons.close_rounded, color: Colors.redAccent),
+                tooltip: (l10n.remove ?? l10n.friendDeclineTooltip),
+                icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
                 onPressed: () => _declineFriend(uid),
               ),
             ],
+            if (!canRemove) const Icon(Icons.help_outline_rounded, color: Colors.white38),
           ],
         ),
       ),
@@ -804,23 +1047,18 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     if (_photoUrlCache.containsKey(uid) || _photoDenied.contains(uid)) return;
 
     try {
-      final snap =
-      await FirebaseFirestore.instance.doc('users/$uid/private/profile').get();
+      final snap = await FirebaseFirestore.instance.doc('users/$uid/private/profile').get();
       final data = snap.data();
       final url = (data?['profileUrl'] as String?)?.trim();
       if (!mounted) return;
 
       final String? normalized = (url != null && url.isNotEmpty) ? url : null;
-
       if (_photoUrlCache[uid] == normalized) return;
 
-      setState(() {
-        _photoUrlCache[uid] = normalized;
-      });
+      setState(() => _photoUrlCache[uid] = normalized);
     } on FirebaseException catch (e) {
       if (e.code == 'permission-denied') {
         if (!mounted) return;
-
         if (_photoDenied.contains(uid) && _photoUrlCache[uid] == null) return;
 
         setState(() {
@@ -861,14 +1099,11 @@ class _MwFriendsTabState extends State<MwFriendsTab>
   // ----------------------------
   String _readPrivacyValue(Map<String, dynamic> data, String field) {
     final String? rawNew = data[field] as String?;
-
     String? rawLegacy;
     if (field == _fieldAddFriendVisibility) {
       rawLegacy = data[_legacyFriendRequestsField] as String?;
     }
-
-    final chosen =
-    (rawNew != null && rawNew.trim().isNotEmpty) ? rawNew : rawLegacy;
+    final chosen = (rawNew != null && rawNew.trim().isNotEmpty) ? rawNew : rawLegacy;
     return _normalizePrivacy(chosen);
   }
 
@@ -880,10 +1115,8 @@ class _MwFriendsTabState extends State<MwFriendsTab>
   }) {
     if (!isActive) return false;
     if (isBlockedRelationship) return false;
-
     if (profileVisibility == _privacyNobody) return false;
     if (profileVisibility == _privacyEveryone) return true;
-
     return ChatFriendshipService.isFriends(friendStatus);
   }
 
@@ -939,12 +1172,8 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     required bool hideRealAvatar,
   }) {
     final String? effectiveProfileUrl = hideRealAvatar ? null : profileUrl;
-    final String effectiveAvatarType =
-    hideRealAvatar ? 'bear' : (avatarType ?? 'bear');
-
-    final ring = isOnline
-        ? kAccentColor.withOpacity(0.85)
-        : kGoldDeep.withOpacity(0.70);
+    final String effectiveAvatarType = hideRealAvatar ? 'bear' : (avatarType ?? 'bear');
+    final ring = isOnline ? kAccentColor.withOpacity(0.85) : kGoldDeep.withOpacity(0.70);
 
     return MwAvatar(
       radius: 26,
@@ -970,10 +1199,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     _resettingRooms.add(roomId);
 
     try {
-      await FirebaseFirestore.instance
-          .collection('privateChats')
-          .doc(roomId)
-          .set(
+      await FirebaseFirestore.instance.collection('privateChats').doc(roomId).set(
         {
           'unreadCounts': {_currentUid: 0},
           'updatedAt': FieldValue.serverTimestamp(),
@@ -988,7 +1214,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     }
   }
 
-  // ✅ Split the block relationship (FIX #3)
   bool _isBlockedByMe(String userId) => _blockedUserIds.contains(userId);
 
   bool _hasBlockedMe(Map<String, dynamic> data, String userId) {
@@ -1058,11 +1283,8 @@ class _MwFriendsTabState extends State<MwFriendsTab>
         ChatFriendshipService.isRequested(friendStatus) ||
         ChatFriendshipService.isIncoming(friendStatus);
 
-    // ✅ If blockedByMe or blockedMe, don't open chat.
-    // ✅ But STILL show tile and allow Unblock when blockedByMe.
-    final bool canOpenChat = isActive &&
-        !isBlockedRelationship &&
-        (hasRelationship || profileVisibility == _privacyEveryone);
+    final bool canOpenChat =
+        isActive && !isBlockedRelationship && (hasRelationship || profileVisibility == _privacyEveryone);
 
     final presenceVisibility = _readPresenceVisibility(data);
     final canSeePresence = _canSeePresence(
@@ -1076,9 +1298,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     final bool isOnlineForDisplay = canSeePresence ? rawIsOnline : false;
 
     final Timestamp? lastSeen =
-    (canSeePresence && data['lastSeen'] is Timestamp)
-        ? (data['lastSeen'] as Timestamp)
-        : null;
+    (canSeePresence && data['lastSeen'] is Timestamp) ? (data['lastSeen'] as Timestamp) : null;
 
     final subtitleText = blockedMe
         ? (l10n.blockedByUserBanner ?? 'This user has blocked you.')
@@ -1103,7 +1323,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     final bool hasUnread = !isBlockedRelationship && unreadCount > 0;
 
     Widget buildTrailing() {
-      // ✅ FIX #3: unblock button if blocked by me
       if (blockedByMe) {
         return TextButton.icon(
           onPressed: () => _unblockUser(userId),
@@ -1115,7 +1334,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
         );
       }
 
-      // blocked by them
       if (blockedMe) {
         return const Icon(Icons.block, color: Colors.redAccent);
       }
@@ -1196,6 +1414,15 @@ class _MwFriendsTabState extends State<MwFriendsTab>
       return const Icon(Icons.chevron_right, color: Colors.white38);
     }
 
+    final trailingKey = ValueKey<String>(
+      'trail:$userId'
+          ':${friendStatus ?? "none"}'
+          ':u${hasUnread ? unreadCount : 0}'
+          ':bm${blockedByMe ? 1 : 0}'
+          ':bt${blockedMe ? 1 : 0}'
+          ':a${isActive ? 1 : 0}',
+    );
+
     return AnimatedOpacity(
       duration: _tileAnim,
       opacity: isActive ? (isBlockedRelationship ? 0.75 : 1.0) : 0.5,
@@ -1206,7 +1433,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
           side: BorderSide(
-            color: hasUnread ? Colors.white.withOpacity(0.4) : Colors.white24,
+            color: hasUnread ? Colors.white.withOpacity(0.40) : Colors.white24,
           ),
         ),
         child: InkWell(
@@ -1268,9 +1495,11 @@ class _MwFriendsTabState extends State<MwFriendsTab>
             ),
             trailing: AnimatedSwitcher(
               duration: _trailingAnim,
-              transitionBuilder: (child, anim) =>
-                  ScaleTransition(scale: anim, child: child),
-              child: buildTrailing(),
+              transitionBuilder: (child, anim) => ScaleTransition(scale: anim, child: child),
+              child: KeyedSubtree(
+                key: trailingKey,
+                child: buildTrailing(),
+              ),
             ),
           ),
         ),
@@ -1296,7 +1525,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
 
   Widget _sectionHeader(String title, int count) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
+      padding: const EdgeInsets.fromLTRB(14, 16, 14, 6),
       child: Row(
         children: [
           Container(
@@ -1312,14 +1541,14 @@ class _MwFriendsTabState extends State<MwFriendsTab>
                   title,
                   style: const TextStyle(
                     color: Colors.white70,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w700,
                     fontSize: 13,
                   ),
                 ),
                 if (count > 0) ...[
-                  const SizedBox(width: 6),
+                  const SizedBox(width: 8),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                     decoration: BoxDecoration(
                       color: Colors.white12,
                       borderRadius: BorderRadius.circular(999),
@@ -1329,7 +1558,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
                       style: const TextStyle(
                         color: Colors.white70,
                         fontSize: 11,
-                        fontWeight: FontWeight.w500,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ),
@@ -1344,14 +1573,14 @@ class _MwFriendsTabState extends State<MwFriendsTab>
 
   Widget _subSectionHeader(String title, int count) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 2),
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 2),
       child: Row(
         children: [
           Text(
             title,
             style: TextStyle(
-              color: Colors.white.withOpacity(0.80),
-              fontWeight: FontWeight.w700,
+              color: Colors.white.withOpacity(0.82),
+              fontWeight: FontWeight.w800,
               fontSize: 12.5,
               letterSpacing: 0.2,
             ),
@@ -1370,7 +1599,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
                 style: const TextStyle(
                   color: Colors.white70,
                   fontSize: 11,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ),
@@ -1380,56 +1609,28 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     );
   }
 
-  Widget _userTileStream(String uid) {
-    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance.collection('users').doc(uid).snapshots(),
-      builder: (context, snap) {
-        if (!snap.hasData || snap.data?.data() == null) {
-          final friendStatus = _friendStatuses[uid];
-          return _buildMissingUserTile(
-            context,
-            uid: uid,
-            friendStatus: friendStatus,
-          );
-        }
+  Widget _userTileFast(String uid) {
+    // ✅ Uses cached user data populated by background subscriptions.
+    final friendStatus = _friendStatuses[uid];
+    final data = _friendUserDataCache[uid];
 
-        final data = snap.data!.data()!;
-        if (!_matchesSearch(data, uid)) return const SizedBox.shrink();
+    if (data == null) {
+      // missing/deleted (or still loading)
+      if (_missingUserIds.contains(uid)) {
+        return _buildMissingUserTile(context, uid: uid, friendStatus: friendStatus);
+      }
+      // still loading: lightweight placeholder (keeps UI fast)
+      return const SizedBox(height: 0);
+    }
 
-        final publicUrl = (data['profileUrl'] as String?)?.trim();
-        if ((publicUrl == null || publicUrl.isEmpty) && !_photoDenied.contains(uid)) {
-          _queuePrivatePhotoPrefetch(uid);
-        }
+    if (!_matchesSearch(data, uid)) return const SizedBox.shrink();
 
-        final friendStatus = _friendStatuses[uid];
-        final bool isActive = _isActiveUser(data);
-        final bool isBlockedRelationship = _isRelationshipBlocked(data, uid);
+    final publicUrl = (data['profileUrl'] as String?)?.trim();
+    if ((publicUrl == null || publicUrl.isEmpty) && !_photoDenied.contains(uid)) {
+      _queuePrivatePhotoPrefetch(uid);
+    }
 
-        final presenceVisibility = _readPresenceVisibility(data);
-        final canSeePresence = _canSeePresence(
-          presenceVisibility: presenceVisibility,
-          friendStatus: friendStatus,
-          isBlockedRelationship: isBlockedRelationship,
-          isActive: isActive,
-        );
-
-        final bool rawIsOnline = isActive && data['isOnline'] == true;
-        final bool isOnlineForDisplay = canSeePresence ? rawIsOnline : false;
-
-        _setFriendPresenceCaches(
-          uid: uid,
-          isActive: isActive,
-          isOnlineForDisplay: isOnlineForDisplay,
-        );
-
-        return _buildUserTile(
-          context,
-          data,
-          uid,
-          friendStatus: friendStatus,
-        );
-      },
-    );
+    return _buildUserTile(context, data, uid, friendStatus: friendStatus);
   }
 
   Widget _buildFriendsOnlyTab(BuildContext context) {
@@ -1439,31 +1640,39 @@ class _MwFriendsTabState extends State<MwFriendsTab>
       return const Center(child: CircularProgressIndicator(color: Colors.white));
     }
 
-    final friendIds = <String>[];
+    _initializeStableBucketsAndOrderIfNeeded();
+
     final requestedIds = <String>[];
     final incomingIds = <String>[];
 
     _friendStatuses.forEach((uid, status) {
       if (uid == _currentUid) return;
 
-      if (ChatFriendshipService.isFriends(status)) {
-        friendIds.add(uid);
-      } else if (ChatFriendshipService.isRequested(status)) {
+      if (ChatFriendshipService.isRequested(status)) {
         requestedIds.add(uid);
       } else if (ChatFriendshipService.isIncoming(status)) {
         incomingIds.add(uid);
       }
     });
 
-    friendIds.sort(_compareFriendIdsForFriendsSection);
-    requestedIds.sort();
-    incomingIds.sort();
+    int sortMissingLast(String a, String b) {
+      final am = _missingUserIds.contains(a);
+      final bm = _missingUserIds.contains(b);
+      if (am != bm) return am ? 1 : -1;
+      return a.compareTo(b);
+    }
+
+    requestedIds.sort(sortMissingLast);
+    incomingIds.sort(sortMissingLast);
+
+    final friendIds = List<String>.from(_stableFriendsOrder);
 
     final onlineFriendIds = <String>[];
     final offlineFriendIds = <String>[];
 
     for (final id in friendIds) {
-      if (_isFriendOnlineForDisplay(id)) {
+      final bool stableOnline = _stableOnlineBucket[id] ?? false;
+      if (stableOnline) {
         onlineFriendIds.add(id);
       } else {
         offlineFriendIds.add(id);
@@ -1492,7 +1701,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     }
 
     final rows = <_FriendsRow>[];
-
     rows.add(const _FriendsRow.search());
 
     if (incomingIds.isNotEmpty) {
@@ -1540,6 +1748,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     }
 
     return ListView.builder(
+      controller: _friendsScrollController,
       padding: const EdgeInsets.fromLTRB(8, 6, 8, 24),
       physics: const BouncingScrollPhysics(),
       itemCount: rows.length,
@@ -1577,17 +1786,14 @@ class _MwFriendsTabState extends State<MwFriendsTab>
                   ),
                   child: Row(
                     children: [
-                      Icon(
-                        Icons.notifications_active,
-                        color: kPrimaryGold.withOpacity(0.95),
-                      ),
+                      Icon(Icons.notifications_active, color: kPrimaryGold.withOpacity(0.95)),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
                           l10n.friendRequestsSubtitle(row.unseenCount),
                           style: const TextStyle(
                             color: Colors.white,
-                            fontWeight: FontWeight.w700,
+                            fontWeight: FontWeight.w800,
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -1604,7 +1810,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
                             row.unseenCount > 99 ? '99+' : '${row.unseenCount}',
                             style: const TextStyle(
                               color: Colors.white,
-                              fontWeight: FontWeight.w800,
+                              fontWeight: FontWeight.w900,
                               fontSize: 11,
                             ),
                           ),
@@ -1617,13 +1823,22 @@ class _MwFriendsTabState extends State<MwFriendsTab>
             );
 
           case _FriendsRowKind.header:
-            return _sectionHeader(row.titleText ?? '', row.count);
+            return KeyedSubtree(
+              key: ValueKey('hdr:${row.titleText}:${row.count}'),
+              child: _sectionHeader(row.titleText ?? '', row.count),
+            );
 
           case _FriendsRowKind.subHeader:
-            return _subSectionHeader(row.titleText ?? '', row.count);
+            return KeyedSubtree(
+              key: ValueKey('sub:${row.titleText}:${row.count}'),
+              child: _subSectionHeader(row.titleText ?? '', row.count),
+            );
 
           case _FriendsRowKind.user:
-            return _userTileStream(row.uid!);
+            return KeyedSubtree(
+              key: ValueKey('u:${row.uid}'),
+              child: _userTileFast(row.uid!),
+            );
         }
       },
     );
@@ -1635,12 +1850,10 @@ class _MwFriendsTabState extends State<MwFriendsTab>
   Widget _buildMwUsersOnlyTab(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
 
-    // Ensure bootstrap
     if (!_mwUsersBootstrapped) {
       unawaited(_bootstrapMwUsers());
     }
 
-    // Filter (exclude relationships)
     final filtered = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
     for (final d in _mwUserDocs) {
       final status = _friendStatuses[d.id];
@@ -1648,7 +1861,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
       filtered.add(d);
     }
 
-    // Search filter
     final searched = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
     for (final d in filtered) {
       final data = d.data();
@@ -1740,7 +1952,9 @@ class _MwFriendsTabState extends State<MwFriendsTab>
                         Text(l10n.loading),
                       ],
                     )
-                        : Text(_mwUsersHasMore ? l10n.loadMore : (l10n.noSearchResults ?? 'No more users')),
+                        : Text(_mwUsersHasMore
+                        ? l10n.loadMore
+                        : (l10n.noSearchResults ?? 'No more users')),
                   ),
                 ),
               ),
@@ -1818,8 +2032,7 @@ class _FriendsRow {
     count: count,
   );
 
-  const _FriendsRow.user({required String uid})
-      : this._(_FriendsRowKind.user, uid: uid);
+  const _FriendsRow.user({required String uid}) : this._(_FriendsRowKind.user, uid: uid);
 }
 
 enum _MwUsersRowKind { search, user, loadMore }

@@ -370,6 +370,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chatHistoryDeleted => 'Chat history deleted successfully';
 
   @override
+  String get remove => 'Remove';
+
+  @override
   String get invite => 'Invite';
 
   @override
@@ -647,6 +650,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get deletedForMe => 'Deleted for me';
+
+  @override
+  String get deletedAccount => 'Deleted account';
 
   @override
   String get deletingAccount => 'Deleting account...';

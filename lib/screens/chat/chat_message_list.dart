@@ -1,5 +1,3 @@
-// lib/screens/chat/chat_message_list.dart
-
 import 'dart:async';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart';
@@ -14,10 +12,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/safety/report_message_dialog.dart';
 import '../../widgets/ui/mw_feedback.dart';
 
-// ✅ Shared friendship logic + normalization
 import 'chat_friendship_service.dart';
-
-// ✅ NEW: use central delete implementation (loading + confirm + storage cleanup)
 import 'chat_screen_deletion.dart';
 
 class ChatMessageList extends StatefulWidget {
@@ -195,26 +190,6 @@ class _ChatMessageListState extends State<ChatMessageList> {
     final hiddenFor =
         (data['hiddenFor'] as List?)?.cast<String>() ?? const <String>[];
     return !hiddenFor.contains(widget.currentUserId);
-  }
-
-  // ✅ Key updates ONLY when meaningful changes happen
-  Key _messageKey(
-      DocumentSnapshot<Map<String, dynamic>> doc,
-      Map<String, dynamic> data,
-      NormalizedAttachment att,
-      ) {
-    final keyStr = [
-      'g=$_gen',
-      'id=${doc.id}',
-      't=${(data['text'] ?? '').toString()}',
-      'u=${att.url ?? ''}',
-      'ty=${att.type ?? ''}',
-      'n=${ChatAttachmentUtils.uiFileNameForAttachment(att) ?? ''}',
-      'h=${(data['hiddenFor'] as List?)?.length ?? 0}',
-      's=${(data['seenBy'] as List?)?.length ?? 0}',
-    ].join('|');
-
-    return ValueKey<String>(keyStr);
   }
 
   // ================= SEEN HANDLING =================
@@ -445,15 +420,12 @@ class _ChatMessageListState extends State<ChatMessageList> {
                 ),
               ),
               const SizedBox(height: 8),
-
-              // ✅ One delete entry (central flow will ask For me / For everyone)
               ListTile(
                 leading: const Icon(Icons.delete_outline, color: kErrorColor),
                 title: Text(l10n.deleteMessageTitle, style: titleStyle),
                 onTap: () =>
                     Navigator.of(sheetContext).pop(_MessageAction.delete),
               ),
-
               ListTile(
                 leading: Icon(Icons.flag_outlined,
                     color: kPrimaryGold.withOpacity(0.95)),
@@ -471,11 +443,6 @@ class _ChatMessageListState extends State<ChatMessageList> {
     if (selected == null) return;
 
     if (selected == _MessageAction.delete) {
-      // ✅ Centralized delete flow:
-      // - shows confirmation (For me / For everyone)
-      // - shows loading bar
-      // - cleans up storage + calls purge function
-      // - shows success/error toasts
       try {
         await ChatScreenDeletion.confirmAndDeleteMessage(
           context: context,
@@ -506,7 +473,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
   Widget _buildOverlayMessage(String text) {
     final style = Theme.of(context).textTheme.bodyMedium?.copyWith(
       color: kTextPrimary,
-      fontSize: 14,
+      fontSize: 16,
       fontWeight: FontWeight.w600,
       shadows: [
         const Shadow(
@@ -567,7 +534,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: kTextPrimary,
-                fontSize: 14,
+                fontSize: 16,
                 fontWeight: FontWeight.w600,
                 shadows: const [
                   Shadow(
@@ -620,10 +587,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
           final seenBy =
               (data['seenBy'] as List?)?.cast<String>() ?? const <String>[];
 
-          // ✅ Shared normalization source
           final att = ChatAttachmentUtils.normalizeAttachment(data);
-
-          // ✅ Keep old behavior: show real text (but hide accidental filenames)
           final displayText =
           ChatAttachmentUtils.displayTextForMessage(data['text'], att);
 
@@ -651,6 +615,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
             ),
           );
         }
+
         final extraIndex = index - visibleDocs.length;
         return extraItems[extraIndex];
       },

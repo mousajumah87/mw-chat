@@ -2,7 +2,7 @@ name: mw
 description: "MW Chat – modern private messaging app. Copyright ©2025 Mousa Abu Hilal."
 publish_to: 'none'
 
-version: 1.0.3+21
+version: 1.0.3+24
 
 environment:
   sdk: ^3.10.0

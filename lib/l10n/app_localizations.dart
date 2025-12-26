@@ -764,6 +764,12 @@ abstract class AppLocalizations {
   /// **'Chat history deleted successfully'**
   String get chatHistoryDeleted;
 
+  /// No description provided for @remove.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove'**
+  String get remove;
+
   /// No description provided for @invite.
   ///
   /// In en, this message translates to:
@@ -1243,6 +1249,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Deleted for me'**
   String get deletedForMe;
+
+  /// No description provided for @deletedAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'Deleted account'**
+  String get deletedAccount;
 
   /// No description provided for @deletingAccount.
   ///

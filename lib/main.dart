@@ -11,6 +11,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
+import 'package:mw/widgets/ui/mw_swipe_back.dart';
 import 'package:provider/provider.dart';
 
 import 'firebase_options.dart';
@@ -26,16 +27,15 @@ import 'utils/current_chat_tracker.dart';
 final GlobalKey<ScaffoldMessengerState> rootScaffoldMessengerKey =
 GlobalKey<ScaffoldMessengerState>();
 
+/// ✅ GLOBAL NAVIGATOR KEY (CRITICAL for MwSwipeBack when wrapping whole app)
+final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
+
 /// Global instance of CurrentChatTracker used both by Provider and FCM logic.
 final CurrentChatTracker currentChatTracker = CurrentChatTracker.instance;
 
 /// ------------------------------
 /// Firebase Init Guard (FIXES: [DEFAULT] already exists)
 /// ------------------------------
-/// Ensures Firebase is initialized exactly once per isolate.
-/// Also handles the iOS case where native code already configured Firebase
-/// (AppDelegate contains FirebaseApp.configure()) which would otherwise cause
-/// [core/duplicate-app] if Dart tries to initialize again with options.
 Future<FirebaseApp>? _firebaseInitFuture;
 
 Future<FirebaseApp> _ensureFirebaseInitialized() {
@@ -43,18 +43,15 @@ Future<FirebaseApp> _ensureFirebaseInitialized() {
   if (existing != null) return existing;
 
   _firebaseInitFuture = () async {
-    // Fast path if Firebase is already visible from Dart
     if (Firebase.apps.isNotEmpty) {
       return Firebase.apps.first;
     }
 
     try {
-      // Normal FlutterFire init
       return await Firebase.initializeApp(
         options: DefaultFirebaseOptions.currentPlatform,
       );
     } on FirebaseException catch (e) {
-      // ✅ iOS edge case: DEFAULT already exists (native side already configured)
       if (e.code == 'duplicate-app') {
         return Firebase.app(); // returns existing [DEFAULT]
       }
@@ -89,7 +86,6 @@ Future<void> _storeTokenForUserIfChanged({
 }) async {
   if (token.isEmpty) return;
 
-  // ✅ Dedup within process lifetime (prevents spam logs + extra writes)
   if (_lastStoredUid == uid && _lastStoredFcmToken == token) return;
   _lastStoredUid = uid;
   _lastStoredFcmToken = token;
@@ -127,8 +123,6 @@ Future<void> _syncCurrentTokenIfPossible() async {
   }
 }
 
-/// Listen for auth changes: when user logs in, we sync token once.
-/// This prevents calling token sync from build() and spamming.
 void _setupAuthDrivenTokenSync() {
   if (kIsWeb) return;
 
@@ -142,15 +136,12 @@ void _setupAuthDrivenTokenSync() {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // ✅ Firebase init ONCE (safe even if iOS native already configured)
   await _ensureFirebaseInitialized();
 
-  // Register background handler (NOT on web)
   if (!kIsWeb) {
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
   }
 
-  // App Check (NOT on web)
   if (!kIsWeb) {
     try {
       await FirebaseAppCheck.instance.activate(
@@ -162,13 +153,11 @@ Future<void> main() async {
     }
   }
 
-  // Initialize Push Notifications (NOT on web)
   if (!kIsWeb) {
     await _initPushNotifications();
     _setupAuthDrivenTokenSync();
   }
 
-  // Presence tracking (safe for web)
   PresenceService.instance.init();
 
   runApp(
@@ -282,14 +271,28 @@ class MyApp extends StatelessWidget {
     final bool isArabic = locale.languageCode == 'ar';
 
     return MaterialApp(
+      navigatorKey: rootNavigatorKey, // ✅ CRITICAL
       scaffoldMessengerKey: rootScaffoldMessengerKey,
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(isArabic: isArabic),
       locale: localeProvider.locale,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
-      onGenerateTitle: (ctx) =>
-      AppLocalizations.of(ctx)?.mainTitle ?? 'MW Chat',
+      onGenerateTitle: (ctx) => AppLocalizations.of(ctx)?.mainTitle ?? 'MW Chat',
+
+      // ✅ Snapchat-like swipe back (global across the whole app)
+      builder: (context, child) {
+        if (child == null) return const SizedBox.shrink();
+
+        // Wrap everything, but use navigatorKey to pop reliably.
+        return MwSwipeBack(
+          enabled: true,
+          goHomeIfCantPop: false,
+          navigatorKey: rootNavigatorKey, // ✅ THIS makes it work everywhere
+          child: child,
+        );
+      },
+
       home: const AuthGate(),
     );
   }
