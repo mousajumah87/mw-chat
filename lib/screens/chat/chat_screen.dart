@@ -1,32 +1,33 @@
 // lib/screens/chat/chat_screen.dart
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart' show UploadTask;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/services.dart'; // ✅ for haptics
 import 'package:image_picker/image_picker.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../../utils/current_chat_tracker.dart';
 import '../../utils/presence_service.dart';
-
-import 'package:mw/utils/voice_recorder_controller.dart' as vrc;
-
+import '../../widgets/chat/chat_input_bar.dart';
+import '../../widgets/chat/message_reactions.dart';
+import '../../widgets/chat/message_reply.dart';
 import '../../widgets/chat/mw_emoji_panel.dart';
+import '../../widgets/chat/typing_indicator.dart';
+import '../../widgets/ui/mw_background.dart';
+import '../../widgets/ui/mw_feedback.dart';
 import 'chat_app_bar.dart';
 import 'chat_friendship_service.dart';
 import 'chat_media_service.dart';
 import 'chat_message_list.dart';
-
-import '../../l10n/app_localizations.dart';
-import '../../widgets/ui/mw_background.dart';
-
-import '../../widgets/chat/chat_input_bar.dart';
-import '../../widgets/chat/typing_indicator.dart';
-
 import 'chat_screen_deletion.dart';
+
+import 'package:mw/utils/voice_recorder_controller.dart' as vrc;
+import '../../widgets/chat/mw_reply_to.dart';
 
 class ChatScreen extends StatefulWidget {
   final String roomId;
@@ -46,6 +47,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final _msgController = TextEditingController();
   final FocusNode _composerFocusNode = FocusNode(debugLabel: 'mwComposer');
 
+  // ✅ Key to control ChatMessageList scroll programmatically
+  final GlobalKey<ChatMessageListState> _listKey = GlobalKey<ChatMessageListState>();
+
+  MwReplyTo? _replyingTo;
+
   bool _panelVisible = false;
   static const double _panelHeight = 300.0;
 
@@ -53,7 +59,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   ChatMediaService? _mediaService;
 
   late final vrc.VoiceRecorderController _voiceCtrl;
-
   final ImagePicker _picker = ImagePicker();
 
   double? _uploadProgress;
@@ -129,12 +134,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     return true;
   }
 
+  bool get _hasIncomingFriendRequest =>
+      _friendStatus == ChatFriendshipService.statusIncoming;
+  bool get _hasOutgoingFriendRequest =>
+      _friendStatus == ChatFriendshipService.statusRequested;
+
   bool get _canRequestFriendByPrivacy {
     if (_isAnyBlock) return false;
 
-    if (_friendStatus == 'requested' ||
-        _friendStatus == 'incoming' ||
-        _friendStatus == 'accepted') {
+    if (_friendStatus == ChatFriendshipService.statusRequested ||
+        _friendStatus == ChatFriendshipService.statusIncoming ||
+        _friendStatus == ChatFriendshipService.statusAccepted) {
       return false;
     }
 
@@ -144,14 +154,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     return true;
   }
 
-  // ✅ FIX #2:
+  // ✅ IMPORTANT:
   // profileVisibility must NOT block chat for existing friends.
   // It only blocks strangers from opening/starting chat.
   bool get _isChatAccessRestricted {
-    // Friends should always be able to chat (unless blocked).
     if (_isFriends) return false;
 
-    // Not friends -> apply privacy restriction
     if (_otherProfileVisibility == _privacyNobody) return true;
     if (_otherProfileVisibility == _privacyFriends && !_isFriends) return true;
     return false;
@@ -164,9 +172,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     return ChatFriendshipService.isFriends(_friendStatus);
   }
 
-  bool get _hasIncomingFriendRequest => _friendStatus == 'incoming';
-  bool get _hasOutgoingFriendRequest => _friendStatus == 'requested';
-
   TypingAvatarGender _parseGender(dynamic raw) {
     final s = (raw ?? '').toString().trim().toLowerCase();
     if (s == 'female') return TypingAvatarGender.female;
@@ -176,8 +181,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   String _parseAvatarType(dynamic raw) {
     final s = (raw ?? '').toString().trim().toLowerCase();
-    if (s == 'smurf') return 'smurf';
-    return 'bear';
+    if (s.isEmpty) return 'bear';
+    return s;
   }
 
   String _normalizePrivacy(String? raw) {
@@ -214,6 +219,79 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     return ChatActivityIndicatorMode.typing;
   }
 
+  // ------------------------------------------------------------
+  // ✅ Scroll helpers: "ready to send" feel after sending
+  // ------------------------------------------------------------
+  Future<void> _scrollToLatestAndFocus({bool animated = true}) async {
+    if (!mounted || _disposed) return;
+
+    // Close emoji panel (if open) to keep the bottom clean
+    if (_panelVisible) {
+      setState(() => _panelVisible = false);
+    }
+
+    // Ensure list is attached after rebuilds
+    await Future<void>.delayed(const Duration(milliseconds: 1));
+    if (!mounted || _disposed) return;
+
+    await _listKey.currentState?.scrollToLatest(animated: animated);
+
+    // Focus composer so it feels "ready to send"
+    if (!mounted || _disposed) return;
+    _composerFocusNode.requestFocus();
+  }
+
+  // ------------------------------------------------------------
+  // ✅ Reply helpers (stable + safe)
+  // ------------------------------------------------------------
+  Map<String, dynamic>? _replyToPayloadOrNull(MwReplyTo? r) {
+    if (r == null) return null;
+
+    Map<String, dynamic> map;
+    try {
+      map = Map<String, dynamic>.from(r.toMap());
+    } catch (_) {
+      try {
+        final dyn = r as dynamic;
+        final maybe = dyn is Map ? dyn : null;
+        if (maybe == null) return null;
+        map = Map<String, dynamic>.from(maybe);
+      } catch (_) {
+        return null;
+      }
+    }
+
+    final rawPreview =
+    (map['previewText'] ?? map['text'] ?? map['message'] ?? '')
+        .toString()
+        .trim();
+
+    final rawMessageId = (map['messageId'] ?? map['id'] ?? '').toString().trim();
+
+    final rawSenderId =
+    (map['senderId'] ?? map['fromId'] ?? '').toString().trim();
+
+    var type = (map['type'] ?? map['messageType'] ?? '').toString().trim();
+    if (type.isEmpty) type = 'text';
+
+    final fileName = (map['fileName'] ?? '').toString().trim();
+    final createdAt = map['createdAt'];
+
+    final payload = <String, dynamic>{
+      if (rawMessageId.isNotEmpty) 'messageId': rawMessageId,
+      if (rawSenderId.isNotEmpty) 'senderId': rawSenderId,
+      'type': type,
+      'previewText': rawPreview.isEmpty ? '…' : rawPreview,
+      if (fileName.isNotEmpty) 'fileName': fileName,
+      if (createdAt is Timestamp) 'createdAt': createdAt,
+    };
+
+    if ((payload['messageId'] as String?)?.trim().isEmpty ?? true) return null;
+    if ((payload['senderId'] as String?)?.trim().isEmpty ?? true) return null;
+
+    return payload;
+  }
+
   void _handleComposerFocus() {
     if (_disposed) return;
     if (_composerFocusNode.hasFocus && _panelVisible) {
@@ -223,7 +301,31 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   void _toastSnack(String msg) {
     if (!mounted || _disposed) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _setReplyTo(MwReplyTo r) {
+    if (!mounted || _disposed) return;
+    if (_isAnyBlock || !_canSendMessages) return;
+
+    setState(() => _replyingTo = r);
+
+    _closeEmojiPanelIfOpen();
+    FocusManager.instance.primaryFocus?.unfocus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _disposed) return;
+      _composerFocusNode.requestFocus();
+    });
+  }
+
+  void _clearReplyTo() {
+    if (!mounted || _disposed) return;
+    setState(() => _replyingTo = null);
   }
 
   Future<void> _closeSheetThen(
@@ -469,7 +571,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         setState(() => _hasAnyMessages = visible);
       }
 
-      _scheduleMarkSeen();
+      // _scheduleMarkSeen();
     });
   }
 
@@ -566,6 +668,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       setState(() {
         _isBlocked = isBlockedNow;
         _loadingBlockState = false;
+
+        if (_isAnyBlock) _replyingTo = null;
       });
     }, onError: (_, __) {
       if (!mounted || _disposed) return;
@@ -621,6 +725,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         _otherUserAvatarType = parsedAvatarType;
         _otherProfileVisibility = profileVis;
         _otherAddFriendVisibility = addFriendVis;
+
+        if (_isAnyBlock) _replyingTo = null;
       });
     }, onError: (_, __) {
       if (!mounted || _disposed) return;
@@ -659,6 +765,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       setState(() {
         _friendStatus = status;
         _loadingFriendship = false;
+
+        if (!_canSendMessages) _replyingTo = null;
       });
 
       _scheduleMarkSeen();
@@ -767,7 +875,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       if (_hasOutgoingFriendRequest) {
         info = l10n?.friendshipInfoOutgoing ?? 'Friend request pending.';
       } else if (_hasIncomingFriendRequest) {
-        info = l10n?.friendshipInfoIncoming ?? 'Accept the friend request to chat.';
+        info = l10n?.friendshipInfoIncoming ??
+            'Accept the friend request to chat.';
       } else {
         if (!_canRequestFriendByPrivacy) {
           info = l10n?.friendRequestNotAllowed ??
@@ -783,6 +892,195 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     return true;
   }
 
+  // ------------------------------------------------------------
+// ✅ Reactions (single reaction per user)
+// ------------------------------------------------------------
+  Future<void> _onReactionTapAsync(String messageId, String emoji) async {
+    if (_disposed) return;
+    if (_currentUserId.isEmpty) return;
+    if (_isAnyBlock) return;
+
+    final mid = messageId.trim();
+    final e = emoji.trim();
+    if (mid.isEmpty || e.isEmpty) return;
+
+    // ✅ close overlay immediately (smooth UX)
+    MwReactionOverlay.hide();
+
+    final msgRef = FirebaseFirestore.instance
+        .collection('privateChats')
+        .doc(widget.roomId)
+        .collection('messages')
+        .doc(mid);
+
+    try {
+      await MwReactions.setSingleReaction(
+        messageRef: msgRef,
+        userId: _currentUserId,
+        emoji: e,
+      );
+    } catch (_) {
+      // ✅ no logs; show friendly UI feedback
+      if (mounted) {
+        MwFeedback.show(
+          context,
+          message: AppLocalizations.of(context)?.generalErrorMessage ?? 'Something went wrong',
+          type: MwFeedbackType.error,
+        );
+      }
+    }
+  }
+
+  // ------------------------------------------------------------
+  // ✅ FRIENDSHIP ACTIONS (banner + chat gate)
+  // ------------------------------------------------------------
+  Future<void> _sendFriendRequestToOther() async {
+    final otherId = _otherUserId;
+    if (otherId == null || otherId.isEmpty) return;
+    if (_currentUserId.isEmpty) return;
+
+    final l10n = AppLocalizations.of(context)!;
+
+    final status = _friendStatus;
+    if (ChatFriendshipService.isFriends(status) ||
+        ChatFriendshipService.isRequested(status) ||
+        ChatFriendshipService.isIncoming(status)) {
+      return;
+    }
+
+    if (!_canRequestFriendByPrivacy) {
+      _toastSnack(l10n.friendRequestNotAllowed ??
+          'This user is not accepting friend requests.');
+      return;
+    }
+
+    final myRef = FirebaseFirestore.instance
+        .collection('users')
+        .doc(_currentUserId)
+        .collection('friends')
+        .doc(otherId);
+
+    final theirRef = FirebaseFirestore.instance
+        .collection('users')
+        .doc(otherId)
+        .collection('friends')
+        .doc(_currentUserId);
+
+    final now = FieldValue.serverTimestamp();
+    final batch = FirebaseFirestore.instance.batch();
+
+    batch.set(
+      myRef,
+      {
+        'status': ChatFriendshipService.statusRequested,
+        'createdAt': now,
+        'updatedAt': now,
+      },
+      SetOptions(merge: true),
+    );
+
+    batch.set(
+      theirRef,
+      {
+        'status': ChatFriendshipService.statusIncoming,
+        'createdAt': now,
+        'updatedAt': now,
+      },
+      SetOptions(merge: true),
+    );
+
+    try {
+      await batch.commit();
+      if (!mounted || _disposed) return;
+      _toastSnack(l10n.friendRequestSent);
+    } catch (_) {
+      if (!mounted || _disposed) return;
+      _toastSnack(l10n.friendRequestSendFailed);
+    }
+  }
+
+  Future<void> _acceptIncomingRequest() async {
+    final otherId = _otherUserId;
+    if (otherId == null || otherId.isEmpty) return;
+    if (_currentUserId.isEmpty) return;
+
+    final l10n = AppLocalizations.of(context)!;
+
+    if (!ChatFriendshipService.isIncoming(_friendStatus)) return;
+
+    final myRef = FirebaseFirestore.instance
+        .collection('users')
+        .doc(_currentUserId)
+        .collection('friends')
+        .doc(otherId);
+
+    final theirRef = FirebaseFirestore.instance
+        .collection('users')
+        .doc(otherId)
+        .collection('friends')
+        .doc(_currentUserId);
+
+    final batch = FirebaseFirestore.instance.batch();
+    final now = FieldValue.serverTimestamp();
+    final payload = {
+      'status': ChatFriendshipService.statusAccepted,
+      'updatedAt': now,
+    };
+
+    batch.set(myRef, payload, SetOptions(merge: true));
+    batch.set(theirRef, payload, SetOptions(merge: true));
+
+    try {
+      await batch.commit();
+      if (!mounted || _disposed) return;
+      _toastSnack(l10n.friendRequestAccepted);
+      _scheduleMarkSeen();
+    } catch (_) {
+      if (!mounted || _disposed) return;
+      _toastSnack(l10n.friendRequestSendFailed);
+    }
+  }
+
+  Future<void> _declineOrCancelRequest() async {
+    final otherId = _otherUserId;
+    if (otherId == null || otherId.isEmpty) return;
+    if (_currentUserId.isEmpty) return;
+
+    final l10n = AppLocalizations.of(context)!;
+
+    final status = _friendStatus;
+    final bool isIncoming = ChatFriendshipService.isIncoming(status);
+    final bool isRequested = ChatFriendshipService.isRequested(status);
+    if (!isIncoming && !isRequested) return;
+
+    final myRef = FirebaseFirestore.instance
+        .collection('users')
+        .doc(_currentUserId)
+        .collection('friends')
+        .doc(otherId);
+
+    final theirRef = FirebaseFirestore.instance
+        .collection('users')
+        .doc(otherId)
+        .collection('friends')
+        .doc(_currentUserId);
+
+    final batch = FirebaseFirestore.instance.batch();
+    batch.delete(myRef);
+    batch.delete(theirRef);
+
+    try {
+      await batch.commit();
+      if (!mounted || _disposed) return;
+      _toastSnack(isIncoming
+          ? l10n.friendRequestDeclined
+          : (l10n.cancel ?? 'Cancelled'));
+    } catch (_) {
+      if (!mounted || _disposed) return;
+      _toastSnack(l10n.friendRequestDeclined);
+    }
+  }
+
   Future<void> _sendMessage() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
@@ -794,12 +1092,24 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final text = _msgController.text.trim();
     if (text.isEmpty) return;
 
-    _msgController.clear();
-
     final error = _validateMessageContent(text);
     if (error != null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error)),
+        );
+      }
       return;
+    }
+
+    final MwReplyTo? replySnapshot = _replyingTo;
+    final Map<String, dynamic>? replyPayload = _replyToPayloadOrNull(replySnapshot);
+
+    // ✅ Clear input immediately (optimistic)
+    _msgController.clear();
+
+    if (mounted && !_disposed && _replyingTo != null) {
+      setState(() => _replyingTo = null);
     }
 
     if (!mounted || _disposed) return;
@@ -811,12 +1121,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       _isMeTypingFlag = false;
       _typingDebounce?.cancel();
 
+      final otherId = _otherUserId;
+      if (otherId == null || otherId.trim().isEmpty) {
+        return;
+      }
+
       final meta = await _getSenderMeta(user);
       final profileUrl = meta['profileUrl'];
       final avatarType = meta['avatarType'];
-
-      final otherId = _otherUserId;
-      if (otherId == null || otherId.isEmpty) return;
 
       final batch = FirebaseFirestore.instance.batch();
 
@@ -824,7 +1136,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       FirebaseFirestore.instance.collection('privateChats').doc(widget.roomId);
       final msgRef = roomRef.collection('messages').doc();
 
-      batch.set(msgRef, {
+      final msgData = <String, dynamic>{
         'type': 'text',
         'text': text,
         'senderId': user.uid,
@@ -834,7 +1146,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         'createdAt': FieldValue.serverTimestamp(),
         'clientCreatedAt': Timestamp.now(),
         'seenBy': <String>[],
-      });
+        if (replyPayload != null) 'replyTo': replyPayload,
+      };
+
+      batch.set(msgRef, msgData);
 
       batch.set(
         roomRef,
@@ -850,9 +1165,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       );
 
       await batch.commit();
+
+      // ✅ "ready to send" UX: jump to latest + focus
+      if (mounted && !_disposed) {
+        HapticFeedback.lightImpact();
+        unawaited(_scrollToLatestAndFocus(animated: true));
+      }
+
       _scheduleMarkSeen();
     } catch (_) {
-      // ignore
+      // ignore (optional: restore reply UI if send failed)
     } finally {
       if (mounted && !_disposed) setState(() => _sending = false);
     }
@@ -900,6 +1222,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           setState(() => _uploadProgress = p);
         },
       );
+
+      if (mounted && !_disposed && _replyingTo != null) {
+        setState(() => _replyingTo = null);
+      }
+
+      if (mounted && !_disposed) {
+        HapticFeedback.lightImpact();
+        unawaited(_scrollToLatestAndFocus(animated: true));
+      }
 
       _scheduleMarkSeen();
     } finally {
@@ -1049,6 +1380,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         },
       );
 
+      if (mounted && !_disposed && _replyingTo != null) {
+        setState(() => _replyingTo = null);
+      }
+
+      if (mounted && !_disposed) {
+        HapticFeedback.lightImpact();
+        unawaited(_scrollToLatestAndFocus(animated: true));
+      }
+
       _scheduleMarkSeen();
     } catch (_) {
       _toastSnack('Failed to attach file.');
@@ -1074,12 +1414,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           bytes: bytes,
           path: null,
         );
-        await _sendPlatformFile(pf,
-            forcedType: 'image', forcedContentType: 'image/*');
+        await _sendPlatformFile(pf, forcedType: 'image', forcedContentType: 'image/*');
       } else {
         final pf = PlatformFile(name: x.name, size: 0, path: x.path);
-        await _sendPlatformFile(pf,
-            forcedType: 'image', forcedContentType: 'image/*');
+        await _sendPlatformFile(pf, forcedType: 'image', forcedContentType: 'image/*');
       }
     } catch (_) {
       _toastSnack('Unable to pick photo.');
@@ -1099,20 +1437,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           bytes: bytes,
           path: null,
         );
-        await _sendPlatformFile(pf,
-            forcedType: 'video', forcedContentType: 'video/*');
+        await _sendPlatformFile(pf, forcedType: 'video', forcedContentType: 'video/*');
       } else {
         final pf = PlatformFile(name: x.name, size: 0, path: x.path);
-        await _sendPlatformFile(pf,
-            forcedType: 'video', forcedContentType: 'video/*');
+        await _sendPlatformFile(pf, forcedType: 'video', forcedContentType: 'video/*');
       }
     } catch (_) {
       _toastSnack('Unable to pick video.');
     }
   }
 
-  Future<void> _captureImageWithCamera(
-      {CameraDevice camera = CameraDevice.rear}) async {
+  Future<void> _captureImageWithCamera({CameraDevice camera = CameraDevice.rear}) async {
     try {
       final x = await _picker.pickImage(
         source: ImageSource.camera,
@@ -1122,15 +1457,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       if (x == null) return;
 
       final pf = PlatformFile(name: x.name, size: 0, path: x.path);
-      await _sendPlatformFile(pf,
-          forcedType: 'image', forcedContentType: 'image/*');
+      await _sendPlatformFile(pf, forcedType: 'image', forcedContentType: 'image/*');
     } catch (_) {
       _toastSnack('Unable to take photo.');
     }
   }
 
-  Future<void> _captureVideoWithCamera(
-      {CameraDevice camera = CameraDevice.rear}) async {
+  Future<void> _captureVideoWithCamera({CameraDevice camera = CameraDevice.rear}) async {
     try {
       final x = await _picker.pickVideo(
         source: ImageSource.camera,
@@ -1139,8 +1472,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       if (x == null) return;
 
       final pf = PlatformFile(name: x.name, size: 0, path: x.path);
-      await _sendPlatformFile(pf,
-          forcedType: 'video', forcedContentType: 'video/*');
+      await _sendPlatformFile(pf, forcedType: 'video', forcedContentType: 'video/*');
     } catch (_) {
       _toastSnack('Unable to record video.');
     }
@@ -1187,8 +1519,145 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
+  // ------------------------------------------------------------
+  // ✅ Modern banner: shows "Add friend / Accept / Pending / Private"
+  // ------------------------------------------------------------
   Widget _buildFriendshipBanner(AppLocalizations l10n) {
-    return const SizedBox.shrink();
+    if (_isAnyBlock) return const SizedBox.shrink();
+    if (_loadingFriendship) return const SizedBox.shrink();
+
+    if (ChatFriendshipService.isFriends(_friendStatus)) {
+      return const SizedBox.shrink();
+    }
+
+    final bool canRequest = _canRequestFriendByPrivacy;
+    final bool isRestricted = _isChatAccessRestricted;
+
+    String title;
+    String subtitle;
+    IconData icon;
+    Color badgeColor;
+
+    if (_hasIncomingFriendRequest) {
+      title = l10n.friendshipInfoIncoming ?? 'Friend request received';
+      subtitle = l10n.friendshipCannotSendIncoming ?? 'Accept to start chatting.';
+      icon = Icons.person_add_alt_1_rounded;
+      badgeColor = Colors.amber;
+    } else if (_hasOutgoingFriendRequest) {
+      title = l10n.friendshipInfoOutgoing ?? 'Friend request sent';
+      subtitle = l10n.friendshipCannotSendOutgoing ?? 'Waiting for acceptance.';
+      icon = Icons.hourglass_top_rounded;
+      badgeColor = Colors.white24;
+    } else if (!canRequest) {
+      title = l10n.friendRequestNotAllowed ?? 'Friend requests are off';
+      subtitle = isRestricted
+          ? (l10n.profilePrivateChatRestricted ??
+          'This user’s profile is private. You must be friends to chat.')
+          : (l10n.friendshipCannotSendNotFriends ?? 'You must be friends to chat.');
+      icon = Icons.lock_rounded;
+      badgeColor = Colors.white24;
+    } else {
+      title = l10n.friendshipInfoNotFriends ?? 'Not friends yet';
+      subtitle = isRestricted
+          ? (l10n.profilePrivateChatRestricted ??
+          'This user’s profile is private. You must be friends to chat.')
+          : (l10n.friendshipCannotSendNotFriends ?? 'Send a friend request to chat.');
+      icon = Icons.person_add_alt_1_rounded;
+      badgeColor = Colors.white24;
+    }
+
+    Widget actions() {
+      if (_hasIncomingFriendRequest) {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextButton.icon(
+              onPressed: _acceptIncomingRequest,
+              icon: const Icon(Icons.check_circle_rounded, color: Colors.greenAccent),
+              label: Text(
+                l10n.friendAcceptTooltip ?? 'Accept',
+                style: const TextStyle(color: Colors.greenAccent),
+              ),
+            ),
+            const SizedBox(width: 6),
+            IconButton(
+              tooltip: l10n.friendDeclineTooltip ?? 'Decline',
+              onPressed: _declineOrCancelRequest,
+              icon: const Icon(Icons.close_rounded, color: Colors.redAccent),
+            ),
+          ],
+        );
+      }
+
+      if (_hasOutgoingFriendRequest) {
+        return TextButton(
+          onPressed: _declineOrCancelRequest,
+          child: Text(l10n.cancel ?? 'Cancel',
+              style: const TextStyle(color: Colors.white70)),
+        );
+      }
+
+      if (!canRequest) return const SizedBox.shrink();
+
+      return TextButton.icon(
+        onPressed: _sendFriendRequestToOther,
+        icon: const Icon(Icons.person_add_alt_1_rounded, color: Colors.white),
+        label: Text(
+          l10n.addFriendTooltip ?? 'Add',
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.07),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white24),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: badgeColor,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: Colors.white, size: 18),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.white70, fontSize: 12.5),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            actions(),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildCustomPanel(BuildContext context) {
@@ -1226,7 +1695,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
 
     String cannotSendText() {
-      // ✅ For non-friends, show privacy restriction message
       if (_isChatAccessRestricted && !_isFriends) {
         return l10n.profilePrivateChatRestricted ??
             'This user’s profile is private. You must be friends to chat.';
@@ -1248,11 +1716,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     final bool showIndicator =
         !_isAnyBlock && (_isOtherTyping || _isOtherRecording);
-
     final bool showPanel = _panelVisible && !keyboardOpen;
 
     const double indicatorReserve = 20;
     const double composerReserve = 10;
+
+    final bool canShowReplyUi = !_isAnyBlock && _canSendMessages;
 
     Widget composerWidget;
 
@@ -1266,53 +1735,70 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         ),
       );
     } else if (_canSendMessages) {
-      composerWidget = ChatInputBar(
-        key: ValueKey('chat_input_${widget.roomId}'),
-        controller: _msgController,
-        sending: _sending || _isUploading,
-        uploadProgress: _uploadProgress,
-        onAttach: _handleAttachPressed,
-        onSend: _sendMessage,
-        onTextChanged: _onComposerChanged,
-        voiceController: _voiceCtrl,
-        onVoiceSend: _handleVoiceDraftSend,
-        focusNode: _composerFocusNode,
-        panelVisible: _panelVisible,
-        onTogglePanel: () async {
-          final newVisible = !_panelVisible;
+      composerWidget = Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (canShowReplyUi && _replyingTo != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 0, 10, 6),
+              child: MessageReply(
+                replyTo: _replyingTo!,
+                onCancel: _clearReplyTo,
+              ),
+            ),
+          ChatInputBar(
+            key: ValueKey('chat_input_${widget.roomId}'),
+            controller: _msgController,
+            sending: _sending || _isUploading,
+            uploadProgress: _uploadProgress,
+            onAttach: _handleAttachPressed,
+            onSend: _sendMessage,
+            onTextChanged: _onComposerChanged,
+            voiceController: _voiceCtrl,
+            onVoiceSend: _handleVoiceDraftSend,
+            focusNode: _composerFocusNode,
+            panelVisible: _panelVisible,
+            onTogglePanel: () async {
+              final newVisible = !_panelVisible;
 
-          if (newVisible) {
-            FocusManager.instance.primaryFocus?.unfocus();
-          }
+              if (newVisible) {
+                FocusManager.instance.primaryFocus?.unfocus();
+              }
 
-          if (!mounted || _disposed) return;
-          setState(() => _panelVisible = newVisible);
-
-          if (newVisible) {
-            await Future.delayed(const Duration(milliseconds: 60));
-            if (!mounted || _disposed) return;
-          } else {
-            WidgetsBinding.instance.addPostFrameCallback((_) async {
-              await Future.delayed(const Duration(milliseconds: 50));
               if (!mounted || _disposed) return;
-              _composerFocusNode.requestFocus();
-            });
-          }
-        },
-        onVoiceRecordStart: () {
-          _typingDebounce?.cancel();
-          _isMeTypingFlag = false;
-          unawaited(_updateMyTyping(false));
-          unawaited(_updateMyRecording(true));
+              setState(() => _panelVisible = newVisible);
 
-          if (_panelVisible) setState(() => _panelVisible = false);
-          FocusManager.instance.primaryFocus?.unfocus();
-        },
-        onVoiceRecordStop: () {
-          unawaited(_updateMyRecording(false));
-        },
+              if (!newVisible) {
+                WidgetsBinding.instance.addPostFrameCallback((_) async {
+                  await Future.delayed(const Duration(milliseconds: 50));
+                  if (!mounted || _disposed) return;
+                  _composerFocusNode.requestFocus();
+                });
+              }
+            },
+            onVoiceRecordStart: () {
+              _typingDebounce?.cancel();
+              _isMeTypingFlag = false;
+              unawaited(_updateMyTyping(false));
+              unawaited(_updateMyRecording(true));
+
+              if (_panelVisible) setState(() => _panelVisible = false);
+              FocusManager.instance.primaryFocus?.unfocus();
+            },
+            onVoiceRecordStop: () {
+              unawaited(_updateMyRecording(false));
+            },
+          ),
+        ],
       );
     } else {
+      if (_replyingTo != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || _disposed) return;
+          if (_replyingTo != null) setState(() => _replyingTo = null);
+        });
+      }
+
       composerWidget = Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Text(
@@ -1409,11 +1895,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 child: _isLoadingBlock
                     ? const Center(child: CircularProgressIndicator())
                     : ChatMessageList(
+                  key: _listKey, // ✅ attach key
                   roomId: widget.roomId,
                   currentUserId: _currentUserId,
                   otherUserId: otherUserId,
                   isBlocked: _isAnyBlock,
                   bottomInset: listBottomInset,
+                  onReply: _setReplyTo,
+                  onReactionTapAsync: _onReactionTapAsync,
                 ),
               ),
             ],
@@ -1427,6 +1916,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   void _dismissKeyboardAndPanel() {
     FocusManager.instance.primaryFocus?.unfocus();
     if (_panelVisible) {
+      if (!mounted || _disposed) return;
       setState(() => _panelVisible = false);
     }
   }
@@ -1437,9 +1927,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       setState(() => _panelVisible = false);
     }
   }
-
 }
-
 
 extension _FirstOrNullExt<T> on List<T> {
   T? get firstOrNull => isEmpty ? null : first;

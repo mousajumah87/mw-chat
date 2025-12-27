@@ -1,6 +1,3 @@
-// lib/widgets/chat/chat_input_bar.dart
-
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
@@ -59,8 +56,7 @@ class ChatInputBar extends StatefulWidget {
   State<ChatInputBar> createState() => _ChatInputBarState();
 }
 
-class _ChatInputBarState extends State<ChatInputBar>
-    with SingleTickerProviderStateMixin {
+class _ChatInputBarState extends State<ChatInputBar> {
   bool _hasText = false;
 
   /// 🔴 IMPORTANT: local fallback focus node only.
@@ -140,12 +136,9 @@ class _ChatInputBarState extends State<ChatInputBar>
 
     if (mounted && !_disposed) setState(() {});
 
-    bool started = false;
     try {
       await vc.start();
-      started = vc.isRecording;
-
-      if (started) {
+      if (vc.isRecording) {
         widget.onVoiceRecordStart?.call();
       } else {
         widget.onVoiceRecordStop?.call();
@@ -170,21 +163,6 @@ class _ChatInputBarState extends State<ChatInputBar>
 
     try {
       await vc.stopToPreview();
-    } catch (_) {
-      // ignore
-    } finally {
-      widget.onVoiceRecordStop?.call();
-      if (!mounted || _disposed) return;
-      setState(() {});
-    }
-  }
-
-  Future<void> _cancelVoice() async {
-    final vc = _vc;
-    if (vc == null) return;
-
-    try {
-      await vc.cancel();
     } catch (_) {
       // ignore
     } finally {
@@ -251,7 +229,11 @@ class _ChatInputBarState extends State<ChatInputBar>
   void _syncTextState() {
     if (_disposed) return;
     final hasText = widget.controller.text.trim().isNotEmpty;
-    if (hasText != _hasText && mounted) {
+    if (!mounted) {
+      _hasText = hasText;
+      return;
+    }
+    if (hasText != _hasText) {
       setState(() => _hasText = hasText);
     }
   }
@@ -270,8 +252,8 @@ class _ChatInputBarState extends State<ChatInputBar>
 
     widget.onSend();
 
-    // 🔴 CRITICAL FIX: DO NOT requestFocus after send.
-    // Let focus remain naturally; ChatScreen controls layout insets.
+    // 🔴 CRITICAL: DO NOT requestFocus after send.
+    // ChatScreen controls layout insets + focus flows.
   }
 
   Future<void> _handleAttachPressed() async {
@@ -379,7 +361,7 @@ class _ChatInputBarState extends State<ChatInputBar>
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: _toggleVoice,
-      onLongPress: null, // explicitly disable hold behavior
+      onLongPress: null,
       child: Container(
         margin: const EdgeInsets.only(right: 6),
         padding: const EdgeInsets.all(10),
@@ -407,13 +389,12 @@ class _ChatInputBarState extends State<ChatInputBar>
     final l10n = AppLocalizations.of(context)!;
     final bool isUploading = _isUploading;
 
-    // ✅ Make typing text feel correct on iPhone:
-    // Keep a larger minimum font size so it doesn't look tiny inside a tall field.
-    final scaler = MediaQuery.textScalerOf(context);
-    final scaled = scaler.scale(2); // base target
-    final double effectiveFont = scaled < 18 ? 18.0 : scaled;
+    // ✅ Correct, stable scaling: scale a REAL base size.
+    // Also clamp so it never looks tiny inside the field.
+    const double baseFont = 16.0;
+    final double scaled = MediaQuery.textScalerOf(context).scale(baseFont);
+    final double effectiveFont = scaled < 17.0 ? 17.0 : scaled;
 
-    // ✅ NO SafeArea here anymore — ChatScreen dock handles it.
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -422,7 +403,6 @@ class _ChatInputBarState extends State<ChatInputBar>
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: LinearProgressIndicator(value: widget.uploadProgress),
           ),
-
         if (_showVoiceBar && _vc != null && widget.onVoiceSend != null)
           VoiceRecordBar(
             controller: _vc!,
@@ -430,7 +410,6 @@ class _ChatInputBarState extends State<ChatInputBar>
             onRecordStart: widget.onVoiceRecordStart,
             onRecordStop: widget.onVoiceRecordStop,
           ),
-
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
           decoration: BoxDecoration(
@@ -464,7 +443,6 @@ class _ChatInputBarState extends State<ChatInputBar>
                   controller: widget.controller,
                   focusNode: _activeFocusNode,
                   onTap: () {
-                    // ✅ If panel open, close it when user taps text field
                     if (widget.panelVisible) {
                       widget.onTogglePanel?.call();
                     }
@@ -474,10 +452,10 @@ class _ChatInputBarState extends State<ChatInputBar>
                   minLines: 1,
                   maxLines: 4,
                   textInputAction: TextInputAction.newline,
-                  textAlignVertical: TextAlignVertical.center, // ✅ center text
+                  textAlignVertical: TextAlignVertical.center,
                   style: TextStyle(
                     color: Colors.white,
-                    fontSize: effectiveFont, // ✅ bigger
+                    fontSize: effectiveFont,
                     height: 1.25,
                     fontWeight: FontWeight.w500,
                   ),
@@ -486,7 +464,7 @@ class _ChatInputBarState extends State<ChatInputBar>
                     hintText: l10n.typeMessageHint,
                     hintStyle: TextStyle(
                       color: Colors.white54,
-                      fontSize: effectiveFont, // ✅ same size as typing
+                      fontSize: effectiveFont,
                       height: 1.25,
                       fontWeight: FontWeight.w500,
                     ),
@@ -495,7 +473,7 @@ class _ChatInputBarState extends State<ChatInputBar>
                     isDense: true,
                     contentPadding: const EdgeInsets.symmetric(
                       horizontal: 16,
-                      vertical: 14, // ✅ slightly taller + balanced
+                      vertical: 14,
                     ),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(24),

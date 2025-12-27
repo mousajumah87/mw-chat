@@ -630,17 +630,52 @@ class _MwFriendsTabState extends State<MwFriendsTab>
   // ----------------------------
   String _normalizeQ(String s) => s.trim().toLowerCase();
 
+  /// ✅ Display name builder:
+  /// Uses firstName + lastName first, then displayName/fullName/username,
+  /// never uses email, and always returns a safe fallback.
+  String _displayNameFromData(AppLocalizations l10n, Map<String, dynamic> data, String userId) {
+    String clean(String? v) => (v ?? '').trim();
+
+    final first = clean(data['firstName'] as String?);
+    final last = clean(data['lastName'] as String?);
+
+    if (first.isNotEmpty && last.isNotEmpty) return '$first $last';
+    if (first.isNotEmpty) return first;
+    if (last.isNotEmpty) return last;
+
+    final displayName = clean(data['displayName'] as String?);
+    if (displayName.isNotEmpty) return displayName;
+
+    final fullName = clean(data['fullName'] as String?);
+    if (fullName.isNotEmpty) return fullName;
+
+    final username = clean(data['username'] as String?);
+    if (username.isNotEmpty) return username;
+
+    // last resort: anonymous label (do not show uid in production)
+    return l10n.unknownUser;
+  }
+
   bool _matchesSearch(Map<String, dynamic> data, String userId) {
     final q = _normalizeQ(_searchQuery);
     if (q.isEmpty) return true;
 
-    final String email = (data['email'] as String?) ?? '';
+    // ✅ Email removed from search for privacy
     final String displayName = (data['displayName'] as String?) ?? '';
     final String username = (data['username'] as String?) ?? '';
     final String fullName = (data['fullName'] as String?) ?? '';
+    final String firstName = (data['firstName'] as String?) ?? '';
+    final String lastName = (data['lastName'] as String?) ?? '';
 
-    final haystack =
-    <String>[userId, email, displayName, username, fullName].map(_normalizeQ).join(' ');
+    final haystack = <String>[
+      userId,
+      displayName,
+      username,
+      fullName,
+      firstName,
+      lastName,
+    ].map(_normalizeQ).join(' ');
+
     return haystack.contains(q);
   }
 
@@ -1243,7 +1278,9 @@ class _MwFriendsTabState extends State<MwFriendsTab>
       }) {
     final l10n = AppLocalizations.of(context)!;
 
-    final email = data['email'] as String? ?? l10n.unknownEmail;
+    // ✅ Email removed from UI completely
+    final String displayName = _displayNameFromData(l10n, data, userId);
+
     final legacyPublicUrl = (data['profileUrl'] as String?)?.trim();
     final privateUrl = _photoUrlCache[userId]?.trim();
 
@@ -1321,6 +1358,33 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     final roomId = buildRoomId(_currentUid, userId);
     final unreadCount = _unreadCache[roomId] ?? 0;
     final bool hasUnread = !isBlockedRelationship && unreadCount > 0;
+
+    // ✅ Prevent double tap / double push
+    final bool isBusy = _resettingRooms.contains(roomId);
+
+    Future<void> openChat() async {
+      if (!mounted) return;
+
+      // ✅ close keyboard (search, etc.)
+      FocusManager.instance.primaryFocus?.unfocus();
+
+      try {
+        if (!kIsWeb && (await Vibration.hasVibrator() ?? false)) {
+          Vibration.vibrate(duration: 40);
+        }
+      } catch (_) {}
+
+      if (!isBlockedRelationship) {
+        await _resetUnreadIfNeeded(roomId, unreadCount);
+      }
+
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).push(
+        MaterialPageRoute(
+          builder: (_) => ChatScreen(roomId: roomId, title: displayName),
+        ),
+      );
+    }
 
     Widget buildTrailing() {
       if (blockedByMe) {
@@ -1426,79 +1490,63 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     return AnimatedOpacity(
       duration: _tileAnim,
       opacity: isActive ? (isBlockedRelationship ? 0.75 : 1.0) : 0.5,
-      child: Card(
-        margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-        color: Colors.white.withOpacity(0.08),
-        elevation: hasUnread ? 5 : 1,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide(
-            color: hasUnread ? Colors.white.withOpacity(0.40) : Colors.white24,
+      child: AbsorbPointer(
+        absorbing: isBusy, // ✅ blocks double taps while we reset unread
+        child: Card(
+          margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          color: Colors.white.withOpacity(0.08),
+          elevation: hasUnread ? 5 : 1,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(
+              color: hasUnread ? Colors.white.withOpacity(0.40) : Colors.white24,
+            ),
           ),
-        ),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: canOpenChat
-              ? () async {
-            try {
-              if (!kIsWeb && (await Vibration.hasVibrator() ?? false)) {
-                Vibration.vibrate(duration: 40);
-              }
-            } catch (_) {}
-
-            if (!isBlockedRelationship) {
-              await _resetUnreadIfNeeded(roomId, unreadCount);
-            }
-
-            if (!mounted) return;
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => ChatScreen(roomId: roomId, title: email),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: canOpenChat ? openChat : null,
+            child: ListTile(
+              enabled: canOpenChat,
+              leading: _buildAvatar(
+                profileUrl: profileUrl,
+                avatarType: avatarType,
+                isOnline: isOnlineForDisplay,
+                hideRealAvatar: false,
               ),
-            );
-          }
-              : null,
-          child: ListTile(
-            enabled: canOpenChat,
-            leading: _buildAvatar(
-              profileUrl: profileUrl,
-              avatarType: avatarType,
-              isOnline: isOnlineForDisplay,
-              hideRealAvatar: false,
-            ),
-            title: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    email,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
+              title: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      displayName,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    overflow: TextOverflow.ellipsis,
                   ),
+                  if (!canViewProfile && !ChatFriendshipService.isFriends(friendStatus))
+                    const Padding(
+                      padding: EdgeInsetsDirectional.only(start: 8),
+                      child: Icon(
+                        Icons.visibility_off,
+                        size: 16,
+                        color: Colors.white38,
+                      ),
+                    ),
+                ],
+              ),
+              subtitle: Text(
+                subtitleText,
+                style: TextStyle(color: subtitleColor, fontSize: 12),
+              ),
+              trailing: AnimatedSwitcher(
+                duration: _trailingAnim,
+                transitionBuilder: (child, anim) => ScaleTransition(scale: anim, child: child),
+                child: KeyedSubtree(
+                  key: trailingKey,
+                  child: buildTrailing(),
                 ),
-                if (!canViewProfile && !ChatFriendshipService.isFriends(friendStatus))
-                  const Padding(
-                    padding: EdgeInsetsDirectional.only(start: 8),
-                    child: Icon(
-                      Icons.visibility_off,
-                      size: 16,
-                      color: Colors.white38,
-                    ),
-                  ),
-              ],
-            ),
-            subtitle: Text(
-              subtitleText,
-              style: TextStyle(color: subtitleColor, fontSize: 12),
-            ),
-            trailing: AnimatedSwitcher(
-              duration: _trailingAnim,
-              transitionBuilder: (child, anim) => ScaleTransition(scale: anim, child: child),
-              child: KeyedSubtree(
-                key: trailingKey,
-                child: buildTrailing(),
               ),
             ),
           ),
@@ -1506,6 +1554,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
       ),
     );
   }
+
 
   // ----------------------------
   // FRIENDS ONLY UI
@@ -1765,7 +1814,10 @@ class _MwFriendsTabState extends State<MwFriendsTab>
               child: InkWell(
                 borderRadius: BorderRadius.circular(16),
                 onTap: () {
-                  Navigator.of(context).push(
+                  // ✅ close keyboard / search focus first
+                  FocusManager.instance.primaryFocus?.unfocus();
+
+                  Navigator.of(context, rootNavigator: true).push(
                     MaterialPageRoute(
                       builder: (_) => MwFriendRequestsScreen(
                         currentUserId: _currentUid,
@@ -1952,9 +2004,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
                         Text(l10n.loading),
                       ],
                     )
-                        : Text(_mwUsersHasMore
-                        ? l10n.loadMore
-                        : (l10n.noSearchResults ?? 'No more users')),
+                        : Text(_mwUsersHasMore ? l10n.loadMore : (l10n.noSearchResults ?? 'No more users')),
                   ),
                 ),
               ),

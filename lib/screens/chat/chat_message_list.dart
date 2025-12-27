@@ -1,18 +1,19 @@
+// lib/screens/chat/chat_message_list.dart
 import 'dart:async';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
-import '../../widgets/chat/message_bubble.dart';
-import '../../utils/time_utils.dart';
-import '../../utils/chat_attachment_utils.dart';
 import '../../l10n/app_localizations.dart';
 import '../../theme/app_theme.dart';
-
+import '../../utils/chat_attachment_utils.dart';
+import '../../utils/time_utils.dart';
+import '../../widgets/chat/message_bubble.dart';
+import '../../widgets/chat/mw_reply_to.dart';
 import '../../widgets/safety/report_message_dialog.dart';
 import '../../widgets/ui/mw_feedback.dart';
-
-import 'chat_friendship_service.dart';
 import 'chat_screen_deletion.dart';
 
 class ChatMessageList extends StatefulWidget {
@@ -21,8 +22,13 @@ class ChatMessageList extends StatefulWidget {
   final String? otherUserId;
   final bool isBlocked;
 
-  /// ✅ extra padding to reserve space at the bottom (TypingIndicator + composer)
   final double bottomInset;
+
+  /// Reply callback (owned by ChatScreen)
+  final ValueChanged<MwReplyTo>? onReply;
+
+  /// Reactions writer (Firestore transaction in parent).
+  final Future<void> Function(String messageId, String emoji)? onReactionTapAsync;
 
   const ChatMessageList({
     super.key,
@@ -31,23 +37,17 @@ class ChatMessageList extends StatefulWidget {
     required this.otherUserId,
     this.isBlocked = false,
     this.bottomInset = 0,
+    this.onReply,
+    this.onReactionTapAsync,
   });
 
   @override
-  State<ChatMessageList> createState() => _ChatMessageListState();
+  State<ChatMessageList> createState() => ChatMessageListState();
 }
 
-class _ChatMessageListState extends State<ChatMessageList> {
-  Timer? _debounceTimer;
-  final Set<String> _seenMessagesCache = {};
-  String? _lastSeenScheduleKey;
-
-  String? _friendStatus;
-
-  StreamSubscription<String?>? _friendSub;
-  final ChatFriendshipService _friendship = ChatFriendshipService();
-
-  final ScrollController _scrollController = ScrollController();
+class ChatMessageListState extends State<ChatMessageList> {
+  final ItemScrollController _itemScrollController = ItemScrollController();
+  final ItemPositionsListener _positionsListener = ItemPositionsListener.create();
 
   final Map<String, DocumentSnapshot<Map<String, dynamic>>> _docMap = {};
   final Set<String> _pendingLocalRemovals = {};
@@ -62,13 +62,18 @@ class _ChatMessageListState extends State<ChatMessageList> {
   static const int _liveWindow = 40;
 
   int _gen = 0;
+  String? _flashMessageId;
+
+  bool _jumping = false;
+
+  VoidCallback? _positionsCb;
 
   @override
   void initState() {
     super.initState();
 
-    _listenFriendStatus();
-    _scrollController.addListener(_onScroll);
+    _positionsCb = _onPositionsChanged;
+    _positionsListener.itemPositions.addListener(_positionsCb!);
 
     if (!widget.isBlocked) {
       _startLiveListener();
@@ -85,9 +90,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
         oldWidget.otherUserId != widget.otherUserId;
     final blockedChanged = oldWidget.isBlocked != widget.isBlocked;
 
-    if (userChanged) _listenFriendStatus();
-
-    if (roomChanged || blockedChanged) {
+    if (roomChanged || userChanged || blockedChanged) {
       _resetAllState();
 
       if (widget.isBlocked) return;
@@ -99,11 +102,13 @@ class _ChatMessageListState extends State<ChatMessageList> {
 
   @override
   void dispose() {
-    _debounceTimer?.cancel();
-    _friendSub?.cancel();
     _liveSub?.cancel();
-    _scrollController.dispose();
-    _friendship.dispose();
+
+    final cb = _positionsCb;
+    if (cb != null) {
+      _positionsListener.itemPositions.removeListener(cb);
+    }
+
     super.dispose();
   }
 
@@ -129,40 +134,11 @@ class _ChatMessageListState extends State<ChatMessageList> {
     _isLoadingMore = false;
     _hasMore = true;
 
-    _seenMessagesCache.clear();
-    _lastSeenScheduleKey = null;
+    _flashMessageId = null;
+    _jumping = false;
 
     if (mounted) setState(() {});
   }
-
-  // ================= FRIEND STATUS LISTENER =================
-
-  void _listenFriendStatus() {
-    _friendSub?.cancel();
-
-    final myId = widget.currentUserId;
-    final otherId = widget.otherUserId;
-
-    if (myId.isEmpty || otherId == null || otherId.isEmpty) {
-      if (mounted) setState(() => _friendStatus = null);
-      return;
-    }
-
-    _friendSub = _friendship
-        .friendshipStatusStream(me: myId, other: otherId)
-        .listen(
-          (status) {
-        if (!mounted) return;
-        setState(() => _friendStatus = status);
-      },
-      onError: (e, st) {
-        debugPrint('[ChatMessageList] _listenFriendStatus error: $e\n$st');
-        if (mounted) setState(() => _friendStatus = null);
-      },
-    );
-  }
-
-  // ================= TIMESTAMP HELPERS =================
 
   Timestamp _effectiveTs(DocumentSnapshot<Map<String, dynamic>> d) {
     final data = d.data();
@@ -175,7 +151,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
     final v3 = data?['localCreatedAt'];
     if (v3 is Timestamp) return v3;
 
-    return Timestamp.now();
+    return Timestamp.fromMillisecondsSinceEpoch(0);
   }
 
   String _formatDocTime(DocumentSnapshot<Map<String, dynamic>> d) {
@@ -192,90 +168,40 @@ class _ChatMessageListState extends State<ChatMessageList> {
     return !hiddenFor.contains(widget.currentUserId);
   }
 
-  // ================= SEEN HANDLING =================
-
-  void _scheduleMarkMessagesAsSeen(
-      List<DocumentSnapshot<Map<String, dynamic>>> docs) {
-    if (widget.isBlocked) return;
-    if (widget.currentUserId.isEmpty) return;
-    if (widget.otherUserId == null || widget.otherUserId!.isEmpty) return;
-
-    final ids = docs.take(25).map((d) => d.id).join('|');
-    final key = '${widget.roomId}:${widget.currentUserId}:$ids';
-    if (_lastSeenScheduleKey == key) return;
-    _lastSeenScheduleKey = key;
-
-    _debounceTimer?.cancel();
-    _debounceTimer = Timer(const Duration(milliseconds: 300), () {
-      _markMessagesAsSeen(docs);
-    });
+  List<DocumentSnapshot<Map<String, dynamic>>> _computeVisibleDocs() {
+    final list = _docMap.values.where(_isVisibleForMe).toList()
+      ..sort((a, b) => _effectiveTs(b).compareTo(_effectiveTs(a)));
+    return list;
   }
 
-  Future<void> _markMessagesAsSeen(
-      List<DocumentSnapshot<Map<String, dynamic>>> docs) async {
-    if (widget.isBlocked) return;
-    if (widget.currentUserId.isEmpty) return;
-    if (widget.otherUserId == null || widget.otherUserId!.isEmpty) return;
-
-    final batch = FirebaseFirestore.instance.batch();
-    bool hasUpdates = false;
-
-    for (final doc in docs) {
-      final data = doc.data() ?? const <String, dynamic>{};
-      final senderId = data['senderId'] as String?;
-      final seenBy =
-          (data['seenBy'] as List?)?.cast<String>() ?? const <String>[];
-
-      if (senderId == null ||
-          senderId == widget.currentUserId ||
-          _seenMessagesCache.contains(doc.id)) {
-        continue;
-      }
-
-      if (!seenBy.contains(widget.currentUserId)) {
-        batch.update(doc.reference, {
-          'seenBy': FieldValue.arrayUnion([widget.currentUserId]),
-        });
-        hasUpdates = true;
-        _seenMessagesCache.add(doc.id);
-      }
+  int _indexOfMessageId(
+      List<DocumentSnapshot<Map<String, dynamic>>> docs,
+      String messageId,
+      ) {
+    for (int i = 0; i < docs.length; i++) {
+      if (docs[i].id == messageId) return i;
     }
-
-    if (hasUpdates) {
-      try {
-        await batch.commit();
-      } catch (e, st) {
-        debugPrint('[ChatMessageList] seenBy batch commit error: $e\n$st');
-      }
-    }
-
-    try {
-      await FirebaseFirestore.instance
-          .collection('privateChats')
-          .doc(widget.roomId)
-          .set(
-        {
-          'unreadCounts': {widget.currentUserId: 0},
-        },
-        SetOptions(merge: true),
-      );
-    } on FirebaseException catch (e) {
-      debugPrint(
-          '⚠️ Failed to reset unread count on seen: ${e.code} ${e.message}');
-    }
+    return -1;
   }
 
-  // ================= PAGINATION =================
-
-  void _onScroll() {
-    if (!_scrollController.hasClients) return;
+  void _onPositionsChanged() {
+    if (!mounted) return;
+    if (widget.isBlocked) return;
     if (_isLoadingMore || !_hasMore) return;
-    if (widget.isBlocked) return;
 
-    final max = _scrollController.position.maxScrollExtent;
-    final offset = _scrollController.offset;
+    final positions = _positionsListener.itemPositions.value;
+    if (positions.isEmpty) return;
 
-    if (offset >= (max - 300)) {
+    int maxVisible = -1;
+    for (final p in positions) {
+      if (p.index > maxVisible) maxVisible = p.index;
+    }
+
+    final visibleDocs = _computeVisibleDocs();
+    final itemCount = visibleDocs.length + (_isLoadingMore ? 1 : 0);
+    if (itemCount <= 0) return;
+
+    if (maxVisible >= itemCount - 6) {
       _loadMoreOlder();
     }
   }
@@ -327,8 +253,6 @@ class _ChatMessageListState extends State<ChatMessageList> {
     }
   }
 
-  // ================= LIVE LISTENER =================
-
   void _startLiveListener() {
     _liveSub?.cancel();
     final int myGen = _gen;
@@ -360,14 +284,12 @@ class _ChatMessageListState extends State<ChatMessageList> {
           final doc = change.doc;
 
           if (_pendingLocalRemovals.contains(doc.id) &&
-              change.type != DocumentChangeType.added) {
-            if (change.type == DocumentChangeType.removed) {
-              _pendingLocalRemovals.remove(doc.id);
-            }
+              change.type != DocumentChangeType.removed) {
             continue;
           }
 
           if (change.type == DocumentChangeType.removed) {
+            _pendingLocalRemovals.remove(doc.id);
             _docMap.remove(doc.id);
             continue;
           }
@@ -383,9 +305,151 @@ class _ChatMessageListState extends State<ChatMessageList> {
     );
   }
 
-  // ================= DELETE / REPORT MENU =================
+  Future<void> scrollToLatest({bool animated = true}) async {
+    if (!mounted) return;
+    if (!_itemScrollController.isAttached) return;
 
-  Future<void> _onMessageLongPress(
+    if (!animated) {
+      _itemScrollController.jumpTo(index: 0);
+      return;
+    }
+
+    await _itemScrollController.scrollTo(
+      index: 0,
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.easeOutCubic,
+      alignment: 0.0,
+    );
+  }
+
+  Future<void> _flash(String messageId) async {
+    if (!mounted) return;
+    setState(() => _flashMessageId = messageId);
+    await Future.delayed(const Duration(milliseconds: 650));
+    if (!mounted) return;
+    if (_flashMessageId == messageId) {
+      setState(() => _flashMessageId = null);
+    }
+  }
+
+  Future<void> _jumpToIndex(int index) async {
+    if (!_itemScrollController.isAttached) return;
+
+    _itemScrollController.jumpTo(index: index);
+
+    await Future<void>.delayed(const Duration(milliseconds: 16));
+    if (!mounted) return;
+
+    if (_itemScrollController.isAttached) {
+      await _itemScrollController.scrollTo(
+        index: index,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        alignment: 0.35,
+      );
+    }
+  }
+
+  Future<DocumentSnapshot<Map<String, dynamic>>?> _fetchMessageDoc(
+      String messageId) async {
+    try {
+      final ref = FirebaseFirestore.instance
+          .collection('privateChats')
+          .doc(widget.roomId)
+          .collection('messages')
+          .doc(messageId);
+
+      final snap = await ref.get();
+      if (!snap.exists) return null;
+      return snap;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _jumpToMessage(String messageId) async {
+    final id = messageId.trim();
+    if (id.isEmpty) return;
+    if (_jumping) return;
+    if (widget.isBlocked) return;
+
+    _jumping = true;
+    final int myGen = _gen;
+
+    try {
+      {
+        final visibleDocs = _computeVisibleDocs();
+        final idx = _indexOfMessageId(visibleDocs, id);
+        if (idx >= 0) {
+          await _jumpToIndex(idx);
+          await _flash(id);
+          return;
+        }
+      }
+
+      final target = await _fetchMessageDoc(id);
+      if (!mounted || myGen != _gen) return;
+
+      if (target == null) {
+        final l10n = AppLocalizations.of(context)!;
+        await MwFeedback.show(
+          context,
+          message: l10n.originalMessageNotFound ?? 'Original message not found',
+        );
+        return;
+      }
+
+      final targetTs = _effectiveTs(target);
+
+      const int maxLoads = 10;
+      for (int i = 0; i < maxLoads; i++) {
+        if (!mounted || myGen != _gen) return;
+
+        final visibleDocs = _computeVisibleDocs();
+        final idxNow = _indexOfMessageId(visibleDocs, id);
+        if (idxNow >= 0) {
+          await _jumpToIndex(idxNow);
+          await _flash(id);
+          return;
+        }
+
+        if (!_hasMore) break;
+
+        final oldest = _oldestDoc;
+        final oldestTs = oldest == null ? null : _effectiveTs(oldest);
+
+        final stillNewerThanTarget =
+        oldestTs == null ? true : oldestTs.compareTo(targetTs) > 0;
+
+        if (stillNewerThanTarget) {
+          await _loadMoreOlder();
+          if (!mounted || myGen != _gen) return;
+          continue;
+        }
+
+        await _loadMoreOlder();
+        if (!mounted || myGen != _gen) return;
+      }
+
+      final finalDocs = _computeVisibleDocs();
+      final finalIdx = _indexOfMessageId(finalDocs, id);
+      if (finalIdx >= 0) {
+        await _jumpToIndex(finalIdx);
+        await _flash(id);
+        return;
+      }
+
+      final l10n = AppLocalizations.of(context)!;
+      await MwFeedback.show(
+        context,
+        message: l10n.originalMessageNotFound ?? 'Original message not found',
+      );
+    } finally {
+      _jumping = false;
+    }
+  }
+
+  Future<void> _openActionsMenu(
       BuildContext context,
       DocumentSnapshot<Map<String, dynamic>> messageDoc,
       bool isMe,
@@ -419,19 +483,17 @@ class _ChatMessageListState extends State<ChatMessageList> {
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
+
               ListTile(
                 leading: const Icon(Icons.delete_outline, color: kErrorColor),
                 title: Text(l10n.deleteMessageTitle, style: titleStyle),
-                onTap: () =>
-                    Navigator.of(sheetContext).pop(_MessageAction.delete),
+                onTap: () => Navigator.of(sheetContext).pop(_MessageAction.delete),
               ),
               ListTile(
-                leading: Icon(Icons.flag_outlined,
-                    color: kPrimaryGold.withOpacity(0.95)),
+                leading: Icon(Icons.flag_outlined, color: kPrimaryGold.withOpacity(0.95)),
                 title: Text(l10n.reportMessageTitle, style: titleStyle),
-                onTap: () =>
-                    Navigator.of(sheetContext).pop(_MessageAction.report),
+                onTap: () => Navigator.of(sheetContext).pop(_MessageAction.report),
               ),
               const SizedBox(height: 4),
             ],
@@ -442,7 +504,25 @@ class _ChatMessageListState extends State<ChatMessageList> {
 
     if (selected == null) return;
 
+    if (selected == _MessageAction.reply) {
+      final data = messageDoc.data() ?? const <String, dynamic>{};
+      final fallbackType = (data['type'] ?? 'text').toString();
+      final reply =
+      MwReplyTo.fromMessageDoc(doc: messageDoc, fallbackType: fallbackType);
+
+      widget.onReply?.call(reply);
+      // await MwFeedback.show(
+      //   context,
+      //   message: l10n.replyingToMessage ?? 'Replying…',
+      // );
+      return;
+    }
+
     if (selected == _MessageAction.delete) {
+      _pendingLocalRemovals.add(messageDoc.id);
+      _docMap.remove(messageDoc.id);
+      if (mounted) setState(() {});
+
       try {
         await ChatScreenDeletion.confirmAndDeleteMessage(
           context: context,
@@ -451,8 +531,13 @@ class _ChatMessageListState extends State<ChatMessageList> {
           currentUserId: widget.currentUserId,
           otherUserId: widget.otherUserId,
         );
+        await _toastSuccess(l10n.messageDeletedSuccess);
       } catch (e, st) {
         debugPrint('[ChatMessageList] confirmAndDeleteMessage failed: $e\n$st');
+
+        _pendingLocalRemovals.remove(messageDoc.id);
+        if (mounted) setState(() {});
+
         await _toastError(l10n.deleteMessageFailed);
       }
       return;
@@ -468,19 +553,13 @@ class _ChatMessageListState extends State<ChatMessageList> {
     }
   }
 
-  // ================= UI =================
-
   Widget _buildOverlayMessage(String text) {
     final style = Theme.of(context).textTheme.bodyMedium?.copyWith(
       color: kTextPrimary,
       fontSize: 16,
       fontWeight: FontWeight.w600,
-      shadows: [
-        const Shadow(
-          color: Colors.black54,
-          offset: Offset(0, 1),
-          blurRadius: 4,
-        ),
+      shadows: const [
+        Shadow(color: Colors.black54, offset: Offset(0, 1), blurRadius: 4),
       ],
     );
 
@@ -489,13 +568,7 @@ class _ChatMessageListState extends State<ChatMessageList> {
       padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + widget.bottomInset),
       children: [
         const SizedBox(height: 80),
-        Center(
-          child: Text(
-            text,
-            textAlign: TextAlign.center,
-            style: style,
-          ),
-        ),
+        Center(child: Text(text, textAlign: TextAlign.center, style: style)),
       ],
     );
   }
@@ -508,22 +581,13 @@ class _ChatMessageListState extends State<ChatMessageList> {
       return _buildOverlayMessage(l10n.userBlockedInfo);
     }
 
-    final visibleDocs = _docMap.values.where(_isVisibleForMe).toList()
-      ..sort((a, b) => _effectiveTs(b).compareTo(_effectiveTs(a)));
-
-    if (visibleDocs.isNotEmpty) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _scheduleMarkMessagesAsSeen(visibleDocs);
-      });
-    }
+    final visibleDocs = _computeVisibleDocs();
 
     final listPadding =
     EdgeInsets.fromLTRB(12, 12, 12, 12 + widget.bottomInset);
 
     if (visibleDocs.isEmpty) {
       return ListView(
-        controller: _scrollController,
         reverse: true,
         padding: listPadding,
         children: [
@@ -550,80 +614,163 @@ class _ChatMessageListState extends State<ChatMessageList> {
       );
     }
 
-    final extraItems = <Widget>[];
-    if (_isLoadingMore) {
-      extraItems.add(
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Center(
-            child: SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
+    final bool showLoadingItem = _isLoadingMore;
     final maxWidth = MediaQuery.of(context).size.width * 0.7;
+    final int itemCount = visibleDocs.length + (showLoadingItem ? 1 : 0);
 
-    return ListView.builder(
-      controller: _scrollController,
+    final bool swipeReplyEnabled =
+        widget.onReply != null && !widget.isBlocked;
+
+    return ScrollablePositionedList.builder(
+      itemScrollController: _itemScrollController,
+      itemPositionsListener: _positionsListener,
       reverse: true,
       padding: listPadding,
-      itemCount: visibleDocs.length + extraItems.length,
+      itemCount: itemCount,
       itemBuilder: (context, index) {
-        if (index < visibleDocs.length) {
-          final doc = visibleDocs[index];
-          final data = doc.data() ?? const <String, dynamic>{};
-
-          final senderId = data['senderId'] as String?;
-          final isMe = senderId == widget.currentUserId;
-
-          final seenBy =
-              (data['seenBy'] as List?)?.cast<String>() ?? const <String>[];
-
-          final att = ChatAttachmentUtils.normalizeAttachment(data);
-          final displayText =
-          ChatAttachmentUtils.displayTextForMessage(data['text'], att);
-
-          return RepaintBoundary(
-            key: ValueKey(doc.id),
-            child: Align(
-              alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-              child: GestureDetector(
-                onLongPress: () => _onMessageLongPress(context, doc, isMe),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(maxWidth: maxWidth),
-                  child: MessageBubble(
-                    text: displayText,
-                    timeLabel: _formatDocTime(doc),
-                    isMe: isMe,
-                    isSeen: widget.otherUserId != null &&
-                        widget.otherUserId!.isNotEmpty &&
-                        seenBy.contains(widget.otherUserId),
-                    fileUrl: att.url,
-                    fileName: ChatAttachmentUtils.uiFileNameForAttachment(att),
-                    fileType: att.type,
-                  ),
+        if (index >= visibleDocs.length) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: Center(
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Theme.of(context).colorScheme.primary,
                 ),
               ),
             ),
           );
         }
 
-        final extraIndex = index - visibleDocs.length;
-        return extraItems[extraIndex];
+        final doc = visibleDocs[index];
+        final data = doc.data() ?? const <String, dynamic>{};
+
+        final senderId = data['senderId'] as String?;
+        final isMe = senderId == widget.currentUserId;
+
+        final seenBy =
+            (data['seenBy'] as List?)?.cast<String>() ?? const <String>[];
+
+        final att = ChatAttachmentUtils.normalizeAttachment(data);
+        final displayText =
+        ChatAttachmentUtils.displayTextForMessage(data['text'], att);
+
+        final replyTo = (data['replyTo'] is Map)
+            ? (data['replyTo'] as Map).cast<String, dynamic>()
+            : null;
+
+        final reactions = (data['reactions'] is Map)
+            ? (data['reactions'] as Map).cast<String, dynamic>()
+            : null;
+
+        final bool flash = _flashMessageId == doc.id;
+
+        // ✅ Build reply snapshot ONCE per row (used by swipe + menu)
+        final fallbackType = (data['type'] ?? 'text').toString();
+        final replySnap =
+        MwReplyTo.fromMessageDoc(doc: doc, fallbackType: fallbackType);
+
+        void handleSwipeReply() {
+          if (!swipeReplyEnabled) return;
+          widget.onReply?.call(replySnap);
+          // unawaited(
+          //   MwFeedback.show(
+          //     context,
+          //     message: l10n.replyingToMessage ?? 'Replying…',
+          //   ),
+          // );
+        }
+
+        final bubble = ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: maxWidth),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 260),
+            curve: Curves.easeOut,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: flash
+                  ? [
+                BoxShadow(
+                  color: kPrimaryGold.withOpacity(0.22),
+                  blurRadius: 18,
+                  spreadRadius: 2,
+                ),
+              ]
+                  : const [],
+            ),
+            child: MessageBubble(
+              text: displayText,
+              timeLabel: _formatDocTime(doc),
+              isMe: isMe,
+              isSeen: widget.otherUserId != null &&
+                  widget.otherUserId!.isNotEmpty &&
+                  seenBy.contains(widget.otherUserId),
+              fileUrl: att.url,
+              fileName: ChatAttachmentUtils.uiFileNameForAttachment(att),
+              fileType: att.type,
+              replyTo: replyTo,
+              currentUserId: widget.currentUserId,
+              reactions: reactions,
+              onReactionTapAsync: widget.onReactionTapAsync == null
+                  ? null
+                  : (emoji) => widget.onReactionTapAsync!(doc.id, emoji),
+              onReplyPreviewTap: (targetId) => _jumpToMessage(targetId),
+
+              // ✅ NEW: swipe-to-reply
+              swipeReplyEnabled: swipeReplyEnabled,
+              onSwipeReply: handleSwipeReply,
+            ),
+          ),
+        );
+
+        return RepaintBoundary(
+          key: ValueKey(doc.id),
+          child: Align(
+            alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (isMe) ...[
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    iconSize: 18,
+                    padding: const EdgeInsets.only(right: 4),
+                    icon: Icon(
+                      Icons.more_horiz,
+                      color: Colors.white.withOpacity(0.55),
+                    ),
+                    onPressed: () => _openActionsMenu(context, doc, isMe),
+                    tooltip: l10n.more ?? 'More',
+                  ),
+                  bubble,
+                ] else ...[
+                  bubble,
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    iconSize: 18,
+                    padding: const EdgeInsets.only(left: 4),
+                    icon: Icon(
+                      Icons.more_horiz,
+                      color: Colors.white.withOpacity(0.55),
+                    ),
+                    onPressed: () => _openActionsMenu(context, doc, isMe),
+                    tooltip: l10n.more ?? 'More',
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
       },
     );
   }
 }
 
 enum _MessageAction {
+  reply,
   delete,
   report,
 }

@@ -53,7 +53,16 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
   /// Optimistic removal so UI updates instantly
   final Set<String> _optimisticallyRemoved = <String>{};
 
+  /// Prevent double-taps / duplicate batch commits
+  final Set<String> _actionInFlight = <String>{};
+
   static const String _fieldFriendRequestsLastSeenAt = 'friendRequestsLastSeenAt';
+
+  // ✅ NEW: cache user docs so we don't build a StreamBuilder per row
+  final Map<String, StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>> _userSubs =
+  <String, StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>>{};
+  final Map<String, Map<String, dynamic>> _userCache = <String, Map<String, dynamic>>{};
+  final Set<String> _missingUsers = <String>{};
 
   @override
   void initState() {
@@ -97,13 +106,69 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
         });
 
         setState(() => _incomingDocs = docs);
+
+        // ✅ Keep user doc subscriptions in sync with incoming list
+        _syncUserSubscriptions(docs.map((d) => d.id).toSet());
       },
       onError: (e, st) {
         debugPrint('[MwFriendRequestsScreen] incoming stream error: $e');
         if (!mounted) return;
         setState(() => _incomingDocs = const []);
+        _syncUserSubscriptions(<String>{});
       },
     );
+  }
+
+  void _syncUserSubscriptions(Set<String> targetIds) {
+    targetIds.remove(widget.currentUserId);
+
+    // Cancel removed
+    final existing = _userSubs.keys.toList(growable: false);
+    for (final uid in existing) {
+      if (!targetIds.contains(uid)) {
+        _userSubs[uid]?.cancel();
+        _userSubs.remove(uid);
+        _userCache.remove(uid);
+        _missingUsers.remove(uid);
+      }
+    }
+
+    // Add new
+    for (final uid in targetIds) {
+      if (_userSubs.containsKey(uid)) continue;
+
+      final sub = FirebaseFirestore.instance.collection('users').doc(uid).snapshots().listen(
+            (snap) {
+          if (!mounted) return;
+
+          final data = snap.data();
+          if (data == null) {
+            // deleted/missing
+            final bool wasMissing = _missingUsers.contains(uid);
+            _missingUsers.add(uid);
+            _userCache.remove(uid);
+            if (!wasMissing) setState(() {});
+            return;
+          }
+
+          final bool wasMissing = _missingUsers.remove(uid);
+          _userCache[uid] = data;
+
+          // Only rebuild when needed (missing->available or first time)
+          if (wasMissing || !_userCache.containsKey(uid)) {
+            if (mounted) setState(() {});
+          } else {
+            // small updates: keep it lightweight
+            if (mounted) setState(() {});
+          }
+        },
+        onError: (e, st) {
+          debugPrint('[MwFriendRequestsScreen] user doc stream error ($uid): $e');
+        },
+      );
+
+      _userSubs[uid] = sub;
+    }
   }
 
   Future<void> _markRequestsSeen() async {
@@ -123,6 +188,13 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
   @override
   void dispose() {
     _incomingSub?.cancel();
+    for (final s in _userSubs.values) {
+      s.cancel();
+    }
+    _userSubs.clear();
+    _userCache.clear();
+    _missingUsers.clear();
+
     _searchController.dispose();
     super.dispose();
   }
@@ -132,10 +204,7 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
   // ----------------------------
 
   /// ✅ A warmer, more “MW glass” ring (less harsh than solid kPrimaryGold)
-  Color _mwRingColorForTheme() {
-    // slightly deeper gold reads better on dark glass cards
-    return kGoldDeep.withOpacity(0.85);
-  }
+  Color _mwRingColorForTheme() => kGoldDeep.withOpacity(0.85);
 
   // ----------------------------
   // Search
@@ -161,51 +230,76 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
     );
   }
 
+  String _normalizeQ(String s) => s.trim().toLowerCase();
+
   bool _matchesLocalSearch(Map<String, dynamic> data, String userId) {
-    final q = _searchQuery.trim().toLowerCase();
+    final q = _normalizeQ(_searchQuery);
     if (q.isEmpty) return true;
 
-    final email = (data['email'] as String?) ?? '';
+    // ✅ Email removed from search for privacy
     final displayName = (data['displayName'] as String?) ?? '';
     final username = (data['username'] as String?) ?? '';
     final fullName = (data['fullName'] as String?) ?? '';
+    final firstName = (data['firstName'] as String?) ?? '';
+    final lastName = (data['lastName'] as String?) ?? '';
 
-    final haystack = [
+    final haystack = <String>[
       userId,
-      email,
       displayName,
       username,
       fullName,
-    ].join(' ').toLowerCase();
+      firstName,
+      lastName,
+    ].map(_normalizeQ).join(' ');
 
     return haystack.contains(q);
   }
 
   // ----------------------------
-  // Actions (optimistic)
+  // Actions (optimistic + guarded)
   // ----------------------------
 
   Future<void> _acceptAndRemove(String uid) async {
     if (uid.isEmpty) return;
+    if (_actionInFlight.contains(uid)) return;
 
-    setState(() => _optimisticallyRemoved.add(uid));
+    FocusManager.instance.primaryFocus?.unfocus();
+
+    setState(() {
+      _actionInFlight.add(uid);
+      _optimisticallyRemoved.add(uid);
+    });
+
     try {
       await widget.acceptFriend(uid);
     } catch (_) {
       if (!mounted) return;
       setState(() => _optimisticallyRemoved.remove(uid));
+    } finally {
+      if (!mounted) return;
+      setState(() => _actionInFlight.remove(uid));
     }
   }
 
   Future<void> _declineAndRemove(String uid) async {
     if (uid.isEmpty) return;
+    if (_actionInFlight.contains(uid)) return;
 
-    setState(() => _optimisticallyRemoved.add(uid));
+    FocusManager.instance.primaryFocus?.unfocus();
+
+    setState(() {
+      _actionInFlight.add(uid);
+      _optimisticallyRemoved.add(uid);
+    });
+
     try {
       await widget.declineFriend(uid);
     } catch (_) {
       if (!mounted) return;
       setState(() => _optimisticallyRemoved.remove(uid));
+    } finally {
+      if (!mounted) return;
+      setState(() => _actionInFlight.remove(uid));
     }
   }
 
@@ -290,23 +384,30 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
     );
   }
 
-  String _primaryLabel(Map<String, dynamic> data, String fallback) {
-    final displayName = (data['displayName'] as String?)?.trim() ?? '';
-    final fullName = (data['fullName'] as String?)?.trim() ?? '';
-    final username = (data['username'] as String?)?.trim() ?? '';
-    final email = (data['email'] as String?)?.trim() ?? '';
+  String _primaryLabel(AppLocalizations l10n, Map<String, dynamic> data, String fallback) {
+    String clean(String? v) => (v ?? '').trim();
 
+    final first = clean(data['firstName'] as String?);
+    final last = clean(data['lastName'] as String?);
+    if (first.isNotEmpty && last.isNotEmpty) return '$first $last';
+    if (first.isNotEmpty) return first;
+    if (last.isNotEmpty) return last;
+
+    final displayName = clean(data['displayName'] as String?);
     if (displayName.isNotEmpty) return displayName;
+
+    final fullName = clean(data['fullName'] as String?);
     if (fullName.isNotEmpty) return fullName;
+
+    final username = clean(data['username'] as String?);
     if (username.isNotEmpty) return username;
-    if (email.isNotEmpty) return email;
-    return fallback;
+
+    return fallback.isNotEmpty ? fallback : l10n.unknownUser;
   }
 
   String _secondaryLabel(Map<String, dynamic> data) {
-    final email = (data['email'] as String?)?.trim() ?? '';
+    // ✅ Email removed from UI
     final username = (data['username'] as String?)?.trim() ?? '';
-    if (email.isNotEmpty) return email;
     if (username.isNotEmpty) return '@$username';
     return '';
   }
@@ -346,7 +447,6 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
       final v = data[k];
       if (v is String && v.trim().isNotEmpty) return v.trim();
     }
-    // ✅ safe fallback
     return 'bear';
   }
 
@@ -357,30 +457,37 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
     required Color bg,
     required Color fg,
     String? tooltip,
+    bool disabled = false,
   }) {
     const double size = 40;
 
-    final child = Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(999),
-        child: Ink(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            color: bg,
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white.withOpacity(0.10)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.25),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
+    final child = Opacity(
+      opacity: disabled ? 0.55 : 1.0,
+      child: AbsorbPointer(
+        absorbing: disabled,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(999),
+            child: Ink(
+              width: size,
+              height: size,
+              decoration: BoxDecoration(
+                color: bg,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white.withOpacity(0.10)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.25),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
-            ],
+              child: Icon(icon, size: 18, color: fg),
+            ),
           ),
-          child: Icon(icon, size: 18, color: fg),
         ),
       ),
     );
@@ -397,12 +504,13 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
       }) {
     final l10n = AppLocalizations.of(context)!;
 
-    final title = _primaryLabel(data, uid);
+    final title = _primaryLabel(l10n, data, uid);
     final subtitle = _secondaryLabel(data);
     final profileUrl = _extractProfileUrl(data);
     final avatarType = _extractAvatarType(data);
 
     final border = Colors.white.withOpacity(0.12);
+    final busy = _actionInFlight.contains(uid);
 
     return Container(
       margin: const EdgeInsets.fromLTRB(10, 8, 10, 8),
@@ -429,7 +537,6 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
             showOnlineDot: false,
             showOnlineGlow: false,
 
-            // ✅ nicer glass read than pure white
             backgroundColor: kSurfaceAltColor.withOpacity(0.85),
           ),
           const SizedBox(width: 12),
@@ -470,6 +577,7 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
                 onTap: () => _declineAndRemove(uid),
                 bg: Colors.white.withOpacity(0.06),
                 fg: Colors.redAccent.withOpacity(0.95),
+                disabled: busy,
               ),
               const SizedBox(width: 10),
               _actionCircle(
@@ -479,6 +587,7 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
                 onTap: () => _acceptAndRemove(uid),
                 bg: kPrimaryGold,
                 fg: Colors.black,
+                disabled: busy,
               ),
             ],
           ),
@@ -500,6 +609,7 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
     }
 
     final border = Colors.white.withOpacity(0.12);
+    final busy = _actionInFlight.contains(uid);
 
     return Container(
       margin: const EdgeInsets.fromLTRB(10, 8, 10, 8),
@@ -529,7 +639,7 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  (l10n.deletedAccount ?? 'Deleted account'),
+                  (l10n.deletedAccount ?? l10n.unknownUser),
                   style: Theme.of(context).textTheme.titleSmall?.copyWith(
                     color: Colors.white,
                     fontWeight: FontWeight.w700,
@@ -539,8 +649,7 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  (l10n.accountUnavailableSubtitle ??
-                      'This account is no longer available.'),
+                  (l10n.accountUnavailableSubtitle ?? 'This account is no longer available.'),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Colors.white70,
                     height: 1.2,
@@ -552,8 +661,6 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
             ),
           ),
           const SizedBox(width: 10),
-
-          // Only action: remove/decline (cleans both sides)
           _actionCircle(
             context: context,
             icon: Icons.delete_outline_rounded,
@@ -561,6 +668,7 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
             onTap: () => _declineAndRemove(uid),
             bg: Colors.white.withOpacity(0.06),
             fg: Colors.redAccent.withOpacity(0.95),
+            disabled: busy,
           ),
         ],
       ),
@@ -576,6 +684,10 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
     final incoming = _incomingDocs
         .where((d) => d.id != widget.currentUserId)
         .where((d) => !_optimisticallyRemoved.contains(d.id))
+        .where((d) {
+      final rawStatus = (d.data()['status'] as String?) ?? '';
+      return rawStatus.toLowerCase() == 'incoming';
+    })
         .toList(growable: false);
 
     return Scaffold(
@@ -588,10 +700,13 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
           l10n.friendRequestsTitle,
           style: const TextStyle(fontWeight: FontWeight.w600),
         ),
-        leading: Navigator.of(context).canPop()
+        leading: Navigator.of(context, rootNavigator: true).canPop()
             ? IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-          onPressed: () => Navigator.of(context).maybePop(),
+          onPressed: () {
+            FocusManager.instance.primaryFocus?.unfocus();
+            Navigator.of(context, rootNavigator: true).maybePop();
+          },
         )
             : null,
       ),
@@ -617,8 +732,7 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
                       decoration: BoxDecoration(
                         color: Colors.black.withOpacity(0.65),
                         borderRadius: BorderRadius.circular(24),
-                        border:
-                        Border.all(color: Colors.white.withOpacity(0.08)),
+                        border: Border.all(color: Colors.white.withOpacity(0.08)),
                       ),
                       child: Column(
                         children: [
@@ -632,61 +746,39 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
                               child: Center(
                                 child: Text(
                                   l10n.friendRequestsEmpty,
-                                  style:
-                                  const TextStyle(color: Colors.white70),
+                                  style: const TextStyle(color: Colors.white70),
                                 ),
                               ),
                             )
                           else
                             Expanded(
                               child: ListView.builder(
-                                padding:
-                                const EdgeInsets.fromLTRB(4, 6, 4, 16),
+                                padding: const EdgeInsets.fromLTRB(4, 6, 4, 16),
                                 physics: const BouncingScrollPhysics(),
                                 itemCount: incoming.length,
                                 itemBuilder: (context, index) {
                                   final doc = incoming[index];
                                   final uid = doc.id;
 
-                                  final rawStatus =
-                                      (doc.data()['status'] as String?) ?? '';
-                                  if (rawStatus.toLowerCase() != 'incoming') {
+                                  // ✅ No StreamBuilder here — use cached data from subscriptions
+                                  if (_missingUsers.contains(uid)) {
+                                    return _buildDeletedAccountTile(context, uid: uid);
+                                  }
+
+                                  final data = _userCache[uid];
+                                  if (data == null) {
+                                    // still loading
                                     return const SizedBox.shrink();
                                   }
 
-                                  return StreamBuilder<
-                                      DocumentSnapshot<Map<String, dynamic>>>(
-                                    stream: FirebaseFirestore.instance
-                                        .collection('users')
-                                        .doc(uid)
-                                        .snapshots(),
-                                    builder: (context, snap) {
-                                      if (snap.hasError) {
-                                        return const SizedBox.shrink();
-                                      }
-                                      if (!snap.hasData) {
-                                        return const SizedBox.shrink();
-                                      }
+                                  if (!_matchesLocalSearch(data, uid)) {
+                                    return const SizedBox.shrink();
+                                  }
 
-                                      final data = snap.data!.data();
-                                      if (data == null) {
-                                        // ✅ Account deleted (profile doc missing)
-                                        return _buildDeletedAccountTile(
-                                          context,
-                                          uid: uid,
-                                        );
-                                      }
-
-                                      if (!_matchesLocalSearch(data, uid)) {
-                                        return const SizedBox.shrink();
-                                      }
-
-                                      return _buildRequestTile(
-                                        context,
-                                        data: data,
-                                        uid: uid,
-                                      );
-                                    },
+                                  return _buildRequestTile(
+                                    context,
+                                    data: data,
+                                    uid: uid,
                                   );
                                 },
                               ),

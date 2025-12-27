@@ -1,3 +1,4 @@
+// lib/screens/profile/widgets/profile_privacy_tile.dart
 import 'package:flutter/material.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../theme/app_theme.dart';
@@ -37,11 +38,13 @@ class ProfilePrivacyTile extends StatelessWidget {
             border: Border.all(color: kBorderColor),
           ),
           child: ListTile(
-            leading: const Icon(Icons.privacy_tip_outlined, color: Colors.white70),
-            title: Text(l10n.onlineStatusTitle, style: const TextStyle(color: Colors.white)),
-            subtitle: Text(
-              l10n.onlineStatusSubtitle,
-              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            leading:
+            const Icon(Icons.privacy_tip_outlined, color: Colors.white70),
+            title: const Text('Privacy & visibility',
+                style: TextStyle(color: Colors.white)),
+            subtitle: const Text(
+              'Online status, profile visibility, email visibility',
+              style: TextStyle(color: Colors.white70, fontSize: 12),
             ),
             trailing: Icon(
               isRtl ? Icons.chevron_left : Icons.chevron_right,

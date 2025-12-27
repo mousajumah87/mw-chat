@@ -1,5 +1,3 @@
-// lib/screens/chat/chat_media_service.dart
-
 import 'dart:async';
 import 'dart:typed_data';
 
@@ -146,13 +144,10 @@ class ChatMediaService {
     );
     if (picked == null) return null;
 
-    // Keep as plain filesystem path (no dart:io in this file)
     final normalizedPath = picked.path.startsWith('file://')
         ? picked.path.replaceFirst('file://', '')
         : picked.path;
 
-    // Try bytes (may fail / be large), but path is enough because sendFileMessage
-    // will read bytes from path on IO platforms.
     Uint8List bytes = Uint8List(0);
     try {
       bytes = await picked.readAsBytes();
@@ -169,7 +164,6 @@ class ChatMediaService {
   }
 
   Future<PlatformFile?> pickFileFromDevice() async {
-    // withData:true ensures Web works (bytes available).
     final result = await FilePicker.platform.pickFiles(
       allowMultiple: false,
       withData: true,
@@ -236,6 +230,9 @@ class ChatMediaService {
         String? forcedType,
         String? forcedContentType,
         void Function(double progress)? onProgress,
+
+        /// ✅ extra fields merged into message doc (used for Reply, etc.)
+        Map<String, dynamic>? extraMessageFields,
       }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return null;
@@ -300,7 +297,6 @@ class ChatMediaService {
       if (hasBytes) {
         uploadTask = storageRef.putData(bytes!, metadata);
       } else {
-        // ✅ IO platforms only: read bytes from the path using XFile (web-safe compile)
         final normalizedPath = rawPath!.startsWith('file://')
             ? rawPath.replaceFirst('file://', '')
             : rawPath;
@@ -345,7 +341,7 @@ class ChatMediaService {
 
       final batch = FirebaseFirestore.instance.batch();
 
-      batch.set(msgRef, {
+      final msgPayload = <String, dynamic>{
         'type': msgType,
         'text': '',
         'fileName': file.name,
@@ -360,7 +356,18 @@ class ChatMediaService {
         'createdAt': FieldValue.serverTimestamp(),
         'clientCreatedAt': Timestamp.now(),
         'seenBy': <String>[],
-      });
+      };
+
+      if (extraMessageFields != null && extraMessageFields.isNotEmpty) {
+        // Do not allow override of critical fields
+        extraMessageFields.forEach((k, v) {
+          if (!msgPayload.containsKey(k)) {
+            msgPayload[k] = v;
+          }
+        });
+      }
+
+      batch.set(msgRef, msgPayload);
 
       batch.set(
         roomRef,

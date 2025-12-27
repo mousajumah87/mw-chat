@@ -655,6 +655,9 @@ class AppLocalizationsAr extends AppLocalizations {
   String get deletedAccount => 'حساب محذوف';
 
   @override
+  String get messageDeletedSuccess => 'تم حذف الرسالة بنجاح';
+
+  @override
   String get deletingAccount => 'جاري حذف الحساب...';
 
   @override
@@ -1157,4 +1160,19 @@ class AppLocalizationsAr extends AppLocalizations {
 
   @override
   String get tapIconToOpen => 'اضغط على أيقونة للفتح';
+
+  @override
+  String get reply => 'رد';
+
+  @override
+  String get more => 'المزيد';
+
+  @override
+  String get replyingToMessage => 'جارٍ الرد على الرسالة';
+
+  @override
+  String get replying => 'الرد على';
+
+  @override
+  String get originalMessageNotFound => 'لم يتم العثور على الرسالة الأصلية';
 }

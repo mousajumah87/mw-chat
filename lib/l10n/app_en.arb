@@ -274,6 +274,7 @@
     "deleteMessageFailed": "Failed to delete message",
     "deletedForMe": "Deleted for me",
     "deletedAccount": "Deleted account",
+    "messageDeletedSuccess": "Message deleted successfully",
 
     "deletingAccount": "Deleting account...",
     "deleteMyAccount": "Delete my account",
@@ -474,7 +475,13 @@
     "unknownUser": "Unknown user",
     "accountUnavailableSubtitle": "This account is no longer available.",
     "invitePlatformTitle": "Invite via platform",
-    "tapIconToOpen": "Tap an icon to open"
+    "tapIconToOpen": "Tap an icon to open",
+    "reply": "Reply",
+    "more": "More",
+    "replyingToMessage": "Replying to message",
+    "replying": "Replying",
+    "originalMessageNotFound": "Original message not found"
+
 
 
 }

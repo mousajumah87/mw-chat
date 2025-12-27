@@ -1,13 +1,11 @@
 // lib/widgets/ui/mw_swipe_back.dart
 //
-// MW Chat – Premium Snapchat-like swipe back
-// - Works globally (even when wrapped in MaterialApp.builder) via navigatorKey
-// - Interactive “rubber-band” progress (like iOS native)
-// - Subtle MW-glass edge glow + dim + parallax (modern, premium)
-// - Safe with vertical scrolling (only arms at edge + direction + dominance check)
-// - Web friendly (mouse drag). Trackpad “browser back” is browser-controlled.
-
-import 'dart:math' as math;
+// MW Chat – MW Signature SwipeBack (edge-only gesture)
+// ✅ Clean production version (NO logs, NO debug overlay)
+// ✅ Works globally with MaterialApp.builder + navigatorKey
+// ✅ Edge-only participation (doesn't steal scrolls)
+// ✅ RTL/LTR aware
+// ✅ MW “signature” gold shimmer + tiny MW bubble hint (optional)
 
 import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform;
 import 'package:flutter/gestures.dart';
@@ -20,52 +18,46 @@ class MwSwipeBack extends StatefulWidget {
   /// If provided, runs instead of Navigator.pop.
   final VoidCallback? onExit;
 
-  /// ✅ Required when wrapping whole app in MaterialApp.builder.
+  /// Required when wrapping whole app in MaterialApp.builder.
   final GlobalKey<NavigatorState>? navigatorKey;
 
-  /// Disable swipe at runtime (e.g., when emoji panel open).
   final bool enabled;
 
   /// Edge width area to arm the gesture.
   final double edgeWidth;
 
-  /// Distance needed to trigger exit (if velocity not enough).
   final double minDistance;
-
-  /// Velocity needed to trigger exit (fling).
   final double minVelocity;
 
-  /// If true, when navigator cannot pop, navigate to [fallbackToHomeRoute].
   final bool goHomeIfCantPop;
-
-  /// Named route for home (e.g. "/home").
   final String fallbackToHomeRoute;
 
-  /// Only allow back direction:
-  /// LTR: left->right, RTL: right->left.
   final bool onlySwipeFromStartToEnd;
 
-  /// Small premium feedback on successful back swipe (mobile only).
+  /// Haptic on arm + pop
   final bool hapticOnPop;
 
-  /// Enable premium visuals (glass glow + dim + parallax).
+  /// Animated parallax + dim
   final bool animatedHint;
-
-  /// Max pixels content translates while dragging (parallax).
   final double hintMaxSlide;
-
-  /// Max overlay dim while dragging.
   final double hintMaxDim;
 
-  /// Edge glow max opacity.
+  /// Edge glow
   final double edgeGlowMaxOpacity;
 
-  /// How much progress needed to pop (0..1 of screen width).
+  /// 0..1 progress threshold that can also pop (feels iOS-like).
   final double popProgressThreshold;
 
-  /// If true, allow on iOS even when there is the native Cupertino back gesture.
-  /// Usually safe. If you ever see conflict on iOS, set false.
+  /// Keep true (recommended). If you ever see conflict with Cupertino back, set false.
   final bool allowOnIOS;
+
+  /// ✅ MW Signature “brand moment”
+  /// - tiny MW bubble hint + gold shimmer near edge while swiping
+  final bool mwSignatureHint;
+
+  /// Customize MW signature intensity
+  final double mwSignatureMaxOpacity; // 0..1
+  final double mwBubbleMaxScale; // e.g. 1.0..1.15
 
   const MwSwipeBack({
     super.key,
@@ -73,7 +65,7 @@ class MwSwipeBack extends StatefulWidget {
     this.onExit,
     this.navigatorKey,
     this.enabled = true,
-    this.edgeWidth = 22,
+    this.edgeWidth = 32,
     this.minDistance = 70,
     this.minVelocity = 700,
     this.goHomeIfCantPop = false,
@@ -81,41 +73,69 @@ class MwSwipeBack extends StatefulWidget {
     this.onlySwipeFromStartToEnd = true,
     this.hapticOnPop = true,
     this.animatedHint = true,
-    this.hintMaxSlide = 26,
-    this.hintMaxDim = 0.06,
+    this.hintMaxSlide = 30,
+    this.hintMaxDim = 0.07,
     this.edgeGlowMaxOpacity = 0.22,
-    this.popProgressThreshold = 0.28,
+    this.popProgressThreshold = 0.26,
     this.allowOnIOS = true,
+    this.mwSignatureHint = true,
+    this.mwSignatureMaxOpacity = 0.85,
+    this.mwBubbleMaxScale = 1.10,
   });
 
   @override
   State<MwSwipeBack> createState() => _MwSwipeBackState();
 }
 
+/// HorizontalDrag recognizer that ONLY competes if DOWN is near the start edge.
+/// This is the key to making it work with scrollables on iOS/Android.
+class _EdgeHorizontalDragGestureRecognizer extends HorizontalDragGestureRecognizer {
+  _EdgeHorizontalDragGestureRecognizer({
+    required this.getBox,
+    required this.getIsRtl,
+    required this.getEdgeWidth,
+    Object? debugOwner,
+  }) : super(debugOwner: debugOwner);
+
+  final RenderBox? Function() getBox;
+  final bool Function() getIsRtl;
+  final double Function() getEdgeWidth;
+
+  @override
+  void addPointer(PointerDownEvent event) {
+    final box = getBox();
+    if (box == null || !box.hasSize) return;
+
+    final local = box.globalToLocal(event.position);
+    final w = box.size.width;
+    final edge = getEdgeWidth();
+
+    final isRtl = getIsRtl();
+    final nearEdge = !isRtl ? (local.dx <= edge) : (local.dx >= (w - edge));
+
+    if (!nearEdge) return; // don't compete
+    super.addPointer(event);
+  }
+}
+
 class _MwSwipeBackState extends State<MwSwipeBack> with SingleTickerProviderStateMixin {
-  // Raw gesture accumulation
+  final GlobalKey _boxKey = GlobalKey();
+
   double _dx = 0;
   double _dy = 0;
   bool _armed = false;
 
-  // Track start position to arm reliably (web + mixed pointer devices)
-  Offset? _downLocalPos;
-
-  // Progress 0..1 for interactive drag
-  double _progress = 0;
-
-  // Parallax offset (signed)
+  double _progress = 0; // 0..1
   double _hintOffset = 0;
 
   late final AnimationController _settleCtrl;
   late Animation<double> _settleAnim;
 
   bool get _isRtl => Directionality.of(context) == TextDirection.rtl;
+  bool get _isIOS => defaultTargetPlatform == TargetPlatform.iOS;
 
-  bool get _isIOS {
-    // Avoid importing dart:io (web). Use platform enum.
-    return defaultTargetPlatform == TargetPlatform.iOS;
-  }
+  // small “arm haptic” to make it feel premium (avoid spam)
+  bool _didArmHaptic = false;
 
   @override
   void initState() {
@@ -123,7 +143,7 @@ class _MwSwipeBackState extends State<MwSwipeBack> with SingleTickerProviderStat
 
     _settleCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 190),
+      duration: const Duration(milliseconds: 180),
     );
 
     _settleAnim = Tween<double>(begin: 0, end: 0).animate(
@@ -143,53 +163,33 @@ class _MwSwipeBackState extends State<MwSwipeBack> with SingleTickerProviderStat
     super.dispose();
   }
 
-  void _reset() {
+  void _resetGesture() {
     _dx = 0;
     _dy = 0;
     _armed = false;
-    _downLocalPos = null;
+    _didArmHaptic = false;
+  }
+
+  RenderBox? _getRootBox() {
+    final ctx = _boxKey.currentContext;
+    final ro = ctx?.findRenderObject();
+    if (ro is RenderBox && ro.hasSize) return ro;
+    return null;
   }
 
   double _progressToHintOffset(double p) {
     if (!widget.animatedHint) return 0;
     final maxSlide = widget.hintMaxSlide <= 0 ? 1.0 : widget.hintMaxSlide;
     final sign = _isRtl ? -1.0 : 1.0;
-
-    // Rubber-band feel: fast at first, slower later
     final eased = Curves.easeOutCubic.transform(p.clamp(0.0, 1.0));
     return sign * (maxSlide * eased).clamp(0.0, maxSlide);
   }
 
-  double _applyRubberBand(double raw, double dimension) {
-    // Rubber-band formula inspired by iOS scroll feel.
-    // raw: absolute drag distance
-    // dimension: typically screen width
-    final d = dimension <= 0 ? 1.0 : dimension;
-    final x = raw / d;
-    // Softer resistance as it grows
-    final r = (1 - (1 / (x * 6 + 1)));
-    return r.clamp(0.0, 1.0) * d;
-  }
-
-  bool _isNearStartEdge(Offset localPosition, double width) {
-    if (!widget.enabled) return false;
-
-    if (!_isRtl) {
-      return localPosition.dx <= widget.edgeWidth;
-    }
-    return localPosition.dx >= (width - widget.edgeWidth);
-  }
-
-  bool _isBackDirection(double dx) {
-    // LTR back: +dx. RTL back: -dx.
-    if (!_isRtl) return dx > 0;
-    return dx < 0;
-  }
+  bool _isBackDirection(double dx) => _isRtl ? dx < 0 : dx > 0;
 
   NavigatorState? _resolveNavigator() {
     final keyed = widget.navigatorKey?.currentState;
     if (keyed != null) return keyed;
-
     return Navigator.maybeOf(context) ?? Navigator.maybeOf(context, rootNavigator: true);
   }
 
@@ -225,7 +225,7 @@ class _MwSwipeBackState extends State<MwSwipeBack> with SingleTickerProviderStat
       ..forward();
   }
 
-  void _cancelGesture({bool animate = true}) {
+  void _cancel({bool animate = true}) {
     if (animate) {
       _animateTo(0);
     } else {
@@ -233,13 +233,15 @@ class _MwSwipeBackState extends State<MwSwipeBack> with SingleTickerProviderStat
       _progress = 0;
       _hintOffset = 0;
     }
-    _reset();
+    _resetGesture();
   }
 
   @override
   Widget build(BuildContext context) {
-    // Optional: if you ever see iOS conflict with native back swipe, flip allowOnIOS=false.
     if (_isIOS && !widget.allowOnIOS) return widget.child;
+
+    final minDistance = kIsWeb ? widget.minDistance * 0.75 : widget.minDistance;
+    final minVelocity = kIsWeb ? widget.minVelocity * 0.55 : widget.minVelocity;
 
     final supportedDevices = <PointerDeviceKind>{
       PointerDeviceKind.touch,
@@ -249,43 +251,52 @@ class _MwSwipeBackState extends State<MwSwipeBack> with SingleTickerProviderStat
       PointerDeviceKind.unknown,
     };
 
-    // Web: often lower fling velocity
-    final minDistance = kIsWeb ? (widget.minDistance * 0.75) : widget.minDistance;
-    final minVelocity = kIsWeb ? (widget.minVelocity * 0.55) : widget.minVelocity;
-
     return LayoutBuilder(
       builder: (context, constraints) {
-        final width = constraints.maxWidth;
+        final width = constraints.maxWidth <= 0 ? 1.0 : constraints.maxWidth;
 
-        // Derived visuals
         final p = _progress.clamp(0.0, 1.0);
-        final overlayOpacity = widget.animatedHint ? (widget.hintMaxDim.clamp(0.0, 0.25) * p) : 0.0;
-        final glowOpacity = widget.animatedHint ? (widget.edgeGlowMaxOpacity.clamp(0.0, 0.45) * p) : 0.0;
+        final overlayOpacity =
+        widget.animatedHint ? (widget.hintMaxDim.clamp(0.0, 0.25) * p) : 0.0;
+        final glowOpacity =
+        widget.animatedHint ? (widget.edgeGlowMaxOpacity.clamp(0.0, 0.45) * p) : 0.0;
 
         final sign = _isRtl ? -1.0 : 1.0;
+        final glowWidth =
+        (widget.edgeWidth + 26 * Curves.easeOut.transform(p)).clamp(
+          widget.edgeWidth,
+          widget.edgeWidth + 30,
+        );
 
-        // Edge glow strip width grows slightly with progress (premium)
-        final glowWidth = (widget.edgeWidth + 26 * Curves.easeOut.transform(p)).clamp(widget.edgeWidth, widget.edgeWidth + 28);
+        // MW signature intensity (gold shimmer + bubble)
+        final mwSigOn = widget.mwSignatureHint;
+        final mwSigOpacity = (mwSigOn ? widget.mwSignatureMaxOpacity : 0.0).clamp(0.0, 1.0);
+        final mwShimmerOpacity = (mwSigOpacity * Curves.easeOut.transform((p * 1.05).clamp(0.0, 1.0)))
+            .clamp(0.0, mwSigOpacity);
+        final mwBubbleOpacity = (mwSigOpacity * Curves.easeOut.transform((p * 1.2).clamp(0.0, 1.0)))
+            .clamp(0.0, mwSigOpacity);
+        final mwBubbleScale = (1.0 + (widget.mwBubbleMaxScale - 1.0) * Curves.easeOut.transform(p))
+            .clamp(1.0, widget.mwBubbleMaxScale);
 
-        Widget content = widget.child;
+        Widget content = KeyedSubtree(
+          key: _boxKey,
+          child: widget.child,
+        );
 
         if (widget.animatedHint) {
           content = Stack(
             fit: StackFit.passthrough,
             children: [
-              // Parallax translate
               Transform.translate(
                 offset: Offset(_hintOffset, 0),
-                child: widget.child,
+                child: content,
               ),
-
-              // Subtle dim
               if (overlayOpacity > 0)
                 IgnorePointer(
                   child: Container(color: Colors.black.withOpacity(overlayOpacity)),
                 ),
 
-              // Edge glow (gold-ish by using white with opacity, it will pick up theme behind glass)
+              // Base white edge glow
               if (glowOpacity > 0)
                 IgnorePointer(
                   child: Align(
@@ -306,7 +317,29 @@ class _MwSwipeBackState extends State<MwSwipeBack> with SingleTickerProviderStat
                   ),
                 ),
 
-              // Tiny chevron hint (only when user started the gesture)
+              // ✅ MW Signature gold shimmer (subtle, premium)
+              if (mwSigOn && mwShimmerOpacity > 0.0)
+                IgnorePointer(
+                  child: Align(
+                    alignment: _isRtl ? Alignment.centerRight : Alignment.centerLeft,
+                    child: Container(
+                      width: (glowWidth + 14).clamp(glowWidth, glowWidth + 22),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: _isRtl ? Alignment.centerRight : Alignment.centerLeft,
+                          end: _isRtl ? Alignment.centerLeft : Alignment.centerRight,
+                          colors: [
+                            const Color(0xFFFFD54A).withOpacity(mwShimmerOpacity * 0.55),
+                            const Color(0xFFFFB300).withOpacity(mwShimmerOpacity * 0.35),
+                            Colors.transparent,
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
+              // Chevron (direction aware)
               if (p > 0.02)
                 IgnorePointer(
                   child: Align(
@@ -320,10 +353,34 @@ class _MwSwipeBackState extends State<MwSwipeBack> with SingleTickerProviderStat
                         opacity: (p * 1.2).clamp(0.0, 1.0),
                         child: Transform.translate(
                           offset: Offset(sign * (6 + 10 * p), 0),
-                          child: const Icon(
-                            Icons.chevron_left_rounded,
+                          child: Icon(
+                            _isRtl ? Icons.chevron_right_rounded : Icons.chevron_left_rounded,
                             size: 26,
                             color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
+              // ✅ MW tiny bubble hint (brand moment)
+              if (mwSigOn && mwBubbleOpacity > 0.0)
+                IgnorePointer(
+                  child: Align(
+                    alignment: _isRtl ? Alignment.centerRight : Alignment.centerLeft,
+                    child: Padding(
+                      padding: EdgeInsets.only(
+                        left: _isRtl ? 0 : 10,
+                        right: _isRtl ? 10 : 0,
+                      ),
+                      child: Transform.translate(
+                        offset: Offset(sign * (6 + 18 * p), -22),
+                        child: Opacity(
+                          opacity: mwBubbleOpacity,
+                          child: Transform.scale(
+                            scale: mwBubbleScale,
+                            child: _MwSignatureBubble(rtl: _isRtl),
                           ),
                         ),
                       ),
@@ -334,119 +391,156 @@ class _MwSwipeBackState extends State<MwSwipeBack> with SingleTickerProviderStat
           );
         }
 
-        return Listener(
+        return RawGestureDetector(
           behavior: HitTestBehavior.translucent,
-          onPointerDown: (e) {
-            _downLocalPos = e.localPosition;
-          },
-          child: RawGestureDetector(
-            behavior: HitTestBehavior.translucent,
-            gestures: <Type, GestureRecognizerFactory>{
-              HorizontalDragGestureRecognizer:
-              GestureRecognizerFactoryWithHandlers<HorizontalDragGestureRecognizer>(
-                    () => HorizontalDragGestureRecognizer(debugOwner: this),
-                    (HorizontalDragGestureRecognizer instance) {
-                  instance
-                    ..supportedDevices = supportedDevices
-                    ..dragStartBehavior = DragStartBehavior.down
-                    ..onStart = (d) {
-                      _settleCtrl.stop();
-                      _reset();
-
-                      final startPos = _downLocalPos ?? d.localPosition;
-                      if (!_isNearStartEdge(startPos, width)) return;
-
-                      _armed = true;
-                      _progress = 0;
-                      _hintOffset = 0;
-                    }
-                    ..onUpdate = (d) {
-                      if (!_armed) return;
-
-                      _dx += d.delta.dx;
-                      _dy += d.delta.dy;
-
-                      // Direction guard (ignore wrong direction early)
-                      if (widget.onlySwipeFromStartToEnd && !_isBackDirection(_dx)) {
-                        // If they swiped opposite direction, cancel quickly
-                        _cancelGesture(animate: true);
-                        return;
-                      }
-
-                      // Vertical scroll guard: if user is mostly vertical, cancel to avoid conflicts
-                      final absDx = _dx.abs();
-                      final absDy = _dy.abs();
-                      if (absDy > absDx * 0.90 && absDy > 6) {
-                        _cancelGesture(animate: true);
-                        return;
-                      }
-
-                      // Compute interactive progress with rubber band
-                      final raw = absDx;
-                      final resisted = _applyRubberBand(raw, width);
-                      final nextProgress = (resisted / width).clamp(0.0, 1.0);
-
-                      if (nextProgress != _progress && mounted) {
-                        setState(() {
-                          _progress = nextProgress;
-                          _hintOffset = _progressToHintOffset(_progress);
-                        });
-                      }
-                    }
-                    ..onEnd = (d) async {
-                      if (!_armed) return;
-                      _armed = false;
-
-                      final absDx = _dx.abs();
-                      final absDy = _dy.abs();
-
-                      // If vertical dominated near the end, cancel
-                      if (absDy > absDx * 0.85) {
-                        _cancelGesture(animate: true);
-                        return;
-                      }
-
-                      // Velocity + distance checks
-                      final vx = d.velocity.pixelsPerSecond.dx;
-                      final vxIsBack = _isBackDirection(vx);
-
-                      final enoughDistance = absDx >= minDistance;
-                      final enoughVelocity = vxIsBack && vx.abs() >= minVelocity;
-
-                      // Also use progress threshold for “iOS-like” feel
-                      final enoughProgress = _progress >= widget.popProgressThreshold;
-
-                      if (!(enoughDistance || enoughVelocity || enoughProgress)) {
-                        _cancelGesture(animate: true);
-                        return;
-                      }
-
-                      // Snap visuals to 1 quickly before pop (feels crisp)
-                      if (widget.animatedHint) {
-                        // fast settle to 1
-                        _settleCtrl.duration = const Duration(milliseconds: 120);
-                        _animateTo(1);
-                        // restore duration
-                        _settleCtrl.duration = const Duration(milliseconds: 190);
-                      }
-
-                      await _performExit();
-
-                      // Reset visuals (in case route didn’t pop)
-                      if (mounted) {
-                        _cancelGesture(animate: false);
-                      }
-                    }
-                    ..onCancel = () {
-                      _cancelGesture(animate: true);
-                    };
-                },
+          gestures: <Type, GestureRecognizerFactory>{
+            _EdgeHorizontalDragGestureRecognizer:
+            GestureRecognizerFactoryWithHandlers<_EdgeHorizontalDragGestureRecognizer>(
+                  () => _EdgeHorizontalDragGestureRecognizer(
+                debugOwner: this,
+                getBox: _getRootBox,
+                getIsRtl: () => _isRtl,
+                getEdgeWidth: () => widget.enabled ? widget.edgeWidth : 0,
               ),
-            },
-            child: content,
-          ),
+                  (_EdgeHorizontalDragGestureRecognizer instance) {
+                instance
+                  ..supportedDevices = supportedDevices
+                  ..dragStartBehavior = DragStartBehavior.down
+                  ..onStart = (_) {
+                    if (!widget.enabled) return;
+
+                    _settleCtrl.stop();
+                    _resetGesture();
+
+                    _armed = true;
+                    _progress = 0;
+                    _hintOffset = 0;
+
+                    // Premium: tiny haptic once when gesture arms
+                    if (widget.hapticOnPop && !kIsWeb && !_didArmHaptic) {
+                      _didArmHaptic = true;
+                      HapticFeedback.lightImpact();
+                    }
+                  }
+                  ..onUpdate = (d) {
+                    if (!_armed) return;
+
+                    _dx += d.delta.dx;
+                    _dy += d.delta.dy;
+
+                    // Direction guard
+                    if (widget.onlySwipeFromStartToEnd && !_isBackDirection(_dx)) {
+                      _cancel(animate: true);
+                      return;
+                    }
+
+                    // Vertical dominance guard (don’t break scrolling)
+                    final absDx = _dx.abs();
+                    final absDy = _dy.abs();
+                    if (absDy > absDx * 0.90 && absDy > 6) {
+                      _cancel(animate: true);
+                      return;
+                    }
+
+                    // Compute progress
+                    final next = (absDx / width).clamp(0.0, 1.0);
+
+                    if (next != _progress && mounted) {
+                      setState(() {
+                        _progress = next;
+                        _hintOffset = _progressToHintOffset(_progress);
+                      });
+                    }
+                  }
+                  ..onEnd = (d) async {
+                    if (!_armed) return;
+                    _armed = false;
+
+                    final absDx = _dx.abs();
+                    final absDy = _dy.abs();
+
+                    if (absDy > absDx * 0.85) {
+                      _cancel(animate: true);
+                      return;
+                    }
+
+                    final vx = d.velocity.pixelsPerSecond.dx;
+                    final vxIsBack = _isBackDirection(vx);
+
+                    final enoughDistance = absDx >= minDistance;
+                    final enoughVelocity = vxIsBack && vx.abs() >= minVelocity;
+                    final enoughProgress = _progress >= widget.popProgressThreshold;
+
+                    if (!(enoughDistance || enoughVelocity || enoughProgress)) {
+                      _cancel(animate: true);
+                      return;
+                    }
+
+                    if (widget.animatedHint) {
+                      _settleCtrl.duration = const Duration(milliseconds: 110);
+                      _animateTo(1);
+                      _settleCtrl.duration = const Duration(milliseconds: 180);
+                    }
+
+                    await _performExit();
+
+                    if (mounted) _cancel(animate: false);
+                  }
+                  ..onCancel = () {
+                    _cancel(animate: true);
+                  };
+              },
+            ),
+          },
+          child: content,
         );
       },
+    );
+  }
+}
+
+class _MwSignatureBubble extends StatelessWidget {
+  final bool rtl;
+  const _MwSignatureBubble({required this.rtl});
+
+  @override
+  Widget build(BuildContext context) {
+    // Tiny “MW” bubble — feels like a signature without being loud.
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.40),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withOpacity(0.16)),
+        boxShadow: [
+          BoxShadow(
+            blurRadius: 16,
+            spreadRadius: 0,
+            color: const Color(0xFFFFD54A).withOpacity(0.12),
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            rtl ? Icons.arrow_forward_ios_rounded : Icons.arrow_back_ios_new_rounded,
+            size: 12,
+            color: Colors.white.withOpacity(0.85),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            'MW',
+            style: TextStyle(
+              color: const Color(0xFFFFD54A).withOpacity(0.95),
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.6,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

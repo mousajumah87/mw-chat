@@ -295,6 +295,7 @@
     "deleteAccountFailedRetry": "فشل حذف الحساب. يرجى المحاولة مرة أخرى.",
     "accountDeletedSuccessfully": "تم حذف الحساب بنجاح",
     "remove": "حذف",
+    "messageDeletedSuccess": "تم حذف الرسالة بنجاح",
 
 
     "termsTitle": "شروط الاستخدام",
@@ -468,7 +469,15 @@
     "unknownUser": "مستخدم غير معروف",
     "accountUnavailableSubtitle": "هذا الحساب لم يعد متاحًا.",
     "invitePlatformTitle": "الدعوة عبر المنصات",
-    "tapIconToOpen": "اضغط على أيقونة للفتح"
+    "tapIconToOpen": "اضغط على أيقونة للفتح",
+    "reply": "رد",
+    "more": "المزيد",
+    "replyingToMessage": "جارٍ الرد على الرسالة",
+    "replying": "الرد على",
+    "originalMessageNotFound": "لم يتم العثور على الرسالة الأصلية"
+
+
+
 
 
 }

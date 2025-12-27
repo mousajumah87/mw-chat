@@ -27,8 +27,6 @@ import 'widgets/profile_legal_section.dart';
 import 'widgets/profile_name_section.dart';
 import 'widgets/profile_privacy_tile.dart';
 
-
-
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
@@ -53,6 +51,9 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   // 'none' = user did not specify gender (optional)
   String _gender = 'none';
+
+  // ✅ Email display (read-only)
+  String? _email;
 
   late AnimationController _avatarController;
   late Animation<double> _scale;
@@ -99,11 +100,31 @@ class _ProfileScreenState extends State<ProfileScreen>
     if (user == null) return;
 
     try {
-      final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
       final data = doc.data() ?? {};
+
+      // ✅ Prefer auth email, fallback to Firestore
+      final authEmail = (user.email ?? '').trim();
+      final dbEmail = ((data['email'] ?? '') as String).trim();
+      final effectiveEmail = authEmail.isNotEmpty ? authEmail : (dbEmail.isNotEmpty ? dbEmail : null);
+
+      // ✅ If auth has email and DB doesn't, store it (merge)
+      if (authEmail.isNotEmpty && dbEmail.isEmpty) {
+        FirebaseFirestore.instance.collection('users').doc(user.uid).set(
+          {'email': authEmail},
+          SetOptions(merge: true),
+        ).catchError((e) {
+          debugPrint('[ProfileScreen] failed to persist email: $e');
+        });
+      }
 
       if (!mounted) return;
       setState(() {
+        _email = effectiveEmail;
+
         _currentUrl = (data['profileUrl'] ?? '').toString();
         _avatarType = (data['avatarType'] ?? 'bear').toString();
         _firstNameCtrl.text = (data['firstName'] ?? '').toString();
@@ -244,7 +265,8 @@ class _ProfileScreenState extends State<ProfileScreen>
 
     try {
       String? url = _currentUrl;
-      final ref = FirebaseStorage.instance.ref().child('profile_pics/${user.uid}');
+      final ref =
+      FirebaseStorage.instance.ref().child('profile_pics/${user.uid}');
       final metadata = SettableMetadata(contentType: 'image/jpeg');
 
       if (_imageFile != null || _imageBytes != null) {
@@ -262,7 +284,9 @@ class _ProfileScreenState extends State<ProfileScreen>
 
         task.snapshotEvents.listen((event) {
           final double progress = event.totalBytes > 0
-              ? (event.bytesTransferred / event.totalBytes).clamp(0.0, 1.0).toDouble()
+              ? (event.bytesTransferred / event.totalBytes)
+              .clamp(0.0, 1.0)
+              .toDouble()
               : 0.0;
           if (mounted) setState(() => _uploadProgress = progress);
         });
@@ -273,11 +297,15 @@ class _ProfileScreenState extends State<ProfileScreen>
         url = await ref.getDownloadURL();
       }
 
+      final authEmail = (user.email ?? '').trim();
       final Map<String, dynamic> data = {
         'profileUrl': url ?? '',
         'avatarType': _avatarType,
         'firstName': _firstNameCtrl.text.trim(),
         'lastName': _lastNameCtrl.text.trim(),
+
+        // ✅ Keep email in DB if available (read-only UI)
+        if (authEmail.isNotEmpty) 'email': authEmail,
       };
 
       if (_birthday != null) {
@@ -299,6 +327,13 @@ class _ProfileScreenState extends State<ProfileScreen>
 
       if (url != null && url.isNotEmpty) {
         await user.updatePhotoURL(url);
+      }
+
+      // ✅ Refresh local email after save (in case provider updated)
+      if (mounted) {
+        setState(() {
+          _email = authEmail.isNotEmpty ? authEmail : _email;
+        });
       }
 
       if (!mounted) return;
@@ -451,6 +486,80 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
+  // ✅ Read-only email tile (modern, copy button)
+  Widget _buildEmailTile(AppLocalizations l10n) {
+    final email = (_email ?? '').trim();
+
+    final providers = FirebaseAuth.instance.currentUser?.providerData
+        .map((p) => p.providerId)
+        .toList() ??
+        const <String>[];
+
+    final hasEmail = email.isNotEmpty;
+
+    final subtitle = hasEmail
+        ? email
+        : (providers.contains('phone')
+        ? l10n.authError // replace with a proper l10n string if you have one
+        : l10n.authError);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: kSurfaceAltColor.withOpacity(0.35),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withOpacity(0.10)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.email_outlined, color: kTextPrimary.withOpacity(0.9)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  // If you have l10n.emailLabel use it; otherwise keep "Email"
+                  'Email',
+                  style: TextStyle(
+                    color: kTextSecondary.withOpacity(0.95),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  hasEmail ? subtitle : 'No email on this account',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: kTextPrimary.withOpacity(0.95),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (hasEmail)
+            IconButton(
+              tooltip: 'Copy',
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: email));
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Copied')),
+                );
+              },
+              icon: Icon(Icons.copy_rounded,
+                  color: kPrimaryGold.withOpacity(0.95)),
+            ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
@@ -468,8 +577,8 @@ class _ProfileScreenState extends State<ProfileScreen>
 
     final bool hasNetwork = (_currentUrl?.trim().isNotEmpty ?? false);
     const heroTag = 'my_profile_photo';
-    final ImageProvider? tapProvider = localProvider ??
-        (hasNetwork ? CachedNetworkImageProvider(_currentUrl!) : null);
+    final ImageProvider? tapProvider =
+        localProvider ?? (hasNetwork ? CachedNetworkImageProvider(_currentUrl!) : null);
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -545,6 +654,10 @@ class _ProfileScreenState extends State<ProfileScreen>
                                   lastNameCtrl: _lastNameCtrl,
                                 ),
 
+                                // ✅ Email shown here (read-only)
+                                const SizedBox(height: 14),
+                                _buildEmailTile(l10n),
+
                                 const SizedBox(height: 20),
 
                                 ProfileBirthdaySection(
@@ -590,7 +703,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                                   ),
                                 ),
 
-                                // ✅ Privacy section added here
                                 ProfilePrivacyTile(
                                   onTap: () {
                                     Navigator.of(context).push(

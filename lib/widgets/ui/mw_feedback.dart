@@ -6,24 +6,39 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../l10n/app_localizations.dart';
 
+/// ✅ Public enum (so other files can use it)
+enum MwFeedbackType { normal, success, error }
+
 enum _ToastKind { normal, success, error }
 
 class MwFeedback {
   static OverlayEntry? _entry;
   static Timer? _timer;
 
+  /// ✅ Backward-compatible:
+  /// - old usage still works: MwFeedback.show(context, message: "...")
+  /// - new usage works: MwFeedback.show(context, message: "...", type: MwFeedbackType.error)
   static Future<void> show(
       BuildContext context, {
         required String message,
         Duration duration = const Duration(seconds: 2),
-      }) =>
-      _showToast(
-        context,
-        message: message,
-        duration: duration,
-        kind: _ToastKind.normal,
-        haptic: false,
-      );
+        MwFeedbackType type = MwFeedbackType.normal,
+      }) {
+    final kind = switch (type) {
+      MwFeedbackType.normal => _ToastKind.normal,
+      MwFeedbackType.success => _ToastKind.success,
+      MwFeedbackType.error => _ToastKind.error,
+    };
+
+    final haptic = (type != MwFeedbackType.normal);
+    return _showToast(
+      context,
+      message: message,
+      duration: duration,
+      kind: kind,
+      haptic: haptic,
+    );
+  }
 
   static Future<void> success(
       BuildContext context, {
@@ -126,19 +141,14 @@ class MwFeedback {
   }
 
   static void _tryHaptic(_ToastKind kind) {
-    // Safe on iOS/Android; do nothing on web.
     if (kIsWeb) return;
     try {
       if (kind == _ToastKind.error) {
         HapticFeedback.mediumImpact();
       } else if (kind == _ToastKind.success) {
         HapticFeedback.lightImpact();
-      } else {
-        // No haptic for normal
       }
-    } catch (_) {
-      // Ignore if platform doesn't support it.
-    }
+    } catch (_) {}
   }
 
   static Future<void> _fallbackDialog(BuildContext context, String message) async {
@@ -226,7 +236,7 @@ class _ToastPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accent = switch (kind) {
-      _ToastKind.success => cs.primary, // your gold primary
+      _ToastKind.success => cs.primary,
       _ToastKind.error => cs.error,
       _ToastKind.normal => cs.outline,
     };
@@ -253,7 +263,6 @@ class _ToastPill extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Accent strip
           Container(
             width: 5,
             height: 54,
@@ -263,10 +272,8 @@ class _ToastPill extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
-
           Icon(icon, size: 20, color: accent),
           const SizedBox(width: 10),
-          // Replace Expanded with Flexible
           Flexible(
             child: Padding(
               padding: const EdgeInsetsDirectional.fromSTEB(0, 12, 14, 12),

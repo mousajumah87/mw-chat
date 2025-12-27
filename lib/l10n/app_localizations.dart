@@ -1256,6 +1256,12 @@ abstract class AppLocalizations {
   /// **'Deleted account'**
   String get deletedAccount;
 
+  /// No description provided for @messageDeletedSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Message deleted successfully'**
+  String get messageDeletedSuccess;
+
   /// No description provided for @deletingAccount.
   ///
   /// In en, this message translates to:
@@ -2137,6 +2143,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Tap an icon to open'**
   String get tapIconToOpen;
+
+  /// No description provided for @reply.
+  ///
+  /// In en, this message translates to:
+  /// **'Reply'**
+  String get reply;
+
+  /// No description provided for @more.
+  ///
+  /// In en, this message translates to:
+  /// **'More'**
+  String get more;
+
+  /// No description provided for @replyingToMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Replying to message'**
+  String get replyingToMessage;
+
+  /// No description provided for @replying.
+  ///
+  /// In en, this message translates to:
+  /// **'Replying'**
+  String get replying;
+
+  /// No description provided for @originalMessageNotFound.
+  ///
+  /// In en, this message translates to:
+  /// **'Original message not found'**
+  String get originalMessageNotFound;
 }
 
 class _AppLocalizationsDelegate

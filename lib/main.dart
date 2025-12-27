@@ -271,7 +271,7 @@ class MyApp extends StatelessWidget {
     final bool isArabic = locale.languageCode == 'ar';
 
     return MaterialApp(
-      navigatorKey: rootNavigatorKey, // ✅ CRITICAL
+      navigatorKey: rootNavigatorKey, // 🔥 REQUIRED for reliable pop
       scaffoldMessengerKey: rootScaffoldMessengerKey,
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(isArabic: isArabic),
@@ -280,15 +280,12 @@ class MyApp extends StatelessWidget {
       supportedLocales: AppLocalizations.supportedLocales,
       onGenerateTitle: (ctx) => AppLocalizations.of(ctx)?.mainTitle ?? 'MW Chat',
 
-      // ✅ Snapchat-like swipe back (global across the whole app)
+      // 🟡 MW SIGNATURE INTERACTION – GLOBAL SNAPCHAT-LIKE BACK GESTURE
       builder: (context, child) {
         if (child == null) return const SizedBox.shrink();
-
-        // Wrap everything, but use navigatorKey to pop reliably.
         return MwSwipeBack(
+          navigatorKey: rootNavigatorKey,
           enabled: true,
-          goHomeIfCantPop: false,
-          navigatorKey: rootNavigatorKey, // ✅ THIS makes it work everywhere
           child: child,
         );
       },

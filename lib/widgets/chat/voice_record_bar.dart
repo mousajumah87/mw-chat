@@ -1,5 +1,3 @@
-// lib/widgets/chat/voice_record_bar.dart
-
 import 'dart:async';
 import 'dart:ui';
 
@@ -18,7 +16,6 @@ class VoiceRecordBar extends StatefulWidget {
   final Future<void> Function(VoiceDraft draft) onSend;
 
   /// ✅ OPTIONAL: lets parent (ChatInputBar/ChatScreen) update Firestore
-  /// e.g. set recording_<uid> true/false
   final VoidCallback? onRecordStart;
   final VoidCallback? onRecordStop;
 
@@ -45,12 +42,9 @@ class _VoiceRecordBarState extends State<VoiceRecordBar> {
   Duration _dur = Duration.zero;
   bool _playing = false;
   bool _loading = false;
+  bool _sending = false;
 
-  // Track which draft we loaded so switching drafts resets player state
   String? _loadedKey;
-
-  // ✅ Track ACTIVE voice session transitions (recording OR preparing)
-  bool _lastIsActive = false;
 
   bool _isActive(VoiceRecorderController c) => c.isRecording || c.isPreparing;
 
@@ -58,14 +52,12 @@ class _VoiceRecordBarState extends State<VoiceRecordBar> {
   // ✅ RTL-safe direction
   // =========================
   TextDirection _effectiveDir(BuildContext context) {
-    // Locale-first (handles cases where parent forces LTR Directionality)
     final locale = Localizations.localeOf(context);
     final lang = locale.languageCode.toLowerCase();
 
     const rtlLangs = {'ar', 'he', 'fa', 'ur'};
     if (rtlLangs.contains(lang)) return TextDirection.rtl;
 
-    // fallback to ambient Directionality
     return Directionality.of(context);
   }
 
@@ -79,11 +71,6 @@ class _VoiceRecordBarState extends State<VoiceRecordBar> {
   @override
   void initState() {
     super.initState();
-
-    _lastIsActive = _isActive(widget.controller);
-    if (_lastIsActive) {
-      widget.onRecordStart?.call();
-    }
 
     widget.controller.addListener(_onControllerChanged);
 
@@ -110,31 +97,12 @@ class _VoiceRecordBarState extends State<VoiceRecordBar> {
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller.removeListener(_onControllerChanged);
       widget.controller.addListener(_onControllerChanged);
-      _stopAndResetPlayerUi();
-
-      // ✅ reset transition tracking for new controller
-      _lastIsActive = _isActive(widget.controller);
-      if (_lastIsActive) {
-        widget.onRecordStart?.call();
-      } else {
-        widget.onRecordStop?.call();
-      }
+      _stopAndResetPlayerUi(setStateToo: true);
     }
   }
 
   void _onControllerChanged() {
     if (!mounted) return;
-
-    // ✅ Active session transition callbacks (recording OR preparing)
-    final nowActive = _isActive(widget.controller);
-    if (nowActive != _lastIsActive) {
-      _lastIsActive = nowActive;
-      if (nowActive) {
-        widget.onRecordStart?.call();
-      } else {
-        widget.onRecordStop?.call();
-      }
-    }
 
     final draft = widget.controller.draft;
     final key = draft == null
@@ -142,26 +110,26 @@ class _VoiceRecordBarState extends State<VoiceRecordBar> {
         : '${draft.fileName}|${draft.path ?? ''}|${draft.bytes?.length ?? 0}';
 
     if (key != _loadedKey) {
-      _stopAndResetPlayerUi();
+      _stopAndResetPlayerUi(setStateToo: false);
       _loadedKey = key;
     }
 
     setState(() {});
   }
 
-  void _stopAndResetPlayerUi() {
+  void _stopAndResetPlayerUi({required bool setStateToo}) {
     _player.stop().catchError((_) {});
     _pos = Duration.zero;
     _dur = Duration.zero;
     _playing = false;
     _loading = false;
+
+    if (setStateToo && mounted) setState(() {});
   }
 
   @override
   void dispose() {
-    // ✅ If we're being disposed while active (recording/preparing),
-    // best-effort stop callback so Firestore flag won't stick
-    if (_lastIsActive) {
+    if (_isActive(widget.controller)) {
       widget.onRecordStop?.call();
     }
 
@@ -170,6 +138,8 @@ class _VoiceRecordBarState extends State<VoiceRecordBar> {
     _posSub?.cancel();
     _durSub?.cancel();
     _stateSub?.cancel();
+
+    _player.stop().catchError((_) {});
     _player.dispose();
     super.dispose();
   }
@@ -182,7 +152,7 @@ class _VoiceRecordBarState extends State<VoiceRecordBar> {
   }
 
   Future<void> _togglePreviewPlay(VoiceDraft draft) async {
-    if (_loading) return;
+    if (_loading || _sending) return;
 
     try {
       if (_playing) {
@@ -241,7 +211,6 @@ class _VoiceRecordBarState extends State<VoiceRecordBar> {
     return Container(
       margin: margin,
       decoration: mwTypingGlassDecoration(radius: 16).copyWith(
-        // make it align more with input bar tokens
         color: kChatInputBarBg.withOpacity(0.62),
         border: Border.all(
           color: kChatInputBarBorder.withOpacity(0.65),
@@ -290,6 +259,34 @@ class _VoiceRecordBarState extends State<VoiceRecordBar> {
     );
   }
 
+  Widget _playButtonIcon() {
+    // ✅ Keep icon LTR-stable (mostly cosmetic, but safe in RTL)
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 180),
+        switchInCurve: Curves.easeOut,
+        switchOutCurve: Curves.easeIn,
+        child: _loading
+            ? SizedBox(
+          key: const ValueKey('loading'),
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: kPrimaryGold.withOpacity(0.95),
+          ),
+        )
+            : Icon(
+          _playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+          key: ValueKey(_playing ? 'pause' : 'play'),
+          color: kTextPrimary,
+          size: 22,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
@@ -297,12 +294,11 @@ class _VoiceRecordBarState extends State<VoiceRecordBar> {
 
     final dir = _effectiveDir(context);
 
-    // ✅ FIX: Keep bar visible during preparing too.
     if (!c.isRecording && !c.isPreparing && !c.hasDraft) {
       return const SizedBox.shrink();
     }
 
-    // PREPARING STATE (permissions / init)
+    // PREPARING STATE
     if (c.isPreparing && !c.isRecording && !c.hasDraft) {
       return _glassBar(
         child: Directionality(
@@ -336,9 +332,14 @@ class _VoiceRecordBarState extends State<VoiceRecordBar> {
                 tooltip: l10n.cancelLabel,
                 onPressed: () async {
                   await _player.stop().catchError((_) {});
-                  await c.cancel(); // triggers transition => onRecordStop
-                  _stopAndResetPlayerUi();
-                  if (mounted) setState(() {});
+                  try {
+                    await c.cancel();
+                  } catch (_) {
+                    // ignore
+                  } finally {
+                    widget.onRecordStop?.call();
+                  }
+                  _stopAndResetPlayerUi(setStateToo: true);
                 },
                 icon: const Icon(Icons.delete_outline, color: kTextPrimary),
               ),
@@ -419,16 +420,27 @@ class _VoiceRecordBarState extends State<VoiceRecordBar> {
                 tooltip: l10n.cancelLabel,
                 onPressed: () async {
                   await _player.stop().catchError((_) {});
-                  await c.cancel(); // triggers transition => onRecordStop
-                  _stopAndResetPlayerUi();
-                  if (mounted) setState(() {});
+                  try {
+                    await c.cancel();
+                  } catch (_) {
+                    // ignore
+                  } finally {
+                    widget.onRecordStop?.call();
+                  }
+                  _stopAndResetPlayerUi(setStateToo: true);
                 },
                 icon: const Icon(Icons.delete_outline, color: kTextPrimary),
               ),
               IconButton(
                 tooltip: l10n.stopLabel,
                 onPressed: () async {
-                  await c.stopToPreview(); // triggers transition => onRecordStop
+                  try {
+                    await c.stopToPreview();
+                  } catch (_) {
+                    // ignore
+                  } finally {
+                    widget.onRecordStop?.call();
+                  }
                 },
                 icon: const Icon(Icons.stop_circle, color: kPrimaryGold),
               ),
@@ -446,44 +458,22 @@ class _VoiceRecordBarState extends State<VoiceRecordBar> {
 
     return _glassBar(
       child: Directionality(
-        textDirection: dir, // keep overall bar RTL/LTR for spacing of send/delete if you want
+        textDirection: dir,
         child: Row(
           textDirection: dir,
           children: [
-            // ✅ Keep the play button circle position as your current layout
             InkWell(
               onTap: () => _togglePreviewPlay(draft),
               borderRadius: BorderRadius.circular(999),
               child: Container(
                 width: 44,
                 height: 44,
-                decoration: _circleGlassDecoration(highlight: _playing || _loading),
-                child: Center(
-                  child: _loading
-                      ? SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: kPrimaryGold.withOpacity(0.95),
-                    ),
-                  )
-                      : Directionality(
-                    // ✅ FIX: always keep media icon LTR (no mirroring)
-                    textDirection: TextDirection.ltr,
-                    child: Icon(
-                      _playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                      color: kTextPrimary,
-                      size: 26,
-                    ),
-                  ),
-                ),
+                decoration:
+                _circleGlassDecoration(highlight: _playing || _loading),
+                child: Center(child: _playButtonIcon()),
               ),
             ),
-
             const SizedBox(width: 10),
-
-            // ✅ BUT: make the slider + time ALWAYS LTR to avoid confusion/double-mirror
             Expanded(
               child: Directionality(
                 textDirection: TextDirection.ltr,
@@ -497,24 +487,25 @@ class _VoiceRecordBarState extends State<VoiceRecordBar> {
                         inactiveTrackColor: kChatInputBarBorder.withOpacity(0.55),
                         thumbColor: kPrimaryGold.withOpacity(0.95),
                         overlayColor: kPrimaryGold.withOpacity(0.12),
-                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+                        thumbShape: const RoundSliderThumbShape(
+                            enabledThumbRadius: 7),
                       ),
                       child: Slider(
                         value: canSeek ? pos.inMilliseconds.toDouble() : 0,
                         min: 0,
                         max: canSeek ? total.inMilliseconds.toDouble() : 1,
-                        onChanged: canSeek
+                        onChanged: (canSeek && !_sending)
                             ? (v) => _seek(Duration(milliseconds: v.round()))
                             : null,
                       ),
                     ),
-
                     Row(
                       children: [
                         Text(
                           _isolateLtr(_fmt(pos)),
                           textDirection: TextDirection.ltr,
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          style:
+                          Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: kTextSecondary.withOpacity(0.92),
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
@@ -524,7 +515,8 @@ class _VoiceRecordBarState extends State<VoiceRecordBar> {
                         Text(
                           _isolateLtr(_fmt(total)),
                           textDirection: TextDirection.ltr,
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          style:
+                          Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: kTextSecondary.withOpacity(0.92),
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
@@ -536,31 +528,47 @@ class _VoiceRecordBarState extends State<VoiceRecordBar> {
                 ),
               ),
             ),
-
             const SizedBox(width: 8),
-
             IconButton(
               tooltip: l10n.cancelLabel,
-              onPressed: () async {
-                await _player.stop();
-                await c.discardDraft();
-                _stopAndResetPlayerUi();
-                if (mounted) setState(() {});
+              onPressed: _sending
+                  ? null
+                  : () async {
+                await _player.stop().catchError((_) {});
+                try {
+                  await c.discardDraft();
+                } catch (_) {
+                  // ignore
+                }
+                _stopAndResetPlayerUi(setStateToo: true);
               },
               icon: const Icon(Icons.delete_outline, color: kTextPrimary),
             ),
             IconButton(
               tooltip: l10n.sendLabel,
-              onPressed: () async {
-                await _player.stop();
+              onPressed: (_sending || _loading)
+                  ? null
+                  : () async {
+                if (_sending) return;
+                setState(() => _sending = true);
+
+                await _player.stop().catchError((_) {});
+
                 try {
                   await widget.onSend(draft);
                   await c.markSentAndCleanup();
-                } catch (_) {}
-                _stopAndResetPlayerUi();
-                if (mounted) setState(() {});
+                } catch (_) {
+                  // ignore
+                } finally {
+                  if (mounted) setState(() => _sending = false);
+                }
+
+                _stopAndResetPlayerUi(setStateToo: true);
               },
-              icon: const Icon(Icons.send_rounded, color: kPrimaryGold),
+              icon: Icon(
+                Icons.send_rounded,
+                color: _sending ? kTextSecondary : kPrimaryGold,
+              ),
             ),
           ],
         ),

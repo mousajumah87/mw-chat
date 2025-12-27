@@ -655,6 +655,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get deletedAccount => 'Deleted account';
 
   @override
+  String get messageDeletedSuccess => 'Message deleted successfully';
+
+  @override
   String get deletingAccount => 'Deleting account...';
 
   @override
@@ -1155,4 +1158,19 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get tapIconToOpen => 'Tap an icon to open';
+
+  @override
+  String get reply => 'Reply';
+
+  @override
+  String get more => 'More';
+
+  @override
+  String get replyingToMessage => 'Replying to message';
+
+  @override
+  String get replying => 'Replying';
+
+  @override
+  String get originalMessageNotFound => 'Original message not found';
 }
