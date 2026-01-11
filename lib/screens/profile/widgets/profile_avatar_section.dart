@@ -3,7 +3,6 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
@@ -16,7 +15,13 @@ class ProfileAvatarSection extends StatelessWidget {
   final Uint8List? imageBytes;
   final File? imageFile;
 
+  /// Can be:
+  /// - https download URL (Firebase Storage)
+  /// - gs:// bucket URL (Firebase Storage)
+  /// - empty/null
   final String? currentUrl;
+
+  /// "bear" or "girl" (and any legacy aliases handled by MwAvatar)
   final String avatarType;
 
   final bool uploadingImage;
@@ -53,14 +58,13 @@ class ProfileAvatarSection extends StatelessWidget {
 
     final bool hasNetwork = (currentUrl?.trim().isNotEmpty ?? false);
 
-    // Stable hero tag
+    // Stable hero tag for the same user photo across app.
     const heroTag = 'my_profile_photo';
 
-    // Tap provider (viewer)
-    final ImageProvider? tapProvider = localProvider ??
-        (hasNetwork ? CachedNetworkImageProvider(currentUrl!) : null);
-
     const double avatarRadius = 60;
+
+    // Allow opening viewer when we have *any* image source.
+    final bool canOpen = (localProvider != null) || hasNetwork;
 
     Widget avatarCore;
     if (localProvider != null) {
@@ -74,11 +78,29 @@ class ProfileAvatarSection extends StatelessWidget {
               image: localProvider,
               fit: BoxFit.cover,
               filterQuality: FilterQuality.high,
+              // ✅ Never let a decode error break the UI.
+              errorBuilder: (_, __, ___) {
+                return MwAvatar(
+                  heroTag: heroTag,
+                  radius: avatarRadius,
+                  avatarType: avatarType,
+                  profileUrl: null,
+                  hideRealAvatar: true,
+                  showRing: true,
+                  showOnlineDot: false,
+                  showOnlineGlow: false,
+                  cachePolicy: MwAvatarCachePolicy.normal,
+                );
+              },
             ),
           ),
         ),
       );
     } else {
+      // ✅ MwAvatar handles:
+      // - gs:// resolution
+      // - https URL load
+      // - 404/403 fallback (never blocks UI)
       avatarCore = MwAvatar(
         heroTag: heroTag,
         radius: avatarRadius,
@@ -98,7 +120,7 @@ class ProfileAvatarSection extends StatelessWidget {
         children: [
           GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: tapProvider == null ? null : onOpenFullScreen,
+            onTap: (!canOpen || uploadingImage) ? null : onOpenFullScreen,
             child: Stack(
               alignment: Alignment.center,
               children: [
@@ -112,7 +134,7 @@ class ProfileAvatarSection extends StatelessWidget {
                   ),
                 ),
                 avatarCore,
-                if (tapProvider != null && !uploadingImage)
+                if (canOpen && !uploadingImage)
                   Positioned(
                     bottom: 2,
                     right: 2,

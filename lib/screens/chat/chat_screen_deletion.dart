@@ -15,6 +15,252 @@ enum _DeleteMode { me, both, cancel }
 
 class ChatScreenDeletion {
   // =========================
+  // Room summary field names (EDIT HERE if your schema differs)
+  // =========================
+  static const String _fLastMessageId = 'lastMessageId';
+  static const String _fLastMessageAt = 'lastMessageAt';
+  static const String _fLastMessageText = 'lastMessageText';
+  static const String _fLastMessageSenderId = 'lastMessageSenderId';
+
+  // Message fields (expected in messages docs)
+  static const String _mCreatedAt = 'createdAt';
+  static const String _mText = 'text';
+  static const String _mSenderId = 'senderId';
+
+  // =========================
+  // Shared helpers (storage extraction)
+  // =========================
+  static Set<String> _extractStoragePaths(Map<String, dynamic> data) {
+    final paths = <String>{};
+
+    void add(dynamic v) {
+      if (v is String && v.trim().isNotEmpty) paths.add(v.trim());
+    }
+
+    add(data['storagePath']);
+    add(data['thumbStoragePath']);
+    add(data['thumbnailStoragePath']);
+
+    final attachments = data['attachments'];
+    if (attachments is List) {
+      for (final item in attachments) {
+        if (item is Map) {
+          add(item['storagePath']);
+          add(item['thumbStoragePath']);
+          add(item['thumbnailStoragePath']);
+        }
+      }
+    }
+
+    final media = data['media'];
+    if (media is Map) {
+      add(media['storagePath']);
+      add(media['thumbStoragePath']);
+      add(media['thumbnailStoragePath']);
+    }
+
+    return paths;
+  }
+
+  static Set<String> _extractStorageUrls(Map<String, dynamic> data) {
+    final urls = <String>{};
+
+    void add(dynamic v) {
+      if (v is String && v.trim().isNotEmpty) urls.add(v.trim());
+    }
+
+    add(data['fileUrl']);
+    add(data['mediaUrl']);
+    add(data['imageUrl']);
+    add(data['videoUrl']);
+    add(data['audioUrl']);
+    add(data['voiceUrl']);
+    add(data['thumbnailUrl']);
+    add(data['thumbUrl']);
+    add(data['url']);
+
+    final attachments = data['attachments'];
+    if (attachments is List) {
+      for (final item in attachments) {
+        if (item is String) {
+          add(item);
+        } else if (item is Map) {
+          add(item['url']);
+          add(item['fileUrl']);
+          add(item['mediaUrl']);
+          add(item['imageUrl']);
+          add(item['videoUrl']);
+          add(item['audioUrl']);
+          add(item['voiceUrl']);
+          add(item['thumbUrl']);
+          add(item['thumbnailUrl']);
+        }
+      }
+    }
+
+    final media = data['media'];
+    if (media is Map) {
+      add(media['url']);
+      add(media['fileUrl']);
+      add(media['mediaUrl']);
+      add(media['imageUrl']);
+      add(media['videoUrl']);
+      add(media['audioUrl']);
+      add(media['voiceUrl']);
+      add(media['thumbUrl']);
+      add(media['thumbnailUrl']);
+    }
+
+    return urls;
+  }
+
+  static String? _storagePathFromUrl(String url) {
+    try {
+      final u = Uri.parse(url);
+
+      if (u.scheme == 'gs') {
+        final p = u.path;
+        if (p.isEmpty) return null;
+        return p.startsWith('/') ? p.substring(1) : p;
+      }
+
+      // https://firebasestorage.googleapis.com/v0/b/<bucket>/o/<encodedPath>
+      if (u.host.contains('firebasestorage.googleapis.com')) {
+        final seg = u.pathSegments;
+        final oIndex = seg.indexOf('o');
+        if (oIndex != -1 && oIndex + 1 < seg.length) {
+          return Uri.decodeComponent(seg[oIndex + 1]);
+        }
+      }
+
+      // https://storage.googleapis.com/download/storage/v1/b/<bucket>/o/<encodedPath>
+      if (u.host.contains('storage.googleapis.com')) {
+        final seg = u.pathSegments;
+        final oIndex = seg.indexOf('o');
+        if (oIndex != -1 && oIndex + 1 < seg.length) {
+          return Uri.decodeComponent(seg[oIndex + 1]);
+        }
+      }
+
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> _deleteOneStoragePathClient(String path) async {
+    try {
+      await FirebaseStorage.instance.ref().child(path).delete();
+    } on FirebaseException catch (e) {
+      if (e.code == 'object-not-found' || e.code == 'unauthorized') {
+        debugPrint('[ChatScreenDeletion] Client Storage delete skipped: ${e.code} (path=$path)');
+        return;
+      }
+      debugPrint('[ChatScreenDeletion] Client Storage delete failed: ${e.code} ${e.message} (path=$path)');
+    } catch (e) {
+      debugPrint('[ChatScreenDeletion] Client Storage delete failed: $e (path=$path)');
+    }
+  }
+
+  static Future<void> _deleteOneStorageUrlClient(String url) async {
+    final path = _storagePathFromUrl(url);
+    if (path != null && path.isNotEmpty) {
+      await _deleteOneStoragePathClient(path);
+      return;
+    }
+    try {
+      final ref = FirebaseStorage.instance.refFromURL(url);
+      await ref.delete();
+    } catch (e) {
+      debugPrint('[ChatScreenDeletion] Client Storage delete failed: $e (url=$url)');
+    }
+  }
+
+  // =========================
+  // ✅ FIX: Update room summary after deleting a message "for everyone"
+  // =========================
+  static Future<void> _fixRoomSummaryAfterDelete({
+    required DocumentReference<Map<String, dynamic>> roomRef,
+    required DocumentReference<Map<String, dynamic>> msgRef,
+    required String deletedMessageId,
+    required Timestamp? deletedCreatedAt,
+  }) async {
+    // We do this in a transaction so it stays consistent.
+    final db = FirebaseFirestore.instance;
+
+    await db.runTransaction((tx) async {
+      final roomSnap = await tx.get(roomRef);
+
+      // If room doc doesn't exist, nothing to fix.
+      if (!roomSnap.exists) return;
+
+      final roomData = roomSnap.data() ?? <String, dynamic>{};
+
+      final lastIdRaw = roomData[_fLastMessageId];
+      final lastAtRaw = roomData[_fLastMessageAt];
+
+      final lastId = (lastIdRaw is String) ? lastIdRaw.trim() : null;
+      final lastAt = (lastAtRaw is Timestamp) ? lastAtRaw : null;
+
+      final bool isLastById = (lastId != null && lastId.isNotEmpty && lastId == deletedMessageId);
+      final bool isLastByAt =
+      (deletedCreatedAt != null && lastAt != null && lastAt == deletedCreatedAt);
+
+      // If the deleted message is NOT the room's last message, keep room summary unchanged.
+      if (!isLastById && !isLastByAt) return;
+
+      // Find the newest remaining message (best effort).
+      // NOTE: transactions cannot do arbitrary queries with tx.get(query) in Flutter.
+      // So we do a deterministic fallback:
+      // - Clear summary here
+      // - Then after transaction, we will compute and set the true latest message outside transaction.
+      //
+      // This prevents stale "51 min ago" immediately.
+      tx.set(roomRef, {
+        _fLastMessageId: null,
+        _fLastMessageAt: null,
+        _fLastMessageText: '',
+        _fLastMessageSenderId: null,
+      }, SetOptions(merge: true));
+    });
+
+    // After transaction: compute true latest message and set it.
+    // (Outside transaction we CAN query.)
+    try {
+      final latestSnap = await roomRef
+          .collection('messages')
+          .orderBy(_mCreatedAt, descending: true)
+          .limit(10)
+          .get();
+
+      DocumentSnapshot<Map<String, dynamic>>? latest;
+      for (final d in latestSnap.docs) {
+        if (d.id == deletedMessageId) continue;
+        latest = d;
+        break;
+      }
+
+      if (latest == null) {
+        // No messages left — summary already cleared.
+        return;
+      }
+
+      final data = latest.data() ?? <String, dynamic>{};
+      final createdAt = data[_mCreatedAt];
+      if (createdAt is! Timestamp) return;
+
+      await roomRef.set({
+        _fLastMessageId: latest.id,
+        _fLastMessageAt: createdAt,
+        _fLastMessageText: (data[_mText] as String?) ?? '',
+        _fLastMessageSenderId: data[_mSenderId],
+      }, SetOptions(merge: true));
+    } catch (e) {
+      debugPrint('[ChatScreenDeletion] _fixRoomSummaryAfterDelete (post-query) failed (non-fatal): $e');
+    }
+  }
+
+  // =========================
   // ✅ Public: clear entire chat
   // =========================
   static Future<void> confirmAndClearChat({
@@ -114,127 +360,6 @@ class ChatScreenDeletion {
       if (nav.canPop()) nav.pop();
     }
 
-    // -------------------------
-    // Extractors (shared)
-    // -------------------------
-    Set<String> extractStoragePaths(Map<String, dynamic> data) {
-      final paths = <String>{};
-
-      void add(dynamic v) {
-        if (v is String && v.trim().isNotEmpty) paths.add(v.trim());
-      }
-
-      add(data['storagePath']);
-      add(data['thumbStoragePath']);
-      add(data['thumbnailStoragePath']);
-
-      final attachments = data['attachments'];
-      if (attachments is List) {
-        for (final item in attachments) {
-          if (item is Map) {
-            add(item['storagePath']);
-            add(item['thumbStoragePath']);
-            add(item['thumbnailStoragePath']);
-          }
-        }
-      }
-
-      final media = data['media'];
-      if (media is Map) {
-        add(media['storagePath']);
-        add(media['thumbStoragePath']);
-        add(media['thumbnailStoragePath']);
-      }
-
-      return paths;
-    }
-
-    Set<String> extractStorageUrls(Map<String, dynamic> data) {
-      final urls = <String>{};
-
-      void add(dynamic v) {
-        if (v is String && v.trim().isNotEmpty) urls.add(v.trim());
-      }
-
-      add(data['fileUrl']);
-      add(data['mediaUrl']);
-      add(data['imageUrl']);
-      add(data['videoUrl']);
-      add(data['audioUrl']);
-      add(data['voiceUrl']);
-      add(data['thumbnailUrl']);
-      add(data['thumbUrl']);
-      add(data['url']);
-
-      final attachments = data['attachments'];
-      if (attachments is List) {
-        for (final item in attachments) {
-          if (item is String) {
-            add(item);
-          } else if (item is Map) {
-            add(item['url']);
-            add(item['fileUrl']);
-            add(item['mediaUrl']);
-            add(item['imageUrl']);
-            add(item['videoUrl']);
-            add(item['audioUrl']);
-            add(item['voiceUrl']);
-            add(item['thumbUrl']);
-            add(item['thumbnailUrl']);
-          }
-        }
-      }
-
-      final media = data['media'];
-      if (media is Map) {
-        add(media['url']);
-        add(media['fileUrl']);
-        add(media['mediaUrl']);
-        add(media['imageUrl']);
-        add(media['videoUrl']);
-        add(media['audioUrl']);
-        add(media['voiceUrl']);
-        add(media['thumbUrl']);
-        add(media['thumbnailUrl']);
-      }
-
-      return urls;
-    }
-
-    String? storagePathFromUrl(String url) {
-      try {
-        final u = Uri.parse(url);
-
-        if (u.scheme == 'gs') {
-          final p = u.path;
-          if (p.isEmpty) return null;
-          return p.startsWith('/') ? p.substring(1) : p;
-        }
-
-        // https://firebasestorage.googleapis.com/v0/b/<bucket>/o/<encodedPath>
-        if (u.host.contains('firebasestorage.googleapis.com')) {
-          final seg = u.pathSegments;
-          final oIndex = seg.indexOf('o');
-          if (oIndex != -1 && oIndex + 1 < seg.length) {
-            return Uri.decodeComponent(seg[oIndex + 1]);
-          }
-        }
-
-        // https://storage.googleapis.com/download/storage/v1/b/<bucket>/o/<encodedPath>
-        if (u.host.contains('storage.googleapis.com')) {
-          final seg = u.pathSegments;
-          final oIndex = seg.indexOf('o');
-          if (oIndex != -1 && oIndex + 1 < seg.length) {
-            return Uri.decodeComponent(seg[oIndex + 1]);
-          }
-        }
-
-        return null;
-      } catch (_) {
-        return null;
-      }
-    }
-
     Future<void> deleteOneStoragePathClient(String path) async {
       try {
         await FirebaseStorage.instance.ref().child(path).delete();
@@ -251,7 +376,7 @@ class ChatScreenDeletion {
     }
 
     Future<void> deleteOneStorageUrlClient(String url) async {
-      final path = storagePathFromUrl(url);
+      final path = _storagePathFromUrl(url);
       if (path != null && path.isNotEmpty) {
         await deleteOneStoragePathClient(path);
         return;
@@ -321,18 +446,16 @@ class ChatScreenDeletion {
             continue;
           }
 
-          // ✅ For BOTH: collect per-doc paths + urls (covers video too)
-          final p = extractStoragePaths(data);
-          final u = extractStorageUrls(data);
+          final p = _extractStoragePaths(data);
+          final u = _extractStorageUrls(data);
 
           pagePaths.addAll(p);
           pageUrls.addAll(u);
 
           allServerPaths.addAll(p);
 
-          // also convert urls -> path for server list (helps old messages)
           for (final url in u) {
-            final path = storagePathFromUrl(url);
+            final path = _storagePathFromUrl(url);
             if (path != null && path.isNotEmpty) allServerPaths.add(path);
           }
 
@@ -341,7 +464,6 @@ class ChatScreenDeletion {
 
         await batch.commit();
 
-        // Best-effort client delete
         if (mode == _DeleteMode.both) {
           if (pagePaths.isNotEmpty) await deleteStoragePathsClient(pagePaths);
           if (pageUrls.isNotEmpty) await deleteStorageUrlsClient(pageUrls);
@@ -358,6 +480,14 @@ class ChatScreenDeletion {
         if (unread.isNotEmpty) {
           await roomRef.set({'unreadCounts': unread}, SetOptions(merge: true));
         }
+
+        // ✅ IMPORTANT: Clear room summary so no stale "last activity" remains
+        await roomRef.set({
+          _fLastMessageId: null,
+          _fLastMessageAt: null,
+          _fLastMessageText: '',
+          _fLastMessageSenderId: null,
+        }, SetOptions(merge: true));
 
         // ✅ Server-side purge (reliable)
         try {
@@ -392,7 +522,7 @@ class ChatScreenDeletion {
   }
 
   // =========================
-  // ✅ NEW: delete ONE message (this fixes video delete UX)
+  // ✅ Delete ONE message
   // =========================
   static Future<void> confirmAndDeleteMessage({
     required BuildContext context,
@@ -410,8 +540,8 @@ class ChatScreenDeletion {
       builder: (dialogContext) {
         final theme = Theme.of(dialogContext);
         return AlertDialog(
-          title: Text(l10n.deleteMessageTitle), // make sure this key exists
-          content: Text(l10n.deleteMessageDescription), // make sure this key exists
+          title: Text(l10n.deleteMessageTitle),
+          content: Text(l10n.deleteMessageDescription),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(_DeleteMode.cancel),
@@ -470,151 +600,6 @@ class ChatScreenDeletion {
       if (nav.canPop()) nav.pop();
     }
 
-    // ---- extractors (same logic as clear chat; keep consistent)
-    Set<String> extractStoragePaths(Map<String, dynamic> data) {
-      final paths = <String>{};
-
-      void add(dynamic v) {
-        if (v is String && v.trim().isNotEmpty) paths.add(v.trim());
-      }
-
-      add(data['storagePath']);
-      add(data['thumbStoragePath']);
-      add(data['thumbnailStoragePath']);
-
-      final attachments = data['attachments'];
-      if (attachments is List) {
-        for (final item in attachments) {
-          if (item is Map) {
-            add(item['storagePath']);
-            add(item['thumbStoragePath']);
-            add(item['thumbnailStoragePath']);
-          }
-        }
-      }
-
-      final media = data['media'];
-      if (media is Map) {
-        add(media['storagePath']);
-        add(media['thumbStoragePath']);
-        add(media['thumbnailStoragePath']);
-      }
-
-      return paths;
-    }
-
-    Set<String> extractStorageUrls(Map<String, dynamic> data) {
-      final urls = <String>{};
-
-      void add(dynamic v) {
-        if (v is String && v.trim().isNotEmpty) urls.add(v.trim());
-      }
-
-      add(data['fileUrl']);
-      add(data['mediaUrl']);
-      add(data['imageUrl']);
-      add(data['videoUrl']);
-      add(data['audioUrl']);
-      add(data['voiceUrl']);
-      add(data['thumbnailUrl']);
-      add(data['thumbUrl']);
-      add(data['url']);
-
-      final attachments = data['attachments'];
-      if (attachments is List) {
-        for (final item in attachments) {
-          if (item is String) {
-            add(item);
-          } else if (item is Map) {
-            add(item['url']);
-            add(item['fileUrl']);
-            add(item['mediaUrl']);
-            add(item['imageUrl']);
-            add(item['videoUrl']);
-            add(item['audioUrl']);
-            add(item['voiceUrl']);
-            add(item['thumbUrl']);
-            add(item['thumbnailUrl']);
-          }
-        }
-      }
-
-      final media = data['media'];
-      if (media is Map) {
-        add(media['url']);
-        add(media['fileUrl']);
-        add(media['mediaUrl']);
-        add(media['imageUrl']);
-        add(media['videoUrl']);
-        add(media['audioUrl']);
-        add(media['voiceUrl']);
-        add(media['thumbUrl']);
-        add(media['thumbnailUrl']);
-      }
-
-      return urls;
-    }
-
-    String? storagePathFromUrl(String url) {
-      try {
-        final u = Uri.parse(url);
-
-        if (u.scheme == 'gs') {
-          final p = u.path;
-          if (p.isEmpty) return null;
-          return p.startsWith('/') ? p.substring(1) : p;
-        }
-
-        if (u.host.contains('firebasestorage.googleapis.com')) {
-          final seg = u.pathSegments;
-          final oIndex = seg.indexOf('o');
-          if (oIndex != -1 && oIndex + 1 < seg.length) {
-            return Uri.decodeComponent(seg[oIndex + 1]);
-          }
-        }
-
-        if (u.host.contains('storage.googleapis.com')) {
-          final seg = u.pathSegments;
-          final oIndex = seg.indexOf('o');
-          if (oIndex != -1 && oIndex + 1 < seg.length) {
-            return Uri.decodeComponent(seg[oIndex + 1]);
-          }
-        }
-
-        return null;
-      } catch (_) {
-        return null;
-      }
-    }
-
-    Future<void> deleteOneStoragePathClient(String path) async {
-      try {
-        await FirebaseStorage.instance.ref().child(path).delete();
-      } on FirebaseException catch (e) {
-        if (e.code == 'object-not-found' || e.code == 'unauthorized') {
-          debugPrint('[ChatScreenDeletion] Client Storage delete skipped: ${e.code} (path=$path)');
-          return;
-        }
-        debugPrint('[ChatScreenDeletion] Client Storage delete failed: ${e.code} ${e.message} (path=$path)');
-      } catch (e) {
-        debugPrint('[ChatScreenDeletion] Client Storage delete failed: $e (path=$path)');
-      }
-    }
-
-    Future<void> deleteOneStorageUrlClient(String url) async {
-      final path = storagePathFromUrl(url);
-      if (path != null && path.isNotEmpty) {
-        await deleteOneStoragePathClient(path);
-        return;
-      }
-      try {
-        final ref = FirebaseStorage.instance.refFromURL(url);
-        await ref.delete();
-      } catch (e) {
-        debugPrint('[ChatScreenDeletion] Client Storage delete failed: $e (url=$url)');
-      }
-    }
-
     // ---- main
     try {
       final snap = await msgRef.get();
@@ -627,6 +612,7 @@ class ChatScreenDeletion {
       }
 
       final data = (snap.data() as Map<String, dynamic>?) ?? <String, dynamic>{};
+      final deletedCreatedAt = data[_mCreatedAt] is Timestamp ? data[_mCreatedAt] as Timestamp : null;
 
       if (mode == _DeleteMode.me) {
         await msgRef.update({
@@ -641,26 +627,57 @@ class ChatScreenDeletion {
       }
 
       // BOTH:
-      final paths = extractStoragePaths(data);
-      final urls = extractStorageUrls(data);
+      final paths = _extractStoragePaths(data);
+      final urls = _extractStorageUrls(data);
 
-      // serverPaths = paths + derived-from-urls
       final serverPaths = HashSet<String>()..addAll(paths);
       for (final u in urls) {
-        final p = storagePathFromUrl(u);
+        final p = _storagePathFromUrl(u);
         if (p != null && p.isNotEmpty) serverPaths.add(p);
       }
 
-      // delete Firestore doc
-      await msgRef.delete();
+      // 1) Delete Firestore doc
+      await msgRef.set({
+        'isDeleted': true,
+        'deletedForEveryone': true,
+        'deletedAt': FieldValue.serverTimestamp(),
+        'deletedBy': currentUserId,
 
-      // client best-effort delete (helps your UX)
+        // Clear content so it can't be recovered from client
+        'text': '',
+        'fileUrl': null,
+        'mediaUrl': null,
+        'imageUrl': null,
+        'videoUrl': null,
+        'audioUrl': null,
+        'voiceUrl': null,
+        'thumbnailUrl': null,
+        'thumbUrl': null,
+        'url': null,
+        'attachments': null,
+        'media': null,
+
+        // optional:
+        'reactions': {},
+        'replyTo': null,
+      }, SetOptions(merge: true));
+
+
+      // 2) ✅ FIX: if it was the room last message, clear & recompute
+      await _fixRoomSummaryAfterDelete(
+        roomRef: roomRef,
+        msgRef: msgRef,
+        deletedMessageId: messageId,
+        deletedCreatedAt: deletedCreatedAt,
+      );
+
+      // 3) Client best-effort delete (UX)
       await Future.wait([
-        ...paths.map(deleteOneStoragePathClient),
-        ...urls.map(deleteOneStorageUrlClient),
+        ...paths.map(_deleteOneStoragePathClient),
+        ...urls.map(_deleteOneStorageUrlClient),
       ]);
 
-      // server purge (best)
+      // 4) Server purge (best)
       if (serverPaths.isNotEmpty) {
         try {
           final fn = FirebaseFunctions.instanceFor(region: 'us-central1')

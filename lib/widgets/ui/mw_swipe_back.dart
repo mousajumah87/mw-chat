@@ -12,6 +12,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../theme/app_theme.dart';
+
 class MwSwipeBack extends StatefulWidget {
   final Widget child;
 
@@ -240,6 +242,7 @@ class _MwSwipeBackState extends State<MwSwipeBack> with SingleTickerProviderStat
   Widget build(BuildContext context) {
     if (_isIOS && !widget.allowOnIOS) return widget.child;
 
+    // Web/desktop: be slightly more forgiving (trackpad/mouse drags)
     final minDistance = kIsWeb ? widget.minDistance * 0.75 : widget.minDistance;
     final minVelocity = kIsWeb ? widget.minVelocity * 0.55 : widget.minVelocity;
 
@@ -251,31 +254,37 @@ class _MwSwipeBackState extends State<MwSwipeBack> with SingleTickerProviderStat
       PointerDeviceKind.unknown,
     };
 
+    final textTheme = Theme.of(context).textTheme;
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth <= 0 ? 1.0 : constraints.maxWidth;
 
         final p = _progress.clamp(0.0, 1.0);
+
         final overlayOpacity =
         widget.animatedHint ? (widget.hintMaxDim.clamp(0.0, 0.25) * p) : 0.0;
         final glowOpacity =
         widget.animatedHint ? (widget.edgeGlowMaxOpacity.clamp(0.0, 0.45) * p) : 0.0;
 
         final sign = _isRtl ? -1.0 : 1.0;
-        final glowWidth =
-        (widget.edgeWidth + 26 * Curves.easeOut.transform(p)).clamp(
+        final glowWidth = (widget.edgeWidth + 26 * Curves.easeOut.transform(p)).clamp(
           widget.edgeWidth,
           widget.edgeWidth + 30,
         );
 
         // MW signature intensity (gold shimmer + bubble)
         final mwSigOn = widget.mwSignatureHint;
-        final mwSigOpacity = (mwSigOn ? widget.mwSignatureMaxOpacity : 0.0).clamp(0.0, 1.0);
-        final mwShimmerOpacity = (mwSigOpacity * Curves.easeOut.transform((p * 1.05).clamp(0.0, 1.0)))
+        final mwSigOpacity =
+        (mwSigOn ? widget.mwSignatureMaxOpacity : 0.0).clamp(0.0, 1.0);
+        final mwShimmerOpacity =
+        (mwSigOpacity * Curves.easeOut.transform((p * 1.05).clamp(0.0, 1.0)))
             .clamp(0.0, mwSigOpacity);
-        final mwBubbleOpacity = (mwSigOpacity * Curves.easeOut.transform((p * 1.2).clamp(0.0, 1.0)))
+        final mwBubbleOpacity =
+        (mwSigOpacity * Curves.easeOut.transform((p * 1.2).clamp(0.0, 1.0)))
             .clamp(0.0, mwSigOpacity);
-        final mwBubbleScale = (1.0 + (widget.mwBubbleMaxScale - 1.0) * Curves.easeOut.transform(p))
+        final mwBubbleScale =
+        (1.0 + (widget.mwBubbleMaxScale - 1.0) * Curves.easeOut.transform(p))
             .clamp(1.0, widget.mwBubbleMaxScale);
 
         Widget content = KeyedSubtree(
@@ -291,12 +300,13 @@ class _MwSwipeBackState extends State<MwSwipeBack> with SingleTickerProviderStat
                 offset: Offset(_hintOffset, 0),
                 child: content,
               ),
+
               if (overlayOpacity > 0)
                 IgnorePointer(
                   child: Container(color: Colors.black.withOpacity(overlayOpacity)),
                 ),
 
-              // Base white edge glow
+              // Base edge glow (soft)
               if (glowOpacity > 0)
                 IgnorePointer(
                   child: Align(
@@ -308,8 +318,8 @@ class _MwSwipeBackState extends State<MwSwipeBack> with SingleTickerProviderStat
                           begin: _isRtl ? Alignment.centerRight : Alignment.centerLeft,
                           end: _isRtl ? Alignment.centerLeft : Alignment.centerRight,
                           colors: [
-                            Colors.white.withOpacity(glowOpacity),
-                            Colors.white.withOpacity(0.0),
+                            kOffWhite.withOpacity(glowOpacity),
+                            Colors.transparent,
                           ],
                         ),
                       ),
@@ -317,7 +327,7 @@ class _MwSwipeBackState extends State<MwSwipeBack> with SingleTickerProviderStat
                   ),
                 ),
 
-              // ✅ MW Signature gold shimmer (subtle, premium)
+              // ✅ MW Signature gold shimmer (theme-based)
               if (mwSigOn && mwShimmerOpacity > 0.0)
                 IgnorePointer(
                   child: Align(
@@ -329,8 +339,8 @@ class _MwSwipeBackState extends State<MwSwipeBack> with SingleTickerProviderStat
                           begin: _isRtl ? Alignment.centerRight : Alignment.centerLeft,
                           end: _isRtl ? Alignment.centerLeft : Alignment.centerRight,
                           colors: [
-                            const Color(0xFFFFD54A).withOpacity(mwShimmerOpacity * 0.55),
-                            const Color(0xFFFFB300).withOpacity(mwShimmerOpacity * 0.35),
+                            kPrimaryGold.withOpacity(mwShimmerOpacity * 0.55),
+                            kGoldDeep.withOpacity(mwShimmerOpacity * 0.35),
                             Colors.transparent,
                           ],
                         ),
@@ -354,9 +364,11 @@ class _MwSwipeBackState extends State<MwSwipeBack> with SingleTickerProviderStat
                         child: Transform.translate(
                           offset: Offset(sign * (6 + 10 * p), 0),
                           child: Icon(
-                            _isRtl ? Icons.chevron_right_rounded : Icons.chevron_left_rounded,
+                            _isRtl
+                                ? Icons.chevron_right_rounded
+                                : Icons.chevron_left_rounded,
                             size: 26,
-                            color: Colors.white,
+                            color: kTextPrimary.withOpacity(0.95),
                           ),
                         ),
                       ),
@@ -380,7 +392,10 @@ class _MwSwipeBackState extends State<MwSwipeBack> with SingleTickerProviderStat
                           opacity: mwBubbleOpacity,
                           child: Transform.scale(
                             scale: mwBubbleScale,
-                            child: _MwSignatureBubble(rtl: _isRtl),
+                            child: _MwSignatureBubble(
+                              rtl: _isRtl,
+                              textTheme: textTheme,
+                            ),
                           ),
                         ),
                       ),
@@ -501,22 +516,34 @@ class _MwSwipeBackState extends State<MwSwipeBack> with SingleTickerProviderStat
 
 class _MwSignatureBubble extends StatelessWidget {
   final bool rtl;
-  const _MwSignatureBubble({required this.rtl});
+  final TextTheme textTheme;
+
+  const _MwSignatureBubble({
+    required this.rtl,
+    required this.textTheme,
+  });
 
   @override
   Widget build(BuildContext context) {
     // Tiny “MW” bubble — feels like a signature without being loud.
+    final style = (textTheme.labelLarge ?? const TextStyle()).copyWith(
+      color: kPrimaryGold.withOpacity(0.95),
+      fontWeight: FontWeight.w900,
+      letterSpacing: rtl ? 0.0 : 0.6,
+      fontSize: 12,
+    );
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: Colors.black.withOpacity(0.40),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.white.withOpacity(0.16)),
+        border: Border.all(color: kOffWhite.withOpacity(0.16)),
         boxShadow: [
           BoxShadow(
             blurRadius: 16,
             spreadRadius: 0,
-            color: const Color(0xFFFFD54A).withOpacity(0.12),
+            color: kPrimaryGold.withOpacity(0.12),
             offset: const Offset(0, 6),
           ),
         ],
@@ -527,18 +554,10 @@ class _MwSignatureBubble extends StatelessWidget {
           Icon(
             rtl ? Icons.arrow_forward_ios_rounded : Icons.arrow_back_ios_new_rounded,
             size: 12,
-            color: Colors.white.withOpacity(0.85),
+            color: kTextPrimary.withOpacity(0.85),
           ),
           const SizedBox(width: 6),
-          Text(
-            'MW',
-            style: TextStyle(
-              color: const Color(0xFFFFD54A).withOpacity(0.95),
-              fontWeight: FontWeight.w900,
-              letterSpacing: 0.6,
-              fontSize: 12,
-            ),
-          ),
+          Text('MW', style: style),
         ],
       ),
     );

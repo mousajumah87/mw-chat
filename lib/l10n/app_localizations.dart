@@ -1262,6 +1262,12 @@ abstract class AppLocalizations {
   /// **'Message deleted successfully'**
   String get messageDeletedSuccess;
 
+  /// No description provided for @thisMessageWasDeleted.
+  ///
+  /// In en, this message translates to:
+  /// **'This message was deleted'**
+  String get thisMessageWasDeleted;
+
   /// No description provided for @deletingAccount.
   ///
   /// In en, this message translates to:
@@ -2173,6 +2179,234 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Original message not found'**
   String get originalMessageNotFound;
+
+  /// No description provided for @fontAndDisplay.
+  ///
+  /// In en, this message translates to:
+  /// **'Font & Display'**
+  String get fontAndDisplay;
+
+  /// No description provided for @noEmailOnAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'No email linked to this account'**
+  String get noEmailOnAccount;
+
+  /// No description provided for @copied.
+  ///
+  /// In en, this message translates to:
+  /// **'Copied'**
+  String get copied;
+
+  /// No description provided for @copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy'**
+  String get copy;
+
+  /// No description provided for @fontAndDisplaySubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Customize text size and appearance'**
+  String get fontAndDisplaySubtitle;
+
+  /// No description provided for @fontSizeLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Font size'**
+  String get fontSizeLabel;
+
+  /// No description provided for @fontSizeDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Change how big text looks across MW Chat (including messages).'**
+  String get fontSizeDesc;
+
+  /// No description provided for @fontStyleLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Font style'**
+  String get fontStyleLabel;
+
+  /// No description provided for @fontStyleDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick a clean font style that matches your taste.'**
+  String get fontStyleDesc;
+
+  /// No description provided for @previewLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Preview'**
+  String get previewLabel;
+
+  /// No description provided for @previewHeadline.
+  ///
+  /// In en, this message translates to:
+  /// **'MW Chat — messages will look like this.'**
+  String get previewHeadline;
+
+  /// No description provided for @previewBody.
+  ///
+  /// In en, this message translates to:
+  /// **'You can keep it small, or make it more comfortable for your eyes.'**
+  String get previewBody;
+
+  /// No description provided for @resetToDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset to default'**
+  String get resetToDefault;
+
+  /// No description provided for @backToDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to default.'**
+  String get backToDefault;
+
+  /// No description provided for @previewMiniLine.
+  ///
+  /// In en, this message translates to:
+  /// **'This is how your chat text feels in real use.'**
+  String get previewMiniLine;
+
+  /// No description provided for @fontHintNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Tip: Font changes apply instantly across the app.'**
+  String get fontHintNote;
+
+  /// No description provided for @account.
+  ///
+  /// In en, this message translates to:
+  /// **'Account'**
+  String get account;
+
+  /// No description provided for @preferences.
+  ///
+  /// In en, this message translates to:
+  /// **'Preferences'**
+  String get preferences;
+
+  /// No description provided for @sensitiveActions.
+  ///
+  /// In en, this message translates to:
+  /// **'Sensitive actions'**
+  String get sensitiveActions;
+
+  /// No description provided for @legal.
+  ///
+  /// In en, this message translates to:
+  /// **'Legal & policies'**
+  String get legal;
+
+  /// No description provided for @webFontNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Font settings apply to the web version only'**
+  String get webFontNote;
+
+  /// No description provided for @arabicLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Arabic'**
+  String get arabicLabel;
+
+  /// No description provided for @messageDeletedForMeSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Message deleted for you'**
+  String get messageDeletedForMeSuccess;
+
+  /// No description provided for @messageDeletedForEveryoneSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Message deleted for everyone'**
+  String get messageDeletedForEveryoneSuccess;
+
+  /// No description provided for @messageSelectedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Message selected'**
+  String get messageSelectedTitle;
+
+  /// No description provided for @copyNotAvailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy not available'**
+  String get copyNotAvailable;
+
+  /// No description provided for @deleteMessageDescriptionEveryone.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose how you want to delete this message.'**
+  String get deleteMessageDescriptionEveryone;
+
+  /// No description provided for @deleteMessageDescriptionMe.
+  ///
+  /// In en, this message translates to:
+  /// **'This will delete the message for you only.'**
+  String get deleteMessageDescriptionMe;
+
+  /// No description provided for @report.
+  ///
+  /// In en, this message translates to:
+  /// **'Report'**
+  String get report;
+
+  /// No description provided for @selectedOne.
+  ///
+  /// In en, this message translates to:
+  /// **'Selected'**
+  String get selectedOne;
+
+  /// No description provided for @selectedMany.
+  ///
+  /// In en, this message translates to:
+  /// **'Multiple selected'**
+  String get selectedMany;
+
+  /// No description provided for @chooseArabicFont.
+  ///
+  /// In en, this message translates to:
+  /// **'Please choose an Arabic font.'**
+  String get chooseArabicFont;
+
+  /// No description provided for @chooseEnglishFont.
+  ///
+  /// In en, this message translates to:
+  /// **'Please choose an English font.'**
+  String get chooseEnglishFont;
+
+  /// No description provided for @typographyTip.
+  ///
+  /// In en, this message translates to:
+  /// **'Tip: Cool fonts look great for young vibes, clean fonts are best for long chats, and Love fonts are perfect for cute profiles or headings.'**
+  String get typographyTip;
+
+  /// No description provided for @typographyWebTip.
+  ///
+  /// In en, this message translates to:
+  /// **'Web tip: If a font looks unchanged, do a hot restart (R) to reload.'**
+  String get typographyWebTip;
+
+  /// No description provided for @englishSample.
+  ///
+  /// In en, this message translates to:
+  /// **'English sample: The quick brown fox jumps over the lazy dog.'**
+  String get englishSample;
+
+  /// No description provided for @arabicSample.
+  ///
+  /// In en, this message translates to:
+  /// **'Arabic sample: Arabic looks beautiful with the right font.'**
+  String get arabicSample;
+
+  /// No description provided for @newLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'New'**
+  String get newLabel;
 }
 
 class _AppLocalizationsDelegate

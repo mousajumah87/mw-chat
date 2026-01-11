@@ -1,5 +1,6 @@
 // lib/theme/app_theme.dart
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'mw_text_theme.dart';
 
 // === MW Chat Enhanced Neon Glass Theme (Warm Gold Edition) ===
@@ -15,9 +16,9 @@ const kTextPrimary = Colors.white;
 const kTextSecondary = Color(0xFF9CA3AF);
 
 // Brand accents (warm gold theme)
-const kPrimaryGold = Color(0xFFFFD166); // soft warm gold (primary)
-const kGoldDeep = Color(0xFFFFC107); // deeper amber (secondary)
-const kOffWhite = Color(0xFFF8FAFC); // warm white
+const kPrimaryGold = Color(0xFFFFD166);
+const kGoldDeep = Color(0xFFFFC107);
+const kOffWhite = Color(0xFFF8FAFC);
 
 const kAccentColor = Color(0xFF22C55E);
 const kErrorColor = Colors.redAccent;
@@ -27,14 +28,14 @@ const kBubbleMeColor = kGoldDeep;
 const kBubbleOtherColor = Color(0xFF1E1E1E);
 
 // === Typing Indicator (NEW) ===
-const kTypingBg = Color(0xFF121212); // slightly lifted from bg
+const kTypingBg = Color(0xFF121212);
 const kTypingBorder = Color(0xFF2C2C2C);
 const kTypingGlow = kGoldDeep;
 
 // === Chat Input Bar (NEW shared tokens) ===
-const Color kChatInputBarBg = Color(0xFF0B0B0B);          // matches kBgColor
-const Color kChatInputBarBorder = Color(0xFF2C2C2C);      // matches kBorderColor
-const Color kChatInputFieldBg = Color(0xFF141414);        // matches kSurfaceColor
+const Color kChatInputBarBg = Color(0xFF0B0B0B);
+const Color kChatInputBarBorder = Color(0xFF2C2C2C);
+const Color kChatInputFieldBg = Color(0xFF141414);
 
 // === Gradient and Glow ===
 final LinearGradient mwGradient = LinearGradient(
@@ -46,7 +47,6 @@ final LinearGradient mwGradient = LinearGradient(
   ],
 );
 
-// Reusable glow decoration (used by cards / highlights)
 BoxDecoration mwGlowDecoration = BoxDecoration(
   gradient: mwGradient,
   boxShadow: [
@@ -60,7 +60,6 @@ BoxDecoration mwGlowDecoration = BoxDecoration(
   borderRadius: BorderRadius.circular(16),
 );
 
-// Typing indicator glass decoration (usable anywhere)
 BoxDecoration mwTypingGlassDecoration({double radius = 18}) {
   return BoxDecoration(
     color: kTypingBg.withOpacity(0.62),
@@ -80,11 +79,92 @@ BoxDecoration mwTypingGlassDecoration({double radius = 18}) {
   );
 }
 
-// === THEME DATA ===
-//
-// isArabic = true  → use NotoSansArabic text theme
-// isArabic = false → use Poppins text theme
-ThemeData buildAppTheme({bool isArabic = false}) {
+/// ✅ Apply a Google Font safely by family name.
+///
+/// IMPORTANT:
+/// - We only allow real GoogleFonts families in the app-wide theme.
+/// - We map known families to their real GoogleFonts methods.
+/// - Unknowns fall back to base.apply(fontFamily: family) (assets/platform fonts).
+TextTheme _applyGoogleFontToTheme(TextTheme base, String family) {
+  final f = family.trim();
+  if (f.isEmpty) return base;
+
+  TextTheme apply(TextTheme Function(TextTheme) fn) {
+    try {
+      return fn(base);
+    } catch (_) {
+      return base.apply(fontFamily: f);
+    }
+  }
+
+  switch (f) {
+  // ===== Latin / English =====
+    case 'Poppins':
+      return apply(GoogleFonts.poppinsTextTheme);
+    case 'Inter':
+      return apply(GoogleFonts.interTextTheme);
+    case 'Roboto':
+      return apply(GoogleFonts.robotoTextTheme);
+
+  // ===== Serif / Fancy =====
+    case 'DM Serif Display':
+      return apply(GoogleFonts.dmSerifDisplayTextTheme);
+    case 'Playfair Display':
+      return apply(GoogleFonts.playfairDisplayTextTheme);
+
+  // ===== Cool / modern (youth) =====
+    case 'Rubik':
+      return apply(GoogleFonts.rubikTextTheme);
+    case 'Space Grotesk':
+      return apply(GoogleFonts.spaceGroteskTextTheme);
+    case 'Montserrat':
+      return apply(GoogleFonts.montserratTextTheme);
+    case 'Nunito':
+      return apply(GoogleFonts.nunitoTextTheme);
+
+  // ===== Love / Romantic =====
+    case 'Dancing Script':
+      return apply(GoogleFonts.dancingScriptTextTheme);
+
+  // ===== Arabic =====
+    case 'Cairo':
+      return apply(GoogleFonts.cairoTextTheme);
+    case 'Reem Kufi':
+      return apply(GoogleFonts.reemKufiTextTheme);
+    case 'Tajawal':
+      return apply(GoogleFonts.tajawalTextTheme);
+    case 'Almarai':
+      return apply(GoogleFonts.almaraiTextTheme);
+    case 'Amiri':
+      return apply(GoogleFonts.amiriTextTheme);
+
+  // Backward compatibility (older stored values)
+    case 'NotoSansArabic':
+    case 'Noto Sans Arabic':
+      return apply(GoogleFonts.notoSansArabicTextTheme);
+
+    default:
+    // Fallback: If you bundled as assets or the platform has it, it will work.
+      return base.apply(fontFamily: f);
+  }
+}
+
+/// === THEME DATA ===
+///
+/// ✅ Defaults (from mw_text_theme.dart):
+/// - English default: Poppins
+/// - Arabic default: Noto Sans Arabic
+ThemeData buildAppTheme({
+  bool isArabic = false,
+  double fontScale = 1.0,
+  String? fontFamily,
+}) {
+  // Resolve the desired family (uses defaults based on locale)
+  final resolvedFamily = resolveMwFontFamily(
+    isArabic: isArabic,
+    override: fontFamily,
+  );
+
   final base = ThemeData(
     useMaterial3: true,
     brightness: Brightness.dark,
@@ -96,10 +176,19 @@ ThemeData buildAppTheme({bool isArabic = false}) {
       background: kBgColor,
       error: kErrorColor,
     ),
-    fontFamily: 'Poppins',
+    // Keep ThemeData.fontFamily set for widgets that rely on it.
+    fontFamily: resolvedFamily,
   );
 
-  final textTheme = buildMwTextTheme(isArabic: isArabic);
+  // MW sizing + Arabic letterSpacing rules
+  var textTheme = buildMwTextTheme(
+    isArabic: isArabic,
+    fontScale: fontScale,
+    fontFamilyOverride: resolvedFamily,
+  );
+
+  // Ensure actual font is loaded/rendered via google_fonts where possible
+  textTheme = _applyGoogleFontToTheme(textTheme, resolvedFamily);
 
   return base.copyWith(
     textTheme: textTheme,
@@ -112,7 +201,7 @@ ThemeData buildAppTheme({bool isArabic = false}) {
       centerTitle: true,
       foregroundColor: kTextPrimary,
       titleTextStyle: textTheme.titleMedium?.copyWith(
-        fontSize: 20,
+        fontSize: (20 * fontScale).clamp(12.0, 28.0),
         fontWeight: FontWeight.w600,
         color: kTextPrimary,
       ),
@@ -135,23 +224,19 @@ ThemeData buildAppTheme({bool isArabic = false}) {
           return kPrimaryGold;
         }),
         foregroundColor: MaterialStateProperty.all(Colors.black),
-        shadowColor: MaterialStateProperty.all(
-          kGoldDeep.withOpacity(0.35),
-        ),
+        shadowColor: MaterialStateProperty.all(kGoldDeep.withOpacity(0.35)),
         elevation: MaterialStateProperty.all(3),
         shape: MaterialStateProperty.all(
-          RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         ),
         padding: MaterialStateProperty.all(
           const EdgeInsets.symmetric(vertical: 14, horizontal: 26),
         ),
         textStyle: MaterialStateProperty.all(
-          const TextStyle(
-            fontSize: 15,
+          TextStyle(
+            fontSize: (15 * fontScale).clamp(12.0, 22.0),
             fontWeight: FontWeight.w700,
-            letterSpacing: 0.4,
+            letterSpacing: isArabic ? 0.0 : 0.4,
             color: Colors.black,
           ),
         ),
@@ -161,9 +246,7 @@ ThemeData buildAppTheme({bool isArabic = false}) {
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(
         foregroundColor: kPrimaryGold,
-        textStyle: textTheme.bodyMedium?.copyWith(
-          fontWeight: FontWeight.w600,
-        ),
+        textStyle: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
       ),
     ),
 
@@ -186,8 +269,10 @@ ThemeData buildAppTheme({bool isArabic = false}) {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: const BorderRadius.all(Radius.circular(12)),
-        borderSide:
-        BorderSide(color: kPrimaryGold.withOpacity(0.95), width: 1.3),
+        borderSide: BorderSide(
+          color: kPrimaryGold.withOpacity(0.95),
+          width: 1.3,
+        ),
       ),
       errorBorder: const OutlineInputBorder(
         borderRadius: BorderRadius.all(Radius.circular(12)),
@@ -238,9 +323,7 @@ ThemeData buildAppTheme({bool isArabic = false}) {
       backgroundColor: kSurfaceAltColor,
       contentTextStyle: textTheme.bodyMedium,
       behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
     ),
   );
 }

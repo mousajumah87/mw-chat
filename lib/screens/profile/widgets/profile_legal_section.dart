@@ -1,3 +1,5 @@
+// lib/screens/profile/widgets/profile_legal_section.dart
+
 import 'package:flutter/material.dart';
 
 import '../../../l10n/app_localizations.dart';
@@ -13,53 +15,99 @@ class ProfileLegalSection extends StatelessWidget {
     required this.onOpenTerms,
   });
 
+  Widget _tile({
+    required BuildContext context,
+    required IconData icon,
+    required String title,
+    String? subtitle,
+    VoidCallback? onTap,
+    bool showChevron = true,
+  }) {
+    final theme = Theme.of(context);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          child: Row(
+            children: [
+              Icon(icon, color: kPrimaryGold.withOpacity(0.95)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.w900,
+                        color: kTextPrimary.withOpacity(0.95),
+                      ),
+                    ),
+                    if (subtitle != null && subtitle.trim().isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        subtitle,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: kTextSecondary.withOpacity(0.95),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (showChevron)
+                Icon(
+                  isRtl ? Icons.chevron_left_rounded : Icons.chevron_right_rounded,
+                  color: Colors.white.withOpacity(0.65),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _divider() => Divider(
+    height: 1,
+    thickness: 1,
+    color: Colors.white.withOpacity(0.06),
+  );
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
 
+    final termsTitle =
+    (l10n.termsOfUse.isNotEmpty) ? l10n.termsOfUse : 'Terms of Use';
+
+    final contactTitle =
+    (l10n.contactSupport.isNotEmpty) ? l10n.contactSupport : 'Contact support';
+
+    final contactSubtitle = (l10n.contactSupportSubtitle.isNotEmpty)
+        ? l10n.contactSupportSubtitle
+        : 'support@mwchats.com';
+
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        const Divider(height: 32),
-        Align(
-          alignment: isRtl ? Alignment.centerRight : Alignment.centerLeft,
-          child: Text(
-            l10n.legalTitle,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Colors.white,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
+        _tile(
+          context: context,
+          icon: Icons.gavel_outlined,
+          title: termsTitle,
+          onTap: onOpenTerms,
         ),
-        const SizedBox(height: 12),
-        Container(
-          decoration: BoxDecoration(
-            color: kSurfaceColor,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: kBorderColor),
-          ),
-          child: ListTile(
-            leading: const Icon(Icons.gavel_outlined, color: Colors.white70),
-            title: Text(l10n.termsTitle, style: const TextStyle(color: Colors.white)),
-            trailing: const Icon(Icons.chevron_right, color: Colors.white54),
-            onTap: onOpenTerms,
-          ),
-        ),
-        const SizedBox(height: 12),
-        Container(
-          decoration: BoxDecoration(
-            color: kSurfaceColor,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: kBorderColor),
-          ),
-          child: ListTile(
-            leading: const Icon(Icons.mail_outline, color: Colors.white70),
-            title: Text(l10n.contactSupport, style: const TextStyle(color: Colors.white)),
-            subtitle: Text(
-              l10n.contactSupportSubtitle,
-              style: const TextStyle(color: Colors.white70, fontSize: 12),
-            ),
-          ),
+        _divider(),
+        _tile(
+          context: context,
+          icon: Icons.mail_outline,
+          title: contactTitle,
+          subtitle: contactSubtitle,
+          onTap: null, // read-only (no tap) unless you want to email-launch
+          showChevron: false,
         ),
       ],
     );

@@ -22,6 +22,10 @@ class PresenceService with WidgetsBindingObserver {
   Timer? _heartbeat;
   static const Duration _heartbeatEvery = Duration(seconds: 60);
 
+  // Debounce offline transitions (prevents iOS flicker)
+  Timer? _offlineDebounce;
+  static const Duration _offlineDebounceDelay = Duration(seconds: 3);
+
   // Prevent overlapping writes
   Future<void> _writeChain = Future<void>.value();
 
@@ -35,6 +39,10 @@ class PresenceService with WidgetsBindingObserver {
     _authSub = FirebaseAuth.instance.authStateChanges().listen((user) async {
       _currentUser = user;
 
+      // Cancel any pending offline when auth changes
+      _offlineDebounce?.cancel();
+      _offlineDebounce = null;
+
       if (user != null) {
         // Ensure privacy defaults exist (only set missing fields).
         await _ensureUserPrivacyDefaults(user.uid);
@@ -44,7 +52,7 @@ class PresenceService with WidgetsBindingObserver {
         _startHeartbeat();
       } else {
         _stopHeartbeat();
-        await _setPresence(isOnline: false);
+        await _setPresence(isOnline: false, updateLastSeen: true);
       }
     });
   }
@@ -85,14 +93,16 @@ class PresenceService with WidgetsBindingObserver {
   void _startHeartbeat() {
     _heartbeat?.cancel();
     _heartbeat = Timer.periodic(_heartbeatEvery, (_) {
-      // Fire-and-forget heartbeat update (serialized via _enqueueWrite)
       _enqueueWrite(() async {
         final user = _currentUser ?? FirebaseAuth.instance.currentUser;
         if (_disposed || user == null) return;
 
+        // ✅ IMPORTANT:
+        // Do NOT update lastSeen while online. That breaks "last seen".
+        // Use lastActive (or similar) to show activity if you need it.
         await FirebaseFirestore.instance.collection('users').doc(user.uid).set(
           {
-            'lastSeen': FieldValue.serverTimestamp(),
+            'lastActive': FieldValue.serverTimestamp(),
           },
           SetOptions(merge: true),
         );
@@ -130,21 +140,37 @@ class PresenceService with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _setPresence({required bool isOnline}) async {
+  /// Presence writer:
+  /// - writes BOTH isOnline + online for compatibility
+  /// - updates lastSeen ONLY when going offline (or explicit request)
+  Future<void> _setPresence({
+    required bool isOnline,
+    required bool updateLastSeen,
+  }) async {
     final user = _currentUser ?? FirebaseAuth.instance.currentUser;
     if (_disposed || user == null) return;
 
     _enqueueWrite(() async {
+      final Map<String, dynamic> payload = {
+        // compatibility (some screens may read either)
+        'isOnline': isOnline,
+        'online': isOnline,
+
+        // Optional: keep a dedicated activity ping
+        'lastActive': FieldValue.serverTimestamp(),
+      };
+
+      // Only update lastSeen when OFFLINE (or forced)
+      if (updateLastSeen) {
+        payload['lastSeen'] = FieldValue.serverTimestamp();
+      }
+
       await FirebaseFirestore.instance.collection('users').doc(user.uid).set(
-        {
-          'isOnline': isOnline,
-          'lastSeen': FieldValue.serverTimestamp(),
-        },
+        payload,
         SetOptions(merge: true),
       );
     });
 
-    // ensure chain completes when awaited by callers
     await _writeChain;
   }
 
@@ -154,19 +180,31 @@ class PresenceService with WidgetsBindingObserver {
 
     // Respect privacy: if user disabled online status, keep isOnline = false.
     final allowed = await _canShowOnline(user.uid);
-    await _setPresence(isOnline: allowed ? true : false);
+
+    // When online:
+    // - do NOT touch lastSeen
+    await _setPresence(isOnline: allowed ? true : false, updateLastSeen: false);
   }
 
   Future<void> markOnline() async {
     if (_disposed) return;
+
+    // Cancel pending offline debounce (prevents flicker)
+    _offlineDebounce?.cancel();
+    _offlineDebounce = null;
+
     await _markOnlineInternal();
     _startHeartbeat();
   }
 
   Future<void> markOffline() async {
     if (_disposed) return;
+
     _stopHeartbeat();
-    await _setPresence(isOnline: false);
+
+    // When offline:
+    // - update lastSeen
+    await _setPresence(isOnline: false, updateLastSeen: true);
   }
 
   @override
@@ -175,7 +213,6 @@ class PresenceService with WidgetsBindingObserver {
 
     switch (state) {
       case AppLifecycleState.resumed:
-      // When resuming, reflect privacy setting again.
         markOnline();
         break;
 
@@ -183,7 +220,11 @@ class PresenceService with WidgetsBindingObserver {
       case AppLifecycleState.paused:
       case AppLifecycleState.hidden:
       case AppLifecycleState.detached:
-        markOffline();
+      // ✅ Debounce offline so iOS transient inactive doesn't flip status
+        _offlineDebounce?.cancel();
+        _offlineDebounce = Timer(_offlineDebounceDelay, () {
+          markOffline();
+        });
         break;
     }
   }
@@ -192,12 +233,14 @@ class PresenceService with WidgetsBindingObserver {
     if (_disposed) return;
     _disposed = true;
 
+    _offlineDebounce?.cancel();
+    _offlineDebounce = null;
+
     WidgetsBinding.instance.removeObserver(this);
     _stopHeartbeat();
 
-    // Best-effort offline update (don't throw)
     try {
-      await _setPresence(isOnline: false);
+      await _setPresence(isOnline: false, updateLastSeen: true);
     } catch (_) {}
 
     await _authSub?.cancel();

@@ -109,6 +109,7 @@ class MwEmojiPanel extends StatelessWidget {
                     height: emojiSize,
                     fit: BoxFit.contain,
                     filterQuality: FilterQuality.high,
+                    gaplessPlayback: true,
                     errorBuilder: (_, __, ___) => const Icon(
                       Icons.broken_image_outlined,
                       color: Colors.white54,

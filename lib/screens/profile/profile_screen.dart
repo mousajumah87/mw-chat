@@ -1,3 +1,17 @@
+// lib/screens/profile/profile_screen.dart
+//
+// MW Chat – Account (Profile) Screen
+// Updated to align with new main menu:
+// - Menu now has: Account (Profile), Font & Display, Privacy Settings, Invite Friends, About, Logout
+// - This screen focuses on ACCOUNT fields + Save + Sensitive actions
+// - Privacy + Font & Display + Legal are now accessed from the main menu (avoids duplication)
+// - Responsive + RTL safe + iOS/Android/Web safe (small screens + large text scale)
+//
+// Notes:
+// - Keeps your existing avatar/name/birthday/gender/email/save/delete flows intact
+// - Keeps the subtle MW watermark section header style (6–8% opacity)
+// - Layout: always scrollable, safe paddings, no overflow
+
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -13,19 +27,16 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/ui/app_info.dart';
 import '../../widgets/ui/mw_background.dart';
 import '../../widgets/ui/mw_full_screen_image_viewer.dart';
-import '../legal/terms_of_use_screen.dart';
-import 'presence_privacy_screen.dart';
 
 import 'widgets/profile_avatar_section.dart';
 import 'widgets/profile_birthday_section.dart';
 import 'widgets/profile_danger_zone_section.dart';
 import 'widgets/profile_footer.dart';
 import 'widgets/profile_gender_section.dart';
-import 'widgets/profile_legal_section.dart';
 import 'widgets/profile_name_section.dart';
-import 'widgets/profile_privacy_tile.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -49,17 +60,14 @@ class _ProfileScreenState extends State<ProfileScreen>
   final _lastNameCtrl = TextEditingController();
   DateTime? _birthday;
 
-  // 'none' = user did not specify gender (optional)
   String _gender = 'none';
 
-  // ✅ Email display (read-only)
   String? _email;
 
   late AnimationController _avatarController;
   late Animation<double> _scale;
 
-  static const String _appVersion = 'v1.0';
-  static const String _websiteUrl = 'https://www.mwchats.com';
+  static const String _websiteUrl = AppInfo.websiteUrl;
 
   bool _uploadingImage = false;
   double _uploadProgress = 0.0;
@@ -106,17 +114,18 @@ class _ProfileScreenState extends State<ProfileScreen>
           .get();
       final data = doc.data() ?? {};
 
-      // ✅ Prefer auth email, fallback to Firestore
       final authEmail = (user.email ?? '').trim();
       final dbEmail = ((data['email'] ?? '') as String).trim();
-      final effectiveEmail = authEmail.isNotEmpty ? authEmail : (dbEmail.isNotEmpty ? dbEmail : null);
+      final effectiveEmail =
+      authEmail.isNotEmpty ? authEmail : (dbEmail.isNotEmpty ? dbEmail : null);
 
-      // ✅ If auth has email and DB doesn't, store it (merge)
+      // persist auth email once
       if (authEmail.isNotEmpty && dbEmail.isEmpty) {
-        FirebaseFirestore.instance.collection('users').doc(user.uid).set(
-          {'email': authEmail},
-          SetOptions(merge: true),
-        ).catchError((e) {
+        FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .set({'email': authEmail}, SetOptions(merge: true))
+            .catchError((e) {
           debugPrint('[ProfileScreen] failed to persist email: $e');
         });
       }
@@ -158,7 +167,6 @@ class _ProfileScreenState extends State<ProfileScreen>
 
     try {
       final picker = ImagePicker();
-
       final XFile? picked = await picker.pickImage(
         source: ImageSource.gallery,
         maxWidth: 1024,
@@ -265,8 +273,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 
     try {
       String? url = _currentUrl;
-      final ref =
-      FirebaseStorage.instance.ref().child('profile_pics/${user.uid}');
+      final ref = FirebaseStorage.instance.ref().child('profile_pics/${user.uid}');
       final metadata = SettableMetadata(contentType: 'image/jpeg');
 
       if (_imageFile != null || _imageBytes != null) {
@@ -298,13 +305,12 @@ class _ProfileScreenState extends State<ProfileScreen>
       }
 
       final authEmail = (user.email ?? '').trim();
+
       final Map<String, dynamic> data = {
         'profileUrl': url ?? '',
         'avatarType': _avatarType,
         'firstName': _firstNameCtrl.text.trim(),
         'lastName': _lastNameCtrl.text.trim(),
-
-        // ✅ Keep email in DB if available (read-only UI)
         if (authEmail.isNotEmpty) 'email': authEmail,
       };
 
@@ -329,7 +335,6 @@ class _ProfileScreenState extends State<ProfileScreen>
         await user.updatePhotoURL(url);
       }
 
-      // ✅ Refresh local email after save (in case provider updated)
       if (mounted) {
         setState(() {
           _email = authEmail.isNotEmpty ? authEmail : _email;
@@ -343,6 +348,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         SnackBar(content: Text(l10n.profileUpdated)),
       );
 
+      // Account screen is opened from menu; popping back feels right after Save.
       if (Navigator.of(context).canPop()) {
         Navigator.of(context).pop();
       }
@@ -371,7 +377,10 @@ class _ProfileScreenState extends State<ProfileScreen>
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(l10n.delete, style: const TextStyle(color: Colors.red)),
+            child: Text(
+              l10n.delete,
+              style: const TextStyle(color: Colors.red),
+            ),
           ),
         ],
       ),
@@ -451,10 +460,8 @@ class _ProfileScreenState extends State<ProfileScreen>
 
       const batchSize = 50;
       while (true) {
-        final msgSnap = await messagesRef
-            .where('senderId', isEqualTo: uid)
-            .limit(batchSize)
-            .get();
+        final msgSnap =
+        await messagesRef.where('senderId', isEqualTo: uid).limit(batchSize).get();
 
         if (msgSnap.docs.isEmpty) break;
 
@@ -486,30 +493,200 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  // ✅ Read-only email tile (modern, copy button)
-  Widget _buildEmailTile(AppLocalizations l10n) {
+  // ===================== UI helpers (Modern MW) =====================
+
+  /// Tiny MW watermark painted on the header line (super subtle).
+  Widget _mwWatermark() {
+    return IgnorePointer(
+      child: Opacity(
+        opacity: 0.07, // 6–8%
+        child: Text(
+          'MW',
+          maxLines: 1,
+          overflow: TextOverflow.clip,
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 2.0,
+            color: kPrimaryGold,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFancySectionHeader(
+      ThemeData theme,
+      String text, {
+        required IconData icon,
+      }) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 18, bottom: 12),
+      child: Row(
+        children: [
+          Flexible(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: kPrimaryGold.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: kPrimaryGold.withOpacity(0.30)),
+                boxShadow: [
+                  BoxShadow(
+                    color: kPrimaryGold.withOpacity(0.10),
+                    blurRadius: 14,
+                    spreadRadius: 0.0,
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, size: 16, color: kPrimaryGold.withOpacity(0.95)),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      text,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w900,
+                        color: kPrimaryGold.withOpacity(0.95),
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Stack(
+              alignment: Alignment.centerLeft,
+              children: [
+                Container(
+                  height: 2,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(99),
+                    gradient: LinearGradient(
+                      colors: [
+                        kPrimaryGold.withOpacity(0.75),
+                        kPrimaryGold.withOpacity(0.20),
+                        Colors.transparent,
+                      ],
+                    ),
+                  ),
+                ),
+                PositionedDirectional(
+                  start: 10,
+                  child: _mwWatermark(),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDangerHeader(
+      ThemeData theme,
+      String text, {
+        required IconData icon,
+      }) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 20, bottom: 12),
+      child: Row(
+        children: [
+          Flexible(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: Colors.red.withOpacity(0.25)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, size: 16, color: Colors.red.withOpacity(0.90)),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      text,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w900,
+                        color: Colors.red.withOpacity(0.90),
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Stack(
+              alignment: Alignment.centerLeft,
+              children: [
+                Container(
+                  height: 2,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(99),
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.red.withOpacity(0.65),
+                        Colors.red.withOpacity(0.18),
+                        Colors.transparent,
+                      ],
+                    ),
+                  ),
+                ),
+                PositionedDirectional(
+                  start: 10,
+                  child: IgnorePointer(
+                    child: Opacity(
+                      opacity: 0.06,
+                      child: Text(
+                        'MW',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 2.0,
+                          color: Colors.red,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmailTile(AppLocalizations l10n, ThemeData theme) {
     final email = (_email ?? '').trim();
-
-    final providers = FirebaseAuth.instance.currentUser?.providerData
-        .map((p) => p.providerId)
-        .toList() ??
-        const <String>[];
-
     final hasEmail = email.isNotEmpty;
 
-    final subtitle = hasEmail
-        ? email
-        : (providers.contains('phone')
-        ? l10n.authError // replace with a proper l10n string if you have one
-        : l10n.authError);
+    final title = (l10n.email.isNotEmpty) ? l10n.email : 'Email';
+    final noEmailText = (l10n.noEmailOnAccount.isNotEmpty)
+        ? l10n.noEmailOnAccount
+        : 'No email on this account';
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: kSurfaceAltColor.withOpacity(0.35),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withOpacity(0.10)),
+        color: Colors.white.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withOpacity(0.12)),
       ),
       child: Row(
         children: [
@@ -520,23 +697,20 @@ class _ProfileScreenState extends State<ProfileScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  // If you have l10n.emailLabel use it; otherwise keep "Email"
-                  'Email',
-                  style: TextStyle(
+                  title,
+                  style: theme.textTheme.labelLarge?.copyWith(
                     color: kTextSecondary.withOpacity(0.95),
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  hasEmail ? subtitle : 'No email on this account',
+                  hasEmail ? email : noEmailText,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
                     color: kTextPrimary.withOpacity(0.95),
-                    fontWeight: FontWeight.w600,
-                    fontSize: 15,
                   ),
                 ),
               ],
@@ -544,25 +718,33 @@ class _ProfileScreenState extends State<ProfileScreen>
           ),
           if (hasEmail)
             IconButton(
-              tooltip: 'Copy',
+              tooltip: (l10n.copy.isNotEmpty) ? l10n.copy : 'Copy',
               onPressed: () async {
                 await Clipboard.setData(ClipboardData(text: email));
                 if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Copied')),
+                  SnackBar(
+                    content: Text((l10n.copied.isNotEmpty) ? l10n.copied : 'Copied'),
+                  ),
                 );
               },
-              icon: Icon(Icons.copy_rounded,
-                  color: kPrimaryGold.withOpacity(0.95)),
+              icon: Icon(
+                Icons.copy_rounded,
+                color: kPrimaryGold.withOpacity(0.95),
+              ),
             ),
         ],
       ),
     );
   }
 
+  // ===================== build =====================
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
+    final theme = Theme.of(context);
+
     final textDirection = Directionality.of(context);
     final isRtl = textDirection == TextDirection.rtl;
 
@@ -570,13 +752,16 @@ class _ProfileScreenState extends State<ProfileScreen>
     final width = media.size.width;
     final isWide = width >= 900;
 
-    // Provider used for fullscreen
+    // ✅ smaller padding on tiny phones, larger on tablets/web
+    final double pagePad = width < 360 ? 16 : 24;
+
     final ImageProvider? localProvider = kIsWeb
         ? (_imageBytes != null ? MemoryImage(_imageBytes!) : null)
         : (_imageFile != null ? FileImage(_imageFile!) : null);
 
     final bool hasNetwork = (_currentUrl?.trim().isNotEmpty ?? false);
     const heroTag = 'my_profile_photo';
+
     final ImageProvider? tapProvider =
         localProvider ?? (hasNetwork ? CachedNetworkImageProvider(_currentUrl!) : null);
 
@@ -587,8 +772,10 @@ class _ProfileScreenState extends State<ProfileScreen>
         elevation: 0,
         centerTitle: true,
         title: Text(
-          l10n.profileTitle,
-          style: const TextStyle(fontWeight: FontWeight.w600),
+          // Menu label is "Account", but screen can still show "Profile" in-app.
+          // If you want it identical, create l10n.accountTitle and use it here.
+          (l10n.profileTitle.isNotEmpty) ? l10n.profileTitle : 'Account',
+          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
         ),
         leading: Navigator.of(context).canPop()
             ? IconButton(
@@ -617,13 +804,13 @@ class _ProfileScreenState extends State<ProfileScreen>
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.65),
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(color: Colors.white.withOpacity(0.08)),
+                        color: Colors.black.withOpacity(0.62),
+                        borderRadius: BorderRadius.circular(26),
+                        border: Border.all(color: Colors.white.withOpacity(0.10)),
                       ),
                       child: SingleChildScrollView(
                         physics: const BouncingScrollPhysics(),
-                        padding: const EdgeInsets.all(24),
+                        padding: EdgeInsets.all(pagePad),
                         child: Align(
                           alignment: Alignment.topCenter,
                           child: ConstrainedBox(
@@ -631,6 +818,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
+                                // Avatar
                                 ProfileAvatarSection(
                                   scale: _scale,
                                   imageBytes: _imageBytes,
@@ -647,18 +835,22 @@ class _ProfileScreenState extends State<ProfileScreen>
                                       : () => _openAvatarFullScreen(tapProvider, heroTag),
                                 ),
 
-                                const SizedBox(height: 28),
+                                // ACCOUNT
+                                _buildFancySectionHeader(
+                                  theme,
+                                  // menu says Account; keep it consistent
+                                  (l10n.account.isNotEmpty) ? l10n.account : 'Account',
+                                  icon: Icons.manage_accounts_rounded,
+                                ),
 
                                 ProfileNameSection(
                                   firstNameCtrl: _firstNameCtrl,
                                   lastNameCtrl: _lastNameCtrl,
                                 ),
-
-                                // ✅ Email shown here (read-only)
                                 const SizedBox(height: 14),
-                                _buildEmailTile(l10n),
 
-                                const SizedBox(height: 20),
+                                _buildEmailTile(l10n, theme),
+                                const SizedBox(height: 18),
 
                                 ProfileBirthdaySection(
                                   birthday: _birthday,
@@ -667,7 +859,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                                   textDirection: textDirection,
                                   onPickBirthday: _pickBirthday,
                                 ),
-
                                 const SizedBox(height: 22),
 
                                 ProfileGenderSection(
@@ -677,8 +868,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                                   onGenderChanged: (v) => setState(() => _gender = v),
                                 ),
 
-                                const SizedBox(height: 30),
+                                const SizedBox(height: 18),
 
+                                // SAVE
                                 SizedBox(
                                   width: double.infinity,
                                   child: ElevatedButton.icon(
@@ -690,38 +882,39 @@ class _ProfileScreenState extends State<ProfileScreen>
                                       child: CircularProgressIndicator(strokeWidth: 2),
                                     )
                                         : const Icon(Icons.save),
-                                    label: Text(_saving ? l10n.saving : l10n.save.toUpperCase()),
+                                    label: Text(
+                                      _saving
+                                          ? l10n.saving
+                                          : ((l10n.save.isNotEmpty) ? l10n.save : 'Save')
+                                          .toUpperCase(),
+                                    ),
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: kGoldDeep,
                                       foregroundColor: Colors.black,
                                       elevation: 2,
                                       shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(12),
+                                        borderRadius: BorderRadius.circular(14),
                                       ),
-                                      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 14,
+                                        horizontal: 24,
+                                      ),
                                     ),
                                   ),
                                 ),
 
-                                ProfilePrivacyTile(
-                                  onTap: () {
-                                    Navigator.of(context).push(
-                                      MaterialPageRoute(builder: (_) => const PresencePrivacyScreen()),
-                                    );
-                                  },
+                                const SizedBox(height: 14),
+
+                                // DANGER / Sensitive actions (keep on Account screen)
+                                _buildDangerHeader(
+                                  theme,
+                                  (l10n.sensitiveActions.isNotEmpty)
+                                      ? l10n.sensitiveActions
+                                      : ((l10n.dangerZone.isNotEmpty)
+                                      ? l10n.dangerZone
+                                      : 'Sensitive actions'),
+                                  icon: Icons.warning_amber_rounded,
                                 ),
-
-                                ProfileLegalSection(
-                                  isRtl: isRtl,
-                                  onOpenTerms: () {
-                                    Navigator.of(context).push(
-                                      MaterialPageRoute(builder: (_) => const TermsOfUseScreen()),
-                                    );
-                                  },
-                                ),
-
-                                const SizedBox(height: 40),
-
                                 ProfileDangerZoneSection(
                                   isRtl: isRtl,
                                   deletingAccount: _deletingAccount,
@@ -738,7 +931,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                   ProfileFooter(
                     l10n: l10n,
                     isWide: isWide,
-                    appVersion: _appVersion,
+                    appVersion: AppInfo.version,
                     onOpenWebsite: _openMwWebsite,
                   ),
                 ],

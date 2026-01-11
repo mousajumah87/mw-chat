@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/ui/app_info.dart';
 import '../../widgets/ui/mw_avatar.dart';
 import '../../widgets/ui/mw_background.dart';
 import '../../widgets/ui/mw_feedback.dart';
@@ -29,8 +30,7 @@ class UserProfileScreen extends StatefulWidget {
 class _UserProfileScreenState extends State<UserProfileScreen>
     with SingleTickerProviderStateMixin {
   static const int _onlineTtlSeconds = 300;
-  static const String _appVersion = 'v1.0';
-  static const String _websiteUrl = 'https://www.mwchats.com';
+  static const String _websiteUrl = AppInfo.websiteUrl;
 
   bool _isBlocking = false;
   late final AnimationController _glowController;
@@ -322,7 +322,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           Text(l10n.appBrandingBeta, style: textStyle, textAlign: TextAlign.center),
-          Text(_appVersion, style: versionStyle, textAlign: TextAlign.center),
+          Text(AppInfo.version, style: versionStyle, textAlign: TextAlign.center),
           InkWell(
             onTap: _openMwWebsite,
             borderRadius: BorderRadius.circular(16),

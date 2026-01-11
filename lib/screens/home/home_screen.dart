@@ -1,17 +1,18 @@
 // lib/screens/home/home_screen.dart
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/ui/app_info.dart';
 import '../../widgets/ui/mw_background.dart';
 import '../../widgets/ui/mw_app_header.dart';
 import '../legal/terms_of_use_screen.dart';
-
-// ✅ Use ONE file for both tabs (mode switch)
 import 'mw_friends_tab.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -25,10 +26,70 @@ class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
 
-  static const String _appVersion = 'v1.0';
-  static const String _websiteUrl = 'https://www.mwchats.com';
+  static const String _websiteUrl = AppInfo.websiteUrl;
+
+  // ✅ Canonical field (this is what we will enforce everywhere)
+  static const String _kTermsAcceptedAt = 'termsAcceptedAt';
+
+  // ✅ Legacy fields we may have used previously (tolerate + migrate)
+  static const String _kTermsAcceptedAtLegacy = 'termsAcceptedAt'; // common older variant
+  static const String _kHasAcceptedTermsLegacy = 'hasAcceptedTerms';
 
   bool _termsCheckedOnce = false;
+  bool _termsFlowInProgress = false;
+
+  void _logTerms(String msg) {
+    if (kDebugMode) debugPrint('[TermsGate] $msg');
+  }
+
+  Timestamp? _readAcceptedTimestamp(Map<String, dynamic> data) {
+    final v1 = data[_kTermsAcceptedAt];
+    if (v1 is Timestamp) return v1;
+
+    final v2 = data[_kTermsAcceptedAtLegacy];
+    if (v2 is Timestamp) return v2;
+
+    // Some people accidentally stored it as DateTime/string; tolerate but prefer Timestamp
+    if (v1 is DateTime) return Timestamp.fromDate(v1);
+    if (v2 is DateTime) return Timestamp.fromDate(v2);
+
+    return null;
+  }
+
+  bool _isAccepted(Map<String, dynamic> data) {
+    // ✅ Accepted if we have any timestamp (canonical or legacy)
+    final ts = _readAcceptedTimestamp(data);
+    if (ts != null) return true;
+
+    // ✅ Very old boolean fallback
+    if (data[_kHasAcceptedTermsLegacy] == true) return true;
+
+    return false;
+  }
+
+  /// ✅ One-time migration:
+  /// If legacy fields indicate accepted, write the canonical `termsAcceptedAt`.
+  Future<void> _migrateAcceptanceIfNeeded(
+      DocumentReference<Map<String, dynamic>> ref,
+      Map<String, dynamic> data,
+      ) async {
+    final canonical = data[_kTermsAcceptedAt];
+
+    // Already canonical Timestamp => nothing
+    if (canonical is Timestamp) return;
+
+    final legacyTs = _readAcceptedTimestamp(data);
+    final legacyBool = data[_kHasAcceptedTermsLegacy] == true;
+
+    // If any legacy form says accepted => write canonical
+    if (legacyTs != null || legacyBool) {
+      _logTerms('MIGRATE: writing $_kTermsAcceptedAt (canonical)');
+      await ref.set(
+        {_kTermsAcceptedAt: FieldValue.serverTimestamp()},
+        SetOptions(merge: true),
+      );
+    }
+  }
 
   @override
   void initState() {
@@ -36,7 +97,6 @@ class _HomeScreenState extends State<HomeScreen>
 
     _tabController = TabController(length: 2, vsync: this);
 
-    // ✅ Run once after first frame
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (_termsCheckedOnce) return;
       _termsCheckedOnce = true;
@@ -58,55 +118,134 @@ class _HomeScreenState extends State<HomeScreen>
     if (!ok) debugPrint('Could not launch $_websiteUrl');
   }
 
+  /// ✅ Robust Terms gate (no flicker):
+  /// 1) CACHE check: if accepted => allow immediately, then verify server in background.
+  /// 2) SERVER check: if accepted => allow, and migrate if needed.
+  /// 3) Otherwise show Terms screen and write canonical acceptance on Agree.
   Future<void> _ensureUserAcceptedTerms() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+    if (!mounted) return;
+
+    if (_termsFlowInProgress) {
+      _logTerms('Skipped: already running');
+      return;
+    }
+    _termsFlowInProgress = true;
 
     try {
-      final ref = FirebaseFirestore.instance.collection('users').doc(user.uid);
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        _logTerms('No currentUser (skip).');
+        return;
+      }
 
-      // ✅ Cache-first (fast), fallback to server if missing/unknown
-      Map<String, dynamic> data = const <String, dynamic>{};
+      final fs = FirebaseFirestore.instance;
+      final ref = fs.collection('users').doc(user.uid);
 
+      _logTerms('currentUser uid=${user.uid} email=${user.email}');
+      _logTerms('projectId=${fs.app.options.projectId}');
+      _logTerms('firestoreHost=${fs.settings.host} sslEnabled=${fs.settings.sslEnabled}');
+
+      // -------------------------
+      // 1) CACHE (fast path)
+      // -------------------------
       try {
-        final cached = await ref.get(const GetOptions(source: Source.cache));
-        data = cached.data() ?? const <String, dynamic>{};
-      } catch (_) {
-        // ignore cache read failures
-      }
+        final cacheSnap = await ref.get(const GetOptions(source: Source.cache));
+        final cacheData = cacheSnap.data() ?? const <String, dynamic>{};
+        final cacheAccepted = _isAccepted(cacheData);
 
-      bool hasAcceptedTerms = data['hasAcceptedTerms'] == true;
-
-      if (!hasAcceptedTerms) {
-        final snap = await ref.get();
-        final serverData = snap.data() ?? const <String, dynamic>{};
-        hasAcceptedTerms = serverData['hasAcceptedTerms'] == true;
-      }
-
-      if (!hasAcceptedTerms && mounted) {
-        final accepted = await Navigator.of(context).push<bool>(
-          MaterialPageRoute(
-            builder: (_) => const TermsOfUseScreen(),
-            fullscreenDialog: true,
-          ),
+        _logTerms(
+          'CACHE accepted=$cacheAccepted '
+              '($_kTermsAcceptedAt=${cacheData[_kTermsAcceptedAt]} / '
+              '$_kTermsAcceptedAtLegacy=${cacheData[_kTermsAcceptedAtLegacy]} / '
+              '$_kHasAcceptedTermsLegacy=${cacheData[_kHasAcceptedTermsLegacy]})',
         );
 
-        if (!mounted) return;
-
-        if (accepted == true) {
-          await ref.set(
-            {
-              'hasAcceptedTerms': true,
-              'termsAcceptedAt': FieldValue.serverTimestamp(),
-            },
-            SetOptions(merge: true),
-          );
-        } else {
-          await FirebaseAuth.instance.signOut();
+        if (cacheAccepted) {
+          // background verify + migrate if needed (don’t block UI)
+          unawaited(_bgVerifyServerAndMigrate(ref));
+          return;
         }
+      } catch (e) {
+        _logTerms('CACHE read failed (ok): $e');
       }
+
+      // -------------------------
+      // 2) SERVER truth
+      // -------------------------
+      final serverSnap = await ref.get(const GetOptions(source: Source.server));
+      final serverData = serverSnap.data() ?? const <String, dynamic>{};
+      final serverAccepted = _isAccepted(serverData);
+
+      _logTerms(
+        'SERVER accepted=$serverAccepted '
+            '($_kTermsAcceptedAt=${serverData[_kTermsAcceptedAt]} / '
+            '$_kTermsAcceptedAtLegacy=${serverData[_kTermsAcceptedAtLegacy]} / '
+            '$_kHasAcceptedTermsLegacy=${serverData[_kHasAcceptedTermsLegacy]})',
+      );
+
+      if (serverAccepted) {
+        await _migrateAcceptanceIfNeeded(ref, serverData);
+        return;
+      }
+
+      if (!mounted) return;
+
+      // -------------------------
+      // 3) Show Terms screen
+      // -------------------------
+      final result = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(
+          builder: (_) => const TermsOfUseScreen(),
+          fullscreenDialog: true,
+        ),
+      );
+
+      if (!mounted) return;
+
+      if (result == true) {
+        // ✅ Always write CANONICAL field
+        await ref.set(
+          {_kTermsAcceptedAt: FieldValue.serverTimestamp()},
+          SetOptions(merge: true),
+        );
+
+        final verify = await ref.get(const GetOptions(source: Source.server));
+        final vData = verify.data() ?? const <String, dynamic>{};
+        final ok = _isAccepted(vData);
+
+        _logTerms('VERIFY accepted=$ok ($_kTermsAcceptedAt=${vData[_kTermsAcceptedAt]})');
+        return;
+      }
+
+      // User did not accept
+      await FirebaseAuth.instance.signOut();
     } catch (e, st) {
-      debugPrint('[HomeScreen] _ensureUserAcceptedTerms error: $e\n$st');
+      debugPrint('[HomeScreen] Terms gate error: $e\n$st');
+    } finally {
+      _termsFlowInProgress = false;
+    }
+  }
+
+  Future<void> _bgVerifyServerAndMigrate(
+      DocumentReference<Map<String, dynamic>> ref,
+      ) async {
+    try {
+      final serverSnap = await ref.get(const GetOptions(source: Source.server));
+      final serverData = serverSnap.data() ?? const <String, dynamic>{};
+      final serverAccepted = _isAccepted(serverData);
+
+      _logTerms(
+        'BG VERIFY SERVER accepted=$serverAccepted '
+            '($_kTermsAcceptedAt=${serverData[_kTermsAcceptedAt]} / '
+            '$_kTermsAcceptedAtLegacy=${serverData[_kTermsAcceptedAtLegacy]} / '
+            '$_kHasAcceptedTermsLegacy=${serverData[_kHasAcceptedTermsLegacy]})',
+      );
+
+      if (serverAccepted) {
+        await _migrateAcceptanceIfNeeded(ref, serverData);
+      }
+    } catch (e) {
+      _logTerms('BG VERIFY failed (ok): $e');
     }
   }
 
@@ -114,8 +253,7 @@ class _HomeScreenState extends State<HomeScreen>
   Widget build(BuildContext context) {
     final currentUser = FirebaseAuth.instance.currentUser!;
     final media = MediaQuery.of(context);
-    final width = media.size.width;
-    final isWide = width >= 900;
+    final isWide = media.size.width >= 900;
 
     final l10n = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
@@ -175,8 +313,6 @@ class _HomeScreenState extends State<HomeScreen>
                                 mode: MwFriendsTabMode.friendsOnly,
                               ),
                             ),
-
-                            // ✅ Still lazy-build the MW users tab (big perf win)
                             _KeepAlive(
                               child: _LazyTab(
                                 controller: _tabController,
@@ -244,7 +380,7 @@ class _HomeScreenState extends State<HomeScreen>
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           Text(l10n.appBrandingBeta, style: textStyle),
-          Text(_appVersion, style: versionStyle),
+          Text(AppInfo.version, style: versionStyle),
           InkWell(
             onTap: _openMwWebsite,
             borderRadius: BorderRadius.circular(16),

@@ -1,128 +1,158 @@
 import 'package:flutter/material.dart';
 
+/// ✅ DEFAULTS (Back to the original look like your screenshot)
 const _kEnglishFont = 'Poppins';
-const _kArabicFont = 'NotoSansArabic';
+const _kArabicFont = 'Noto Sans Arabic';
 
-TextTheme buildMwTextTheme({required bool isArabic}) {
+bool _isArabicFamily(String family) {
+  final f = family.trim();
+  return f == 'Noto Sans Arabic' ||
+      f == 'NotoSansArabic' || // backward compatibility
+      f == 'Cairo' ||
+      f == 'Tajawal' ||
+      f == 'Almarai' ||
+      f == 'Reem Kufi' ||
+      f == 'Amiri';
+}
+
+String resolveMwFontFamily({
+  required bool isArabic,
+  String? override,
+}) {
+  final o = (override ?? '').trim();
+  if (o.isNotEmpty) return o;
+  return isArabic ? _kArabicFont : _kEnglishFont;
+}
+
+TextTheme buildMwTextTheme({
+  required bool isArabic,
+  double fontScale = 1.0,
+  String? fontFamilyOverride,
+}) {
   final base = ThemeData.dark().textTheme;
-  final fontFamily = isArabic ? _kArabicFont : _kEnglishFont;
 
-  // For Arabic, avoid big positive letterSpacing – keep it neutral/tight.
-  double ls(double value) => isArabic ? 0.0 : value;
+  final resolvedFamily = resolveMwFontFamily(
+    isArabic: isArabic,
+    override: fontFamilyOverride,
+  );
+
+  final bool familyIsArabic = _isArabicFamily(resolvedFamily);
+
+  // ✅ Letter spacing:
+  // - Arabic locale should not use positive letterSpacing
+  // - Also: Arabic font selected while locale is English → still avoid spacing
+  double ls(double value) => (isArabic || familyIsArabic) ? 0.0 : value;
+
+  // ✅ Arabic fonts typically need slightly more line height
+  double h(double value) => familyIsArabic ? (value + 0.06) : value;
+
+  // Scale helper
+  double s(double v) => (v * fontScale).clamp(11.0, 72.0);
 
   return base.copyWith(
-    // Big hero headings (e.g., onboarding title, main brand headers)
     displayLarge: base.displayLarge?.copyWith(
-      fontFamily: fontFamily,
-      fontSize: 40,
+      fontFamily: resolvedFamily,
+      fontSize: s(40),
       fontWeight: FontWeight.w700,
-      height: 1.18,
+      height: h(1.18),
       letterSpacing: ls(0.2),
     ),
     displayMedium: base.displayMedium?.copyWith(
-      fontFamily: fontFamily,
-      fontSize: 34,
+      fontFamily: resolvedFamily,
+      fontSize: s(34),
       fontWeight: FontWeight.w700,
-      height: 1.2,
+      height: h(1.2),
       letterSpacing: ls(0.15),
     ),
     displaySmall: base.displaySmall?.copyWith(
-      fontFamily: fontFamily,
-      fontSize: 30,
+      fontFamily: resolvedFamily,
+      fontSize: s(30),
       fontWeight: FontWeight.w600,
-      height: 1.2,
+      height: h(1.2),
       letterSpacing: ls(0.1),
     ),
-
-    // Section titles / screen titles (e.g., "Profile", "Friends", "Settings")
     headlineLarge: base.headlineLarge?.copyWith(
-      fontFamily: fontFamily,
-      fontSize: 26,
+      fontFamily: resolvedFamily,
+      fontSize: s(26),
       fontWeight: FontWeight.w700,
-      height: 1.25,
+      height: h(1.25),
       letterSpacing: ls(0.1),
     ),
     headlineMedium: base.headlineMedium?.copyWith(
-      fontFamily: fontFamily,
-      fontSize: 22,
+      fontFamily: resolvedFamily,
+      fontSize: s(22),
       fontWeight: FontWeight.w600,
-      height: 1.25,
+      height: h(1.25),
       letterSpacing: ls(0.05),
     ),
     headlineSmall: base.headlineSmall?.copyWith(
-      fontFamily: fontFamily,
-      fontSize: 20,
+      fontFamily: resolvedFamily,
+      fontSize: s(20),
       fontWeight: FontWeight.w600,
-      height: 1.25,
+      height: h(1.25),
       letterSpacing: ls(0.0),
     ),
-
-    // AppBar titles / section subtitles
     titleLarge: base.titleLarge?.copyWith(
-      fontFamily: fontFamily,
-      fontSize: 18,
+      fontFamily: resolvedFamily,
+      fontSize: s(18),
       fontWeight: FontWeight.w600,
-      height: 1.3,
+      height: h(1.3),
       letterSpacing: ls(0.0),
     ),
     titleMedium: base.titleMedium?.copyWith(
-      fontFamily: fontFamily,
-      fontSize: 16,
+      fontFamily: resolvedFamily,
+      fontSize: s(16),
       fontWeight: FontWeight.w500,
-      height: 1.35,
+      height: h(1.35),
       letterSpacing: ls(0.05),
     ),
     titleSmall: base.titleSmall?.copyWith(
-      fontFamily: fontFamily,
-      fontSize: 14,
+      fontFamily: resolvedFamily,
+      fontSize: s(14),
       fontWeight: FontWeight.w500,
-      height: 1.35,
+      height: h(1.35),
       letterSpacing: ls(0.05),
     ),
-
-    // Main body text (chat bubbles, descriptions, settings text)
     bodyLarge: base.bodyLarge?.copyWith(
-      fontFamily: fontFamily,
-      fontSize: 16,
+      fontFamily: resolvedFamily,
+      fontSize: s(16),
       fontWeight: FontWeight.w400,
-      height: 1.45,
+      height: h(1.45),
       letterSpacing: ls(0.05),
     ),
     bodyMedium: base.bodyMedium?.copyWith(
-      fontFamily: fontFamily,
-      fontSize: 14,
+      fontFamily: resolvedFamily,
+      fontSize: s(14),
       fontWeight: FontWeight.w400,
-      height: 1.45,
+      height: h(1.45),
       letterSpacing: ls(0.03),
     ),
     bodySmall: base.bodySmall?.copyWith(
-      fontFamily: fontFamily,
-      fontSize: 12,
+      fontFamily: resolvedFamily,
+      fontSize: s(12),
       fontWeight: FontWeight.w400,
-      height: 1.4,
+      height: h(1.4),
       letterSpacing: ls(0.02),
     ),
-
-    // Buttons, chips, small labels
     labelLarge: base.labelLarge?.copyWith(
-      fontFamily: fontFamily,
-      fontSize: 13,
+      fontFamily: resolvedFamily,
+      fontSize: s(13),
       fontWeight: FontWeight.w600,
-      height: 1.3,
+      height: h(1.3),
       letterSpacing: ls(0.1),
     ),
     labelMedium: base.labelMedium?.copyWith(
-      fontFamily: fontFamily,
-      fontSize: 12,
+      fontFamily: resolvedFamily,
+      fontSize: s(12),
       fontWeight: FontWeight.w500,
-      height: 1.3,
+      height: h(1.3),
       letterSpacing: ls(0.05),
     ),
     labelSmall: base.labelSmall?.copyWith(
-      fontFamily: fontFamily,
-      fontSize: 11,
+      fontFamily: resolvedFamily,
+      fontSize: s(11),
       fontWeight: FontWeight.w500,
-      height: 1.2,
+      height: h(1.2),
       letterSpacing: ls(0.03),
     ),
   );

@@ -658,6 +658,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get messageDeletedSuccess => 'Message deleted successfully';
 
   @override
+  String get thisMessageWasDeleted => 'This message was deleted';
+
+  @override
   String get deletingAccount => 'Deleting account...';
 
   @override
@@ -1173,4 +1176,128 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get originalMessageNotFound => 'Original message not found';
+
+  @override
+  String get fontAndDisplay => 'Font & Display';
+
+  @override
+  String get noEmailOnAccount => 'No email linked to this account';
+
+  @override
+  String get copied => 'Copied';
+
+  @override
+  String get copy => 'Copy';
+
+  @override
+  String get fontAndDisplaySubtitle => 'Customize text size and appearance';
+
+  @override
+  String get fontSizeLabel => 'Font size';
+
+  @override
+  String get fontSizeDesc =>
+      'Change how big text looks across MW Chat (including messages).';
+
+  @override
+  String get fontStyleLabel => 'Font style';
+
+  @override
+  String get fontStyleDesc =>
+      'Pick a clean font style that matches your taste.';
+
+  @override
+  String get previewLabel => 'Preview';
+
+  @override
+  String get previewHeadline => 'MW Chat — messages will look like this.';
+
+  @override
+  String get previewBody =>
+      'You can keep it small, or make it more comfortable for your eyes.';
+
+  @override
+  String get resetToDefault => 'Reset to default';
+
+  @override
+  String get backToDefault => 'Back to default.';
+
+  @override
+  String get previewMiniLine => 'This is how your chat text feels in real use.';
+
+  @override
+  String get fontHintNote =>
+      'Tip: Font changes apply instantly across the app.';
+
+  @override
+  String get account => 'Account';
+
+  @override
+  String get preferences => 'Preferences';
+
+  @override
+  String get sensitiveActions => 'Sensitive actions';
+
+  @override
+  String get legal => 'Legal & policies';
+
+  @override
+  String get webFontNote => 'Font settings apply to the web version only';
+
+  @override
+  String get arabicLabel => 'Arabic';
+
+  @override
+  String get messageDeletedForMeSuccess => 'Message deleted for you';
+
+  @override
+  String get messageDeletedForEveryoneSuccess => 'Message deleted for everyone';
+
+  @override
+  String get messageSelectedTitle => 'Message selected';
+
+  @override
+  String get copyNotAvailable => 'Copy not available';
+
+  @override
+  String get deleteMessageDescriptionEveryone =>
+      'Choose how you want to delete this message.';
+
+  @override
+  String get deleteMessageDescriptionMe =>
+      'This will delete the message for you only.';
+
+  @override
+  String get report => 'Report';
+
+  @override
+  String get selectedOne => 'Selected';
+
+  @override
+  String get selectedMany => 'Multiple selected';
+
+  @override
+  String get chooseArabicFont => 'Please choose an Arabic font.';
+
+  @override
+  String get chooseEnglishFont => 'Please choose an English font.';
+
+  @override
+  String get typographyTip =>
+      'Tip: Cool fonts look great for young vibes, clean fonts are best for long chats, and Love fonts are perfect for cute profiles or headings.';
+
+  @override
+  String get typographyWebTip =>
+      'Web tip: If a font looks unchanged, do a hot restart (R) to reload.';
+
+  @override
+  String get englishSample =>
+      'English sample: The quick brown fox jumps over the lazy dog.';
+
+  @override
+  String get arabicSample =>
+      'Arabic sample: Arabic looks beautiful with the right font.';
+
+  @override
+  String get newLabel => 'New';
 }

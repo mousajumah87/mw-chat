@@ -59,7 +59,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _userDocSub;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _friendsSub;
 
-  // ✅ NEW: background subscriptions for each related user doc (fixes “online only after scroll”)
+  // ✅ background subscriptions for each related user doc (fixes “online only after scroll”)
   final Map<String, StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>> _friendUserDocSubs =
   <String, StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>>{};
   final Map<String, Map<String, dynamic>> _friendUserDataCache = <String, Map<String, dynamic>>{};
@@ -68,6 +68,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
   // ✅ MW USERS tab: cursor pagination (FAST)
   static const int _pageSize = 40;
   final List<QueryDocumentSnapshot<Map<String, dynamic>>> _mwUserDocs = [];
+  final Set<String> _mwUserIds = <String>{}; // ✅ prevents duplicates
   DocumentSnapshot<Map<String, dynamic>>? _mwUsersCursor;
   bool _mwUsersLoading = false;
   bool _mwUsersHasMore = true;
@@ -202,6 +203,34 @@ class _MwFriendsTabState extends State<MwFriendsTab>
 
     if (changed && mounted) {
       setState(() {});
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant MwFriendsTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    // If we just switched into MW Users tab, bootstrap immediately
+    final bool becameMwUsers =
+        oldWidget.mode != MwFriendsTabMode.mwUsersOnly &&
+            widget.mode == MwFriendsTabMode.mwUsersOnly;
+
+    if (becameMwUsers) {
+      unawaited(_bootstrapMwUsers());
+    }
+
+    // If we just switched into Friends tab, ensure buckets are ready
+    final bool becameFriends =
+        oldWidget.mode != MwFriendsTabMode.friendsOnly &&
+            widget.mode == MwFriendsTabMode.friendsOnly;
+
+    if (becameFriends) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _initializeStableBucketsAndOrderIfNeeded();
+        _markFriendsNeedRebucket();
+        _markFriendsNeedResort();
+      });
     }
   }
 
@@ -370,6 +399,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
       setState(() {
         if (reset) {
           _mwUserDocs.clear();
+          _mwUserIds.clear();
           _mwUsersCursor = null;
           _mwUsersHasMore = true;
         }
@@ -380,7 +410,9 @@ class _MwFriendsTabState extends State<MwFriendsTab>
 
         for (final d in docs) {
           if (d.id == _currentUid) continue;
-          _mwUserDocs.add(d);
+          if (_mwUserIds.add(d.id)) {
+            _mwUserDocs.add(d);
+          }
         }
 
         _mwUsersHasMore = docs.length >= _pageSize;
@@ -524,21 +556,22 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     });
   }
 
+  // ✅ safer: do not mutate the input Set
   void _syncFriendUserDocSubscriptions(Set<String> targetIds) {
-    // Exclude self
-    targetIds.remove(_currentUid);
+    final ids = <String>{...targetIds}..remove(_currentUid);
 
     // Cancel subscriptions not needed anymore
     final existing = _friendUserDocSubs.keys.toList();
     for (final uid in existing) {
-      if (!targetIds.contains(uid)) {
+      if (!ids.contains(uid)) {
         _friendUserDocSubs[uid]?.cancel();
         _friendUserDocSubs.remove(uid);
+        _friendUserDataCache.remove(uid);
       }
     }
 
     // Add subscriptions for new ids
-    for (final uid in targetIds) {
+    for (final uid in ids) {
       if (_friendUserDocSubs.containsKey(uid)) continue;
 
       final sub = FirebaseFirestore.instance.collection('users').doc(uid).snapshots().listen((snap) {
@@ -589,6 +622,15 @@ class _MwFriendsTabState extends State<MwFriendsTab>
           _markFriendsNeedRebucket();
           _markFriendsNeedResort();
         }
+
+        // ✅ ensure tiles appear immediately when data arrives
+        if (mounted && _isFriendsOnly) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            // only repaint if needed; cheap setState is OK here because list is virtualized
+            setState(() {});
+          });
+        }
       });
 
       _friendUserDocSubs[uid] = sub;
@@ -596,6 +638,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
   }
 
   bool _mapsEqual(Map<String, int> a, Map<String, int> b) {
+    if (identical(a, b)) return true;
     if (a.length != b.length) return false;
     for (final key in a.keys) {
       if (a[key] != b[key]) return false;
@@ -652,7 +695,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     final username = clean(data['username'] as String?);
     if (username.isNotEmpty) return username;
 
-    // last resort: anonymous label (do not show uid in production)
     return l10n.unknownUser;
   }
 
@@ -1077,6 +1119,60 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     );
   }
 
+  // ✅ NEW: LOADING TILE (fixes “blank list” problem)
+  Widget _buildLoadingUserTile(BuildContext context, String uid) {
+    // Keep it cheap and stable height so list never looks empty.
+    // Also helps “zero movement” approach because placeholders occupy space.
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      color: Colors.white.withOpacity(0.06),
+      elevation: 1,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: Colors.white24),
+      ),
+      child: ListTile(
+        leading: MwAvatar(
+          radius: 26,
+          avatarType: 'bear',
+          profileUrl: null,
+          hideRealAvatar: true,
+          showRing: true,
+          ringColor: Colors.white24,
+          ringWidth: 2.0,
+          isOnline: false,
+          showOnlineDot: false,
+          showOnlineGlow: false,
+          backgroundColor: kSurfaceAltColor.withOpacity(0.85),
+        ),
+        title: Container(
+          height: 12,
+          width: 140,
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.10),
+            borderRadius: BorderRadius.circular(999),
+          ),
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Container(
+            height: 10,
+            width: 200,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(999),
+            ),
+          ),
+        ),
+        trailing: const SizedBox(
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white24),
+        ),
+      ),
+    );
+  }
+
   Future<void> _prefetchPrivateProfilePhoto(String uid) async {
     if (uid.isEmpty) return;
     if (_photoUrlCache.containsKey(uid) || _photoDenied.contains(uid)) return;
@@ -1114,6 +1210,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     final raw = (data['presenceVisibility'] as String?)?.trim().toLowerCase();
     if (raw == _presenceNobody) return _presenceNobody;
 
+    // default = friends
     return _presenceFriends;
   }
 
@@ -1278,7 +1375,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
       }) {
     final l10n = AppLocalizations.of(context)!;
 
-    // ✅ Email removed from UI completely
     final String displayName = _displayNameFromData(l10n, data, userId);
 
     final legacyPublicUrl = (data['profileUrl'] as String?)?.trim();
@@ -1555,7 +1651,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     );
   }
 
-
   // ----------------------------
   // FRIENDS ONLY UI
   // ----------------------------
@@ -1668,8 +1763,8 @@ class _MwFriendsTabState extends State<MwFriendsTab>
       if (_missingUserIds.contains(uid)) {
         return _buildMissingUserTile(context, uid: uid, friendStatus: friendStatus);
       }
-      // still loading: lightweight placeholder (keeps UI fast)
-      return const SizedBox(height: 0);
+      // ✅ FIX: show a real placeholder tile (not height=0)
+      return _buildLoadingUserTile(context, uid);
     }
 
     if (!_matchesSearch(data, uid)) return const SizedBox.shrink();
@@ -1814,7 +1909,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
               child: InkWell(
                 borderRadius: BorderRadius.circular(16),
                 onTap: () {
-                  // ✅ close keyboard / search focus first
                   FocusManager.instance.primaryFocus?.unfocus();
 
                   Navigator.of(context, rootNavigator: true).push(

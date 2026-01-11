@@ -1,5 +1,6 @@
 // lib/screens/profile/widgets/profile_privacy_tile.dart
 import 'package:flutter/material.dart';
+
 import '../../../l10n/app_localizations.dart';
 import '../../../theme/app_theme.dart';
 
@@ -14,46 +15,60 @@ class ProfilePrivacyTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
+    final theme = Theme.of(context);
     final isRtl = Directionality.of(context) == TextDirection.rtl;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const Divider(height: 32),
-        Align(
-          alignment: isRtl ? Alignment.centerRight : Alignment.centerLeft,
-          child: Text(
-            l10n.privacySectionTitle,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Colors.white,
-              fontWeight: FontWeight.w600,
-            ),
+    final title = (l10n.onlineStatusTitle.isNotEmpty)
+        ? l10n.onlineStatusTitle
+        : 'Privacy & visibility';
+
+    final subtitle = (l10n.onlineStatusSubtitle.isNotEmpty)
+        ? l10n.onlineStatusSubtitle
+        : 'Online status, profile visibility, email visibility';
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          child: Row(
+            children: [
+              Icon(
+                Icons.privacy_tip_outlined,
+                color: kPrimaryGold.withOpacity(0.95),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.w900,
+                        color: kTextPrimary.withOpacity(0.95),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: kTextSecondary.withOpacity(0.95),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                isRtl ? Icons.chevron_left_rounded : Icons.chevron_right_rounded,
+                color: Colors.white.withOpacity(0.65),
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 12),
-        Container(
-          decoration: BoxDecoration(
-            color: kSurfaceColor,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: kBorderColor),
-          ),
-          child: ListTile(
-            leading:
-            const Icon(Icons.privacy_tip_outlined, color: Colors.white70),
-            title: const Text('Privacy & visibility',
-                style: TextStyle(color: Colors.white)),
-            subtitle: const Text(
-              'Online status, profile visibility, email visibility',
-              style: TextStyle(color: Colors.white70, fontSize: 12),
-            ),
-            trailing: Icon(
-              isRtl ? Icons.chevron_left : Icons.chevron_right,
-              color: Colors.white54,
-            ),
-            onTap: onTap,
-          ),
-        ),
-      ],
+      ),
     );
   }
 }

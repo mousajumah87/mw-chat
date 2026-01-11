@@ -4,13 +4,14 @@ import 'dart:async';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // ✅ haptics
+import 'package:flutter/services.dart'; // ✅ haptics (kept)
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../theme/app_theme.dart';
 import 'message_reactions.dart';
+import 'mw_token_text.dart'; // ✅ IMPORTANT: unified token rendering
 
 class MessageBubble extends StatefulWidget {
   final String text;
@@ -32,16 +33,25 @@ class MessageBubble extends StatefulWidget {
   /// Async reaction writer (Firestore transaction in parent)
   final Future<void> Function(String emoji)? onReactionTapAsync;
 
+  /// ✅ NEW: after reaction is committed, ask parent to clear selection/header.
+  final VoidCallback? onReactionCommitted;
+
   /// ✅ Tap reply-preview to scroll/jump to original message.
   final ValueChanged<String>? onReplyPreviewTap;
 
-  /// ✅ NEW: swipe-to-reply callback
-  /// - other user: swipe right
-  /// - me: swipe left
+  // ✅ WhatsApp-style selection state + callbacks
+  final bool isSelected;
+  final VoidCallback? onBubbleLongPress;
+  final VoidCallback? onBubbleTap;
+
+  /// ✅ Swipe-to-reply
   final VoidCallback? onSwipeReply;
 
-  /// ✅ NEW: disable swipe reply (optional)
-  final bool swipeReplyEnabled;
+  /// ✅ When selection mode is active, disable swipe reply
+  final bool disableSwipeReply;
+
+  /// ✅ NEW: if parent passes explicit deleted state.
+  final bool isDeleted;
 
   const MessageBubble({
     super.key,
@@ -57,9 +67,14 @@ class MessageBubble extends StatefulWidget {
     this.currentUserId,
     this.reactions,
     this.onReactionTapAsync,
+    this.onReactionCommitted,
     this.onReplyPreviewTap,
+    this.isSelected = false,
+    this.onBubbleLongPress,
+    this.onBubbleTap,
     this.onSwipeReply,
-    this.swipeReplyEnabled = true,
+    this.disableSwipeReply = false,
+    this.isDeleted = false,
   });
 
   @override
@@ -67,7 +82,7 @@ class MessageBubble extends StatefulWidget {
 }
 
 class _MessageBubbleState extends State<MessageBubble>
-    with AutomaticKeepAliveClientMixin, SingleTickerProviderStateMixin {
+    with AutomaticKeepAliveClientMixin {
   final AudioPlayer _player = AudioPlayer();
 
   StreamSubscription<PlayerState>? _stateSub;
@@ -116,57 +131,24 @@ class _MessageBubbleState extends State<MessageBubble>
   @override
   bool get wantKeepAlive => isAudio;
 
-  // Anchor for reaction overlay above this bubble
-  final LayerLink _reactionLink = LayerLink();
+  // ✅ IMPORTANT:
+  // In lists, State might be reused if parent doesn't supply stable keys.
+  // So we make the LayerLink replaceable, and reset it when bubble identity changes.
+  LayerLink _reactionLink = LayerLink();
+  String _identitySig = '';
 
-  // ---------------------------------------------------------------------------
   // ✅ Swipe-to-reply state
-  // ---------------------------------------------------------------------------
-
-  static const double _replyTrigger = 62; // distance to trigger
-  static const double _replyMaxDrag = 92; // max reveal
-  static const Duration _swipeBackDur = Duration(milliseconds: 180);
-
-  // ✅ IMPORTANT FIX:
-  // Create controller in initState (NOT as a field initializer), otherwise it may
-  // hit unsafe ancestor lookup via TickerMode during mount/unmount on web.
-  late final AnimationController _swipeCtrl;
-
-  Animation<double>? _swipeAnim;
-  double _dragDx = 0.0;
-  bool _gestureLocked = false; // lock when horizontal intent is clear
+  double _swipeDx = 0.0;
+  bool _replyTriggered = false;
+  static const double _replyTriggerDx = 56.0;
+  static const double _replyMaxDx = 72.0;
 
   bool get _canSwipeReply =>
-      widget.swipeReplyEnabled && widget.onSwipeReply != null;
+      !widget.disableSwipeReply && widget.onSwipeReply != null;
 
-  // Allowed swipe direction:
-  // other message => swipe right (+)
-  // my message => swipe left (-)
-  double get _allowedDir => widget.isMe ? -1.0 : 1.0;
-
-  void _animateBackToZero() {
-    _swipeCtrl.stop();
-    final from = _dragDx;
-    if (from == 0) return;
-
-    _swipeAnim = Tween<double>(begin: from, end: 0.0).animate(
-      CurvedAnimation(parent: _swipeCtrl, curve: Curves.easeOutCubic),
-    )..addListener(() {
-      if (!mounted) return;
-      setState(() => _dragDx = _swipeAnim?.value ?? 0.0);
-    });
-
-    _swipeCtrl
-      ..reset()
-      ..forward();
-  }
-
-  void _triggerReplyIfNeeded() {
-    final d = _dragDx * _allowedDir; // positive = correct direction distance
-    if (d >= _replyTrigger && _canSwipeReply) {
-      HapticFeedback.selectionClick();
-      widget.onSwipeReply?.call();
-    }
+  void _resetSwipe() {
+    _swipeDx = 0.0;
+    _replyTriggered = false;
   }
 
   // ---------------------------------------------------------------------------
@@ -227,66 +209,34 @@ class _MessageBubbleState extends State<MessageBubble>
   Color get _onBubbleSecondary => kTextSecondary.withOpacity(0.90);
 
   Border? get _bubbleBorder {
+    if (widget.isSelected) {
+      return Border.all(color: kPrimaryGold.withOpacity(0.55), width: 1.4);
+    }
+
     final c = widget.isMe
         ? kGoldDeep.withOpacity(0.18)
         : kBorderColor.withOpacity(0.45);
     return Border.all(color: c, width: 1);
   }
 
-  // ---------------------------------------------------------------------------
-  // Inline emoji tokens (assets)
-  // ---------------------------------------------------------------------------
-
-  static const Map<String, String> _emojiTokenToAsset = {
-    ':mw_girl:': 'assets/images/smurf.png',
-  };
-
-  static final RegExp _tokenRegex = (() {
-    final tokens = _emojiTokenToAsset.keys.map(RegExp.escape).toList()
-      ..sort((a, b) => b.length.compareTo(a.length));
-    return RegExp('(${tokens.join('|')})');
-  })();
-
-  bool _containsAnyToken(String s) => _tokenRegex.hasMatch(s);
-
-  Widget _buildTextWithInlineAssets({
-    required String text,
-    required TextDirection msgDir,
-    required TextAlign textAlign,
-    required TextStyle style,
-  }) {
-    final parts = text.split(_tokenRegex);
-    final spans = <InlineSpan>[];
-
-    for (final part in parts) {
-      if (part.isEmpty) continue;
-
-      final asset = _emojiTokenToAsset[part];
-      if (asset != null) {
-        spans.add(
-          WidgetSpan(
-            alignment: PlaceholderAlignment.middle,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 2),
-              child: Image.asset(
-                asset,
-                width: 20,
-                height: 20,
-                fit: BoxFit.contain,
-              ),
-            ),
-          ),
-        );
-      } else {
-        spans.add(TextSpan(text: _isolateBidi(part, msgDir)));
-      }
-    }
-
-    return RichText(
-      textDirection: msgDir,
-      textAlign: textAlign,
-      text: TextSpan(style: style, children: spans),
+  List<BoxShadow> get _bubbleShadow {
+    final base = BoxShadow(
+      color: Colors.black.withOpacity(0.22),
+      blurRadius: 10,
+      offset: const Offset(0, 6),
     );
+
+    if (!widget.isSelected) return [base];
+
+    return [
+      base,
+      BoxShadow(
+        color: kPrimaryGold.withOpacity(0.18),
+        blurRadius: 18,
+        spreadRadius: 1.5,
+        offset: const Offset(0, 8),
+      ),
+    ];
   }
 
   // ---------------------------------------------------------------------------
@@ -524,6 +474,10 @@ class _MessageBubbleState extends State<MessageBubble>
     final targetId = _replyMessageId(r);
     final canJump = targetId.isNotEmpty && widget.onReplyPreviewTap != null;
 
+    final replyDir = _textDirectionForMessage(line);
+    final replyAlign =
+    replyDir == TextDirection.rtl ? TextAlign.right : TextAlign.left;
+
     final content = Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -546,15 +500,17 @@ class _MessageBubbleState extends State<MessageBubble>
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(
-              line,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
+            child: MwTokenText(
+              text: line,
               style: TextStyle(
                 color: kTextPrimary.withOpacity(0.92),
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
               ),
+              textDirection: replyDir,
+              textAlign: replyAlign,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
           const SizedBox(width: 6),
@@ -579,17 +535,35 @@ class _MessageBubbleState extends State<MessageBubble>
   }
 
   // ---------------------------------------------------------------------------
-  // Audio + Swipe controller init
+  // ✅ Deleted message helpers
+  // ---------------------------------------------------------------------------
+
+  bool _looksLikeSoftDeletedFromContent({
+    required bool hasAnyReactions,
+  }) {
+    final noText = widget.text.trim().isEmpty;
+    final noFile = (widget.fileUrl ?? '').trim().isEmpty;
+    final noType = (widget.fileType ?? '').trim().isEmpty;
+    final noReply = widget.replyTo == null;
+    return noText && noFile && noType && noReply && !hasAnyReactions;
+  }
+
+  String _deletedPlaceholder(AppLocalizations l10n) {
+    final maybe = (l10n.thisMessageWasDeleted ?? '').toString().trim();
+    if (maybe.isNotEmpty) return maybe;
+    return 'This message was deleted';
+  }
+
+  // ---------------------------------------------------------------------------
+  // Audio
   // ---------------------------------------------------------------------------
 
   @override
   void initState() {
     super.initState();
 
-    // ✅ SAFE: create AnimationController here (not as field initializer)
-    _swipeCtrl = AnimationController(vsync: this, duration: _swipeBackDur);
+    _identitySig = _makeIdentitySig(widget);
 
-    // ---------------- AUDIO ----------------
     _stateSub = _player.onPlayerStateChanged.listen((s) {
       if (!mounted) return;
       setState(() => _playing = s == PlayerState.playing);
@@ -616,27 +590,44 @@ class _MessageBubbleState extends State<MessageBubble>
     _player.setReleaseMode(ReleaseMode.stop);
   }
 
+  String _makeIdentitySig(MessageBubble w) {
+    // NOTE: This is a fallback safety net in case parent didn't pass stable keys.
+    // If you DO have messageId, your parent SHOULD pass ValueKey(messageId).
+    final parts = [
+      w.text,
+      w.timeLabel,
+      w.fileUrl ?? '',
+      w.fileType ?? '',
+      w.fileName ?? '',
+      (w.isMe ? 'me' : 'other'),
+    ];
+    return parts.join('|');
+  }
+
   @override
   void didUpdateWidget(covariant MessageBubble oldWidget) {
     super.didUpdateWidget(oldWidget);
 
+    // ✅ Protect overlay correctness when State is reused for a different message.
+    final newSig = _makeIdentitySig(widget);
+    if (newSig != _identitySig) {
+      _identitySig = newSig;
+      MwReactionOverlay.hide();
+      _reactionLink = LayerLink(); // ✅ new anchor for the new message
+      _resetSwipe();
+    }
+
     final oldUrl = (oldWidget.fileUrl ?? '').trim();
-    final newUrl = (widget.fileUrl ?? '').trim();
+    final newUrl2 = (widget.fileUrl ?? '').trim();
 
     final oldType = (oldWidget.fileType ?? '').trim().toLowerCase();
     final newType = (widget.fileType ?? '').trim().toLowerCase();
 
-    final urlChanged = oldUrl != newUrl;
+    final urlChanged = oldUrl != newUrl2;
     final typeChanged = oldType != newType;
 
     if (urlChanged || (typeChanged && !isAudio)) {
       _stopAndResetAudioUi();
-    }
-
-    // if message changes, reset swipe offset
-    if (oldWidget.text != widget.text || oldWidget.timeLabel != widget.timeLabel) {
-      _dragDx = 0.0;
-      _gestureLocked = false;
     }
   }
 
@@ -924,6 +915,136 @@ class _MessageBubbleState extends State<MessageBubble>
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // ✅ Linkify (URLs clickable) while preserving MwTokenText for non-link chunks
+  // ---------------------------------------------------------------------------
+
+  static final RegExp _urlRegex = RegExp(
+    r'((https?:\/\/|www\.)[^\s<>()]+)',
+    caseSensitive: false,
+  );
+
+  String _normalizeUrl(String raw) {
+    final t = raw.trim();
+    if (t.isEmpty) return t;
+    final low = t.toLowerCase();
+    if (low.startsWith('http://') || low.startsWith('https://')) return t;
+    if (low.startsWith('www.')) return 'https://$t';
+    return t;
+  }
+
+  Future<void> _openUrl(String raw) async {
+    final normalized = _normalizeUrl(raw);
+    final uri = Uri.tryParse(normalized);
+    if (uri == null) return;
+
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    } catch (_) {
+      // no-op
+    }
+  }
+
+  Widget _buildLinkifiedBody({
+    required String text,
+    required TextStyle style,
+    required TextDirection textDirection,
+    required TextAlign textAlign,
+    required bool disableLinks,
+  }) {
+    if (!_urlRegex.hasMatch(text) || disableLinks) {
+      return MwTokenText(
+        text: text,
+        style: style,
+        textDirection: textDirection,
+        textAlign: textAlign,
+      );
+    }
+
+    final matches = _urlRegex.allMatches(text).toList();
+    if (matches.isEmpty) {
+      return MwTokenText(
+        text: text,
+        style: style,
+        textDirection: textDirection,
+        textAlign: textAlign,
+      );
+    }
+
+    final segments = <Widget>[];
+    int cursor = 0;
+
+    for (final m in matches) {
+      final start = m.start;
+      final end = m.end;
+
+      if (start > cursor) {
+        final normalChunk = text.substring(cursor, start);
+        if (normalChunk.trim().isNotEmpty || normalChunk.contains('\n')) {
+          segments.add(
+            MwTokenText(
+              text: normalChunk,
+              style: style,
+              textDirection: textDirection,
+              textAlign: textAlign,
+            ),
+          );
+        }
+      }
+
+      final urlChunk = text.substring(start, end);
+      segments.add(
+        InkWell(
+          onTap: () => _openUrl(urlChunk),
+          borderRadius: BorderRadius.circular(6),
+          child: Text(
+            urlChunk,
+            textDirection: TextDirection.ltr,
+            style: style.copyWith(
+              decoration: TextDecoration.underline,
+              color: kPrimaryGold.withOpacity(0.95),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      );
+
+      cursor = end;
+    }
+
+    if (cursor < text.length) {
+      final tail = text.substring(cursor);
+      if (tail.trim().isNotEmpty || tail.contains('\n')) {
+        segments.add(
+          MwTokenText(
+            text: tail,
+            style: style,
+            textDirection: textDirection,
+            textAlign: textAlign,
+          ),
+        );
+      }
+    }
+
+    return Directionality(
+      textDirection: textDirection,
+      child: Align(
+        alignment:
+        textAlign == TextAlign.right ? Alignment.centerRight : Alignment.centerLeft,
+        child: Wrap(
+          alignment:
+          textAlign == TextAlign.right ? WrapAlignment.end : WrapAlignment.start,
+          runAlignment: WrapAlignment.center,
+          spacing: 0,
+          runSpacing: 0,
+          children: segments,
+        ),
+      ),
+    );
+  }
+
   Widget _buildAudioBubble() {
     final l10n = AppLocalizations.of(context)!;
     final dir = _effectiveDir(context);
@@ -1010,9 +1131,8 @@ class _MessageBubbleState extends State<MessageBubble>
                   SliderTheme(
                     data: SliderTheme.of(context).copyWith(
                       trackHeight: 3,
-                      thumbShape: const RoundSliderThumbShape(
-                        enabledThumbRadius: 7,
-                      ),
+                      thumbShape:
+                      const RoundSliderThumbShape(enabledThumbRadius: 7),
                     ),
                     child: Slider(
                       value: canSeek ? pos.inMilliseconds.toDouble() : 0,
@@ -1102,19 +1222,42 @@ class _MessageBubbleState extends State<MessageBubble>
     _durSub?.cancel();
     _completeSub?.cancel();
     _player.dispose();
-
-    // ✅ safe now because it was created in initState
-    _swipeCtrl.dispose();
-
     super.dispose();
   }
 
+  late bool _effectiveIsDeleted;
+
   bool get _canReact =>
-      (widget.currentUserId ?? '').trim().isNotEmpty &&
+      !(_effectiveIsDeleted) &&
+          (widget.currentUserId ?? '').trim().isNotEmpty &&
           widget.onReactionTapAsync != null;
+
+  bool _bubbleHasLayout() {
+    final ro = context.findRenderObject();
+    return ro is RenderBox && ro.hasSize;
+  }
+
+  void _showReactionsAfterLayout({int attempt = 0}) {
+    if (!mounted) return;
+    if (!_canReact) return;
+
+    if (_bubbleHasLayout()) {
+      _openReactionOverlay();
+      return;
+    }
+
+    if (attempt >= 3) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _showReactionsAfterLayout(attempt: attempt + 1);
+    });
+  }
 
   Future<void> _openReactionOverlay() async {
     if (!_canReact) return;
+
+    MwReactionOverlay.hide();
 
     final currentUserId = (widget.currentUserId ?? '').trim();
     final rx = MwReactions.normalize(widget.reactions);
@@ -1125,110 +1268,42 @@ class _MessageBubbleState extends State<MessageBubble>
       currentUserId: currentUserId,
       currentReactions: rx,
       alignToRightBubble: widget.isMe,
+
       onSelectEmoji: (emoji) async {
         final fn = widget.onReactionTapAsync;
         if (fn == null) return;
+
         await fn(emoji);
+        MwReactionOverlay.hide();
+        widget.onReactionCommitted?.call();
       },
+
       onOpenPicker: () async {
         final picked = await MwFullEmojiPicker.open(context);
         if (picked == null || picked.trim().isEmpty) return;
+
         final fn = widget.onReactionTapAsync;
         if (fn == null) return;
-        await fn(picked);
+
+        await fn(picked.trim());
+        MwReactionOverlay.hide();
+        widget.onReactionCommitted?.call();
       },
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // ✅ Swipe-to-reply gesture handlers
-  // ---------------------------------------------------------------------------
+  void _handleLongPress() {
+    widget.onBubbleLongPress?.call();
 
-  void _onHorizontalDragStart(DragStartDetails details) {
-    if (!_canSwipeReply) return;
-    _swipeCtrl.stop();
-    _gestureLocked = false;
-  }
+    if (_effectiveIsDeleted) return;
 
-  void _onHorizontalDragUpdate(DragUpdateDetails details) {
-    if (!_canSwipeReply) return;
+    // ✅ If bubble is already selected, don't open emoji overlay again.
+    if (widget.isSelected) return;
 
-    final dx = details.delta.dx;
-    final dy = details.delta.dy;
-
-    // Decide intent: only lock into horizontal if horizontal clearly dominates
-    if (!_gestureLocked) {
-      if (dx.abs() < 1.2) return;
-      if (dx.abs() <= dy.abs() * 1.15) return; // keep vertical scroll priority
-      _gestureLocked = true;
-    }
-
-    // Only accept the correct direction; resist opposite direction
-    final allowed = _allowedDir;
-    final signed = dx * allowed; // positive = correct direction
-    double next = _dragDx;
-
-    if (signed >= 0) {
-      next += dx;
-    } else {
-      next += dx * 0.18; // resist wrong direction
-    }
-
-    // Clamp
-    if (next.abs() > _replyMaxDrag) {
-      next = _replyMaxDrag * (next.sign);
-    }
-
-    // For safety: if user drags opposite too much, keep tiny
-    final d = next * allowed;
-    if (d < -10) next = 0;
-
-    if (mounted) setState(() => _dragDx = next);
-  }
-
-  void _onHorizontalDragEnd(DragEndDetails details) {
-    if (!_canSwipeReply) return;
-
-    _triggerReplyIfNeeded();
-    _animateBackToZero();
-    _gestureLocked = false;
-  }
-
-  Widget _buildSwipeReplyIcon() {
-    if (!_canSwipeReply) return const SizedBox.shrink();
-
-    final d = (_dragDx * _allowedDir).clamp(0.0, _replyMaxDrag);
-    final t = (d / _replyTrigger).clamp(0.0, 1.0);
-
-    final icon = Container(
-      width: 34,
-      height: 34,
-      decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.18 + (0.18 * t)),
-        shape: BoxShape.circle,
-        border: Border.all(color: Colors.white.withOpacity(0.10 + (0.18 * t))),
-        boxShadow: [
-          if (t > 0.2)
-            BoxShadow(
-              color: Colors.black.withOpacity(0.18),
-              blurRadius: 10,
-              offset: const Offset(0, 6),
-            ),
-        ],
-      ),
-      child: Icon(
-        Icons.reply_rounded,
-        size: 18,
-        color: kTextPrimary.withOpacity(0.55 + 0.35 * t),
-      ),
-    );
-
-    return IgnorePointer(
-      child: Opacity(
-        opacity: t,
-        child: icon,
-      ),
-    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _showReactionsAfterLayout();
+    });
   }
 
   @override
@@ -1238,12 +1313,22 @@ class _MessageBubbleState extends State<MessageBubble>
     final l10n = AppLocalizations.of(context)!;
     final maxWidth = MediaQuery.of(context).size.width * 0.75;
 
-    final displayText = _displayTextForBubble(l10n);
+    final currentUserId = (widget.currentUserId ?? '').trim();
+    final rx = MwReactions.normalize(widget.reactions);
+    final hasReactions = rx.isNotEmpty;
+
+    _effectiveIsDeleted = widget.isDeleted ||
+        _looksLikeSoftDeletedFromContent(hasAnyReactions: hasReactions);
+
+    final replyMap = _normalizeReplyTo(widget.replyTo);
+    final showReply =
+        !_effectiveIsDeleted && replyMap != null && _hasUsefulReply(replyMap);
+
+    final displayText = _effectiveIsDeleted ? '' : _displayTextForBubble(l10n);
+
     final msgDir = _textDirectionForMessage(displayText);
     final textAlign =
     msgDir == TextDirection.rtl ? TextAlign.right : TextAlign.left;
-
-    final fixedPlainText = _isolateBidi(displayText, msgDir);
 
     final messageStyle = Theme.of(context).textTheme.bodyLarge?.copyWith(
       color: _onBubblePrimary,
@@ -1258,54 +1343,55 @@ class _MessageBubbleState extends State<MessageBubble>
           fontWeight: FontWeight.w500,
         );
 
-    final currentUserId = (widget.currentUserId ?? '').trim();
-    final rx = MwReactions.normalize(widget.reactions);
+    final Widget deletedBody = Padding(
+      padding: const EdgeInsets.only(top: 2, bottom: 2),
+      child: Text(
+        _deletedPlaceholder(l10n),
+        style: TextStyle(
+          color: _onBubbleSecondary.withOpacity(0.85),
+          fontSize: 14,
+          fontStyle: FontStyle.italic,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
 
-    final hasReactions = rx.isNotEmpty;
-
-    final replyMap = _normalizeReplyTo(widget.replyTo);
-    final showReply = replyMap != null && _hasUsefulReply(replyMap);
-
-    final bubbleBody = Container(
+    // ✅ IMPORTANT:
+    // We DO NOT use margin inside bubble decoration anymore.
+    // Margin created confusing “floating space” and reactions looked detached.
+    final bubbleDecorated = Container(
       constraints: BoxConstraints(maxWidth: maxWidth, minWidth: 70),
       padding: const EdgeInsets.all(10),
-      margin: EdgeInsets.fromLTRB(6, 4, 6, hasReactions ? 22 : 4),
       decoration: BoxDecoration(
         color: _bubbleColor,
         borderRadius: BorderRadius.circular(_bubbleRadius),
         border: _bubbleBorder,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.22),
-            blurRadius: 10,
-            offset: const Offset(0, 6),
-          ),
-        ],
+        boxShadow: _bubbleShadow,
       ),
       child: Column(
         crossAxisAlignment:
         widget.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
           if (showReply) _buildReplyPreview(l10n, replyMap!),
-          if (hasAttachment && isImage) _buildImageBubble(),
-          if (hasAttachment && isVideo) _buildVideoBubbleLightweight(),
-          if (hasAttachment && isAudio) _buildAudioBubble(),
-          if (hasAttachment && isGenericFile) _buildFileBubble(),
-          if (displayText.isNotEmpty)
-            _containsAnyToken(displayText)
-                ? _buildTextWithInlineAssets(
+
+          if (!_effectiveIsDeleted && hasAttachment && isImage) _buildImageBubble(),
+          if (!_effectiveIsDeleted && hasAttachment && isVideo)
+            _buildVideoBubbleLightweight(),
+          if (!_effectiveIsDeleted && hasAttachment && isAudio) _buildAudioBubble(),
+          if (!_effectiveIsDeleted && hasAttachment && isGenericFile) _buildFileBubble(),
+
+          if (_effectiveIsDeleted)
+            deletedBody
+          else if (displayText.isNotEmpty)
+            _buildLinkifiedBody(
               text: displayText,
-              msgDir: msgDir,
-              textAlign: textAlign,
               style: messageStyle,
-            )
-                : Text(
-              fixedPlainText,
               textDirection: msgDir,
               textAlign: textAlign,
-              style: messageStyle,
+              disableLinks: widget.isSelected,
             ),
-          if (widget.showTimestamp)
+
+          if (!_effectiveIsDeleted && widget.showTimestamp)
             Padding(
               padding: const EdgeInsets.only(top: 6),
               child: Row(
@@ -1338,44 +1424,102 @@ class _MessageBubbleState extends State<MessageBubble>
       ),
     );
 
+    // ✅ Outer spacing: this reserves room for reactions (so next message never overlaps)
+    final bubbleWithOuterSpacing = Padding(
+      padding: EdgeInsets.fromLTRB(
+        6,
+        4,
+        6,
+        hasReactions ? 16 : 6, // ✅ space for reactions below
+      ),
+      child: bubbleDecorated,
+    );
+
+    final gesture = GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: widget.onBubbleTap,
+      onLongPress: _handleLongPress,
+      onSecondaryTapUp: kIsWeb
+          ? (_) => WidgetsBinding.instance
+          .addPostFrameCallback((_) => _handleLongPress())
+          : null,
+
+      onHorizontalDragStart: _canSwipeReply ? (_) => _replyTriggered = false : null,
+      onHorizontalDragUpdate: _canSwipeReply
+          ? (d) {
+        if (_effectiveIsDeleted) return;
+
+        final dir = _effectiveDir(context);
+        final dx = d.delta.dx;
+
+        final bool allowedDirection =
+        dir == TextDirection.rtl ? (dx < 0) : (dx > 0);
+        if (!allowedDirection) return;
+
+        final next = (_swipeDx + dx).clamp(-_replyMaxDx, _replyMaxDx);
+        if (!mounted) return;
+        setState(() => _swipeDx = next);
+
+        final reached = _swipeDx.abs() >= _replyTriggerDx;
+        if (reached && !_replyTriggered) {
+          _replyTriggered = true;
+          HapticFeedback.selectionClick();
+          widget.onSwipeReply?.call();
+        }
+      }
+          : null,
+      onHorizontalDragEnd: _canSwipeReply
+          ? (_) {
+        if (!mounted) return;
+        setState(() => _resetSwipe());
+      }
+          : null,
+      onHorizontalDragCancel: _canSwipeReply
+          ? () {
+        if (!mounted) return;
+        setState(() => _resetSwipe());
+      }
+          : null,
+      child: Transform.translate(
+        offset: Offset(_canSwipeReply ? (_swipeDx * 0.25) : 0.0, 0.0),
+        child: bubbleWithOuterSpacing,
+      ),
+    );
+
+    // ✅ This Stack is now tight to the bubble itself (no weird margin space),
+    // so reactions visually belong to the correct message.
     final stacked = Stack(
       clipBehavior: Clip.none,
       children: [
-        if (_canSwipeReply)
-          PositionedDirectional(
-            start: widget.isMe ? null : 10,
-            end: widget.isMe ? 10 : null,
-            top: 10,
-            child: _buildSwipeReplyIcon(),
-          ),
-        Transform.translate(
-          offset: Offset(_dragDx, 0),
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onLongPress: _canReact ? _openReactionOverlay : null,
-            onSecondaryTap: _canReact ? _openReactionOverlay : null,
-            onDoubleTap: (_canReact && kIsWeb) ? _openReactionOverlay : null,
-            onHorizontalDragStart:
-            _canSwipeReply ? _onHorizontalDragStart : null,
-            onHorizontalDragUpdate:
-            _canSwipeReply ? _onHorizontalDragUpdate : null,
-            onHorizontalDragEnd: _canSwipeReply ? _onHorizontalDragEnd : null,
-            child: bubbleBody,
-          ),
-        ),
+        gesture,
+
         if (hasReactions)
           PositionedDirectional(
-            bottom: -14,
+            // ✅ attach closer to bubble edge (NOT floating in the gap)
+            bottom: 2,
             start: widget.isMe ? null : 18,
             end: widget.isMe ? 18 : null,
             child: Material(
               color: Colors.transparent,
-              child: MwMessageReactions(
-                reactions: rx,
-                currentUserId: currentUserId,
-                onTap: (widget.onReactionTapAsync == null)
-                    ? null
-                    : (e) async => widget.onReactionTapAsync!(e),
+              child: DecoratedBox(
+                // subtle backing makes it obviously attached to the message
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.06),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(2),
+                  child: MwMessageReactions(
+                    reactions: rx,
+                    currentUserId: currentUserId,
+                    onTap: (widget.onReactionTapAsync == null || _effectiveIsDeleted)
+                        ? null
+                        : (e) async {
+                      await widget.onReactionTapAsync!(e);
+                      widget.onReactionCommitted?.call();
+                    },
+                  ),
+                ),
               ),
             ),
           ),

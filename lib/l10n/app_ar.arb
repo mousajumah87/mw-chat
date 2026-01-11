@@ -296,6 +296,7 @@
     "accountDeletedSuccessfully": "تم حذف الحساب بنجاح",
     "remove": "حذف",
     "messageDeletedSuccess": "تم حذف الرسالة بنجاح",
+    "thisMessageWasDeleted": "تم حذف هذه الرسالة",
 
 
     "termsTitle": "شروط الاستخدام",
@@ -474,10 +475,44 @@
     "more": "المزيد",
     "replyingToMessage": "جارٍ الرد على الرسالة",
     "replying": "الرد على",
-    "originalMessageNotFound": "لم يتم العثور على الرسالة الأصلية"
-
-
-
-
+    "originalMessageNotFound": "لم يتم العثور على الرسالة الأصلية",
+    "fontAndDisplay": "الخط وإعدادات العرض",
+    "noEmailOnAccount": "لا يوجد بريد إلكتروني مرتبط بهذا الحساب",
+    "copied": "تم النسخ",
+    "copy": "نسخ",
+    "fontAndDisplaySubtitle": "تخصيص حجم النص ومظهره",
+    "fontSizeLabel": "حجم الخط",
+    "fontSizeDesc": "غيّر حجم النص في تطبيق MW Chat بالكامل (بما في ذلك الرسائل).",
+    "fontStyleLabel": "نمط الخط",
+    "fontStyleDesc": "اختر نمط خط يناسب ذوقك.",
+    "previewLabel": "معاينة",
+    "previewHeadline": "MW Chat — هكذا ستبدو الرسائل.",
+    "previewBody": "يمكنك إبقاء الخط صغيرًا أو تكبيره ليصبح مريحًا للعين.",
+    "resetToDefault": "إعادة الإعدادات الافتراضية",
+    "backToDefault": "تمت العودة إلى الإعدادات الافتراضية.",
+    "previewMiniLine": "هكذا سيبدو نص الدردشة أثناء الاستخدام الحقيقي.",
+    "fontHintNote": "معلومة: تغييرات الخط تُطبّق فورًا في جميع أنحاء التطبيق.",
+    "account": "الحساب",
+    "preferences": "التفضيلات",
+    "sensitiveActions": "إجراءات حساسة",
+    "legal": "القوانين والسياسات",
+    "webFontNote": "تنطبق إعدادات الخط على إصدار الويب فقط",
+    "arabicLabel": "العربية",
+    "messageDeletedForMeSuccess": "تم حذف الرسالة لديك",
+    "messageDeletedForEveryoneSuccess": "تم حذف الرسالة لدى الجميع",
+    "messageSelectedTitle": "تم تحديد الرسالة",
+    "copyNotAvailable": "النسخ غير متاح",
+    "deleteMessageDescriptionEveryone": "اختر كيفية حذف هذه الرسالة.",
+    "deleteMessageDescriptionMe": "سيتم حذف هذه الرسالة لديك فقط.",
+    "report": "الإبلاغ",
+    "selectedOne": "محددة",
+    "selectedMany": "تم تحديد عدة عناصر",
+    "chooseArabicFont": "يرجى اختيار خط عربي.",
+    "chooseEnglishFont": "يرجى اختيار خط إنجليزي.",
+    "typographyTip": "نصيحة: الخطوط العصرية تناسب الشباب، والخطوط النظيفة أفضل للدردشة الطويلة، وخطوط الحب جميلة للعناوين والبروفايل.",
+    "typographyWebTip": "نصيحة للويب: إذا لم يتغير الخط، جرّب إعادة التشغيل السريع (R) لإعادة تحميل الخط.",
+    "englishSample": "مثال إنجليزي: The quick brown fox jumps over the lazy dog.",
+    "arabicSample": "مثال عربي: اللغة العربية جميلة وتبدو رائعة مع الخط المناسب.",
+    "newLabel": "جديد"
 
 }

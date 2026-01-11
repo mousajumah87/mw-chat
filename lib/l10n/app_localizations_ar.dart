@@ -658,6 +658,9 @@ class AppLocalizationsAr extends AppLocalizations {
   String get messageDeletedSuccess => 'تم حذف الرسالة بنجاح';
 
   @override
+  String get thisMessageWasDeleted => 'تم حذف هذه الرسالة';
+
+  @override
   String get deletingAccount => 'جاري حذف الحساب...';
 
   @override
@@ -1175,4 +1178,126 @@ class AppLocalizationsAr extends AppLocalizations {
 
   @override
   String get originalMessageNotFound => 'لم يتم العثور على الرسالة الأصلية';
+
+  @override
+  String get fontAndDisplay => 'الخط وإعدادات العرض';
+
+  @override
+  String get noEmailOnAccount => 'لا يوجد بريد إلكتروني مرتبط بهذا الحساب';
+
+  @override
+  String get copied => 'تم النسخ';
+
+  @override
+  String get copy => 'نسخ';
+
+  @override
+  String get fontAndDisplaySubtitle => 'تخصيص حجم النص ومظهره';
+
+  @override
+  String get fontSizeLabel => 'حجم الخط';
+
+  @override
+  String get fontSizeDesc =>
+      'غيّر حجم النص في تطبيق MW Chat بالكامل (بما في ذلك الرسائل).';
+
+  @override
+  String get fontStyleLabel => 'نمط الخط';
+
+  @override
+  String get fontStyleDesc => 'اختر نمط خط يناسب ذوقك.';
+
+  @override
+  String get previewLabel => 'معاينة';
+
+  @override
+  String get previewHeadline => 'MW Chat — هكذا ستبدو الرسائل.';
+
+  @override
+  String get previewBody =>
+      'يمكنك إبقاء الخط صغيرًا أو تكبيره ليصبح مريحًا للعين.';
+
+  @override
+  String get resetToDefault => 'إعادة الإعدادات الافتراضية';
+
+  @override
+  String get backToDefault => 'تمت العودة إلى الإعدادات الافتراضية.';
+
+  @override
+  String get previewMiniLine =>
+      'هكذا سيبدو نص الدردشة أثناء الاستخدام الحقيقي.';
+
+  @override
+  String get fontHintNote =>
+      'معلومة: تغييرات الخط تُطبّق فورًا في جميع أنحاء التطبيق.';
+
+  @override
+  String get account => 'الحساب';
+
+  @override
+  String get preferences => 'التفضيلات';
+
+  @override
+  String get sensitiveActions => 'إجراءات حساسة';
+
+  @override
+  String get legal => 'القوانين والسياسات';
+
+  @override
+  String get webFontNote => 'تنطبق إعدادات الخط على إصدار الويب فقط';
+
+  @override
+  String get arabicLabel => 'العربية';
+
+  @override
+  String get messageDeletedForMeSuccess => 'تم حذف الرسالة لديك';
+
+  @override
+  String get messageDeletedForEveryoneSuccess => 'تم حذف الرسالة لدى الجميع';
+
+  @override
+  String get messageSelectedTitle => 'تم تحديد الرسالة';
+
+  @override
+  String get copyNotAvailable => 'النسخ غير متاح';
+
+  @override
+  String get deleteMessageDescriptionEveryone => 'اختر كيفية حذف هذه الرسالة.';
+
+  @override
+  String get deleteMessageDescriptionMe => 'سيتم حذف هذه الرسالة لديك فقط.';
+
+  @override
+  String get report => 'الإبلاغ';
+
+  @override
+  String get selectedOne => 'محددة';
+
+  @override
+  String get selectedMany => 'تم تحديد عدة عناصر';
+
+  @override
+  String get chooseArabicFont => 'يرجى اختيار خط عربي.';
+
+  @override
+  String get chooseEnglishFont => 'يرجى اختيار خط إنجليزي.';
+
+  @override
+  String get typographyTip =>
+      'نصيحة: الخطوط العصرية تناسب الشباب، والخطوط النظيفة أفضل للدردشة الطويلة، وخطوط الحب جميلة للعناوين والبروفايل.';
+
+  @override
+  String get typographyWebTip =>
+      'نصيحة للويب: إذا لم يتغير الخط، جرّب إعادة التشغيل السريع (R) لإعادة تحميل الخط.';
+
+  @override
+  String get englishSample =>
+      'مثال إنجليزي: The quick brown fox jumps over the lazy dog.';
+
+  @override
+  String get arabicSample =>
+      'مثال عربي: اللغة العربية جميلة وتبدو رائعة مع الخط المناسب.';
+
+  @override
+  String get newLabel => 'جديد';
 }

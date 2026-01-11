@@ -1,32 +1,38 @@
 // lib/widgets/chat/mw_token_text.dart
+//
+// Unified MW token -> inline image renderer.
+// Usage:
+//   MwTokenText(text: "Hi :mw_love:", style: ..., textDirection: ..., textAlign: ...)
+
 import 'package:flutter/material.dart';
 
 class MwTokenText extends StatelessWidget {
   final String text;
   final TextStyle style;
-  final TextDirection textDirection;
-  final TextAlign textAlign;
+  final TextDirection? textDirection;
+  final TextAlign? textAlign;
 
-  /// Inline emoji size inside message bubble
-  final double emojiSize;
-
-  /// Optional baseline tweak (usually not needed)
-  final double emojiVPad;
+  /// ✅ New: match Text/RichText behavior (for reply preview, lists, etc.)
+  final int? maxLines;
+  final TextOverflow? overflow;
+  final bool softWrap;
+  final StrutStyle? strutStyle;
 
   const MwTokenText({
     super.key,
     required this.text,
     required this.style,
-    required this.textDirection,
-    required this.textAlign,
-    this.emojiSize = 96,
-    this.emojiVPad = 0,
+    this.textDirection,
+    this.textAlign,
+    this.maxLines,
+    this.overflow,
+    this.softWrap = true,
+    this.strutStyle,
   });
 
-  /// MUST match EXACT token strings you insert from MwEmojiPanel
-  /// MUST match EXACT file names (case sensitive)
-  static const Map<String, String> tokenToAsset = {
-    // 🌟 General
+  /// ✅ One source of truth for MW emoji tokens.
+  /// Add more tokens here and they will render everywhere.
+  static const Map<String, String> tokenToAsset = <String, String>{
     ':mw_love:': 'assets/emojis/love.webp',
     ':mw_happy:': 'assets/emojis/happy.webp',
     ':mw_laugh:': 'assets/emojis/laugh.webp',
@@ -39,77 +45,176 @@ class MwTokenText extends StatelessWidget {
     ':mw_passion:': 'assets/emojis/passion.webp',
     ':mw_sleep:': 'assets/emojis/sleep.webp',
 
-    // 🐻 Bear
     ':mw_bear_love:': 'assets/emojis/bearlove.webp',
     ':mw_bear_angry:': 'assets/emojis/bearangry.webp',
 
-    // 👧 Smurf (girl)
     ':mw_smurf_happy:': 'assets/emojis/smurfhappy.webp',
     ':mw_smurf_love:': 'assets/emojis/smurflove.webp',
     ':mw_smurf_angry:': 'assets/emojis/smurfangry.webp',
   };
 
-  static final RegExp _tokenRegex = RegExp(r'(:[a-zA-Z0-9_]+:)');
+  static final RegExp _tokenRegex =
+  RegExp(r'(:mw_[a-zA-Z0-9_]+:)', multiLine: true);
+
+  bool _isOnlyTokensMessage(String s) {
+    final trimmed = s.trim();
+    if (trimmed.isEmpty) return false;
+
+    final matches = _tokenRegex.allMatches(trimmed).toList();
+    if (matches.isEmpty) return false;
+
+    // Remove all tokens and see if anything else remains
+    final withoutTokens =
+    trimmed.replaceAll(_tokenRegex, '').replaceAll(' ', '');
+
+    return withoutTokens.isEmpty;
+  }
 
   @override
   Widget build(BuildContext context) {
-    if (text.trim().isEmpty) return const SizedBox.shrink();
+    final raw = text;
+    final trimmed = raw.trim();
 
-    // Keep delimiters by splitting with regex, then re-inserting tokens by index.
-    final rawParts = text.split(_tokenRegex);
-    final tokens = _tokenRegex.allMatches(text).map((m) => m.group(0)!).toList();
+    // ✅ Sticker mode: message is ONLY tokens (one or more)
+    // Keep existing UX: bigger icons, wrap them.
+    if (_isOnlyTokensMessage(trimmed)) {
+      final tokens = _tokenRegex
+          .allMatches(trimmed)
+          .map((m) => m.group(0)!)
+          .where((t) => tokenToAsset.containsKey(t))
+          .toList();
 
-    final spans = <InlineSpan>[];
-
-    for (int i = 0; i < rawParts.length; i++) {
-      // ✅ IMPORTANT: render plain text too
-      final plain = rawParts[i];
-      if (plain.isNotEmpty) {
-        spans.add(TextSpan(text: plain, style: style));
+      if (tokens.isEmpty) {
+        return Text(
+          trimmed,
+          style: style,
+          textDirection: textDirection,
+          textAlign: textAlign,
+          maxLines: maxLines,
+          overflow: overflow,
+          softWrap: softWrap,
+          strutStyle: strutStyle,
+        );
       }
 
-      if (i < tokens.length) {
-        final token = tokens[i];
-        final asset = tokenToAsset[token];
+      // Note: Wrap doesn't support maxLines/ellipsis (by design).
+      // This is fine for sticker mode; tokens are meant to be visible.
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          alignment: WrapAlignment.end,
+          children: tokens.map((t) {
+            final asset = tokenToAsset[t]!;
+            return Image.asset(
+              asset,
+              width: 72,
+              height: 72,
+              fit: BoxFit.contain,
+              filterQuality: FilterQuality.high,
+            );
+          }).toList(),
+        ),
+      );
+    }
 
-        if (asset != null) {
-          spans.add(
-            WidgetSpan(
-              alignment: PlaceholderAlignment.middle,
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: 2, vertical: emojiVPad),
-                child: Image.asset(
-                  asset,
-                  width: emojiSize,
-                  height: emojiSize,
-                  fit: BoxFit.contain,
-                  filterQuality: FilterQuality.high,
-                  // Note: if your image itself has white background baked-in,
-                  // code cannot remove it. You must use transparent assets.
-                  errorBuilder: (_, __, ___) => Text(token, style: style),
-                ),
-              ),
-            ),
-          );
-        } else {
-          // Unknown token -> show raw token so you notice
-          spans.add(TextSpan(text: token, style: style));
-        }
-      }
+    // Mixed text + tokens -> RichText with WidgetSpan
+    final spans = _buildSpans(raw);
+
+    // If for some reason spans are empty, fallback to normal Text
+    if (spans.isEmpty) {
+      return Text(
+        raw,
+        style: style,
+        textDirection: textDirection,
+        textAlign: textAlign,
+        maxLines: maxLines,
+        overflow: overflow,
+        softWrap: softWrap,
+        strutStyle: strutStyle,
+      );
     }
 
     return RichText(
       textDirection: textDirection,
-      textAlign: textAlign,
+      textAlign: textAlign ?? TextAlign.start,
+      softWrap: softWrap,
+      maxLines: maxLines,
+      overflow: overflow ?? TextOverflow.clip,
+      strutStyle: strutStyle,
       text: TextSpan(style: style, children: spans),
     );
   }
+
+  List<InlineSpan> _buildSpans(String input) {
+    final List<InlineSpan> out = [];
+
+    int last = 0;
+    final matches = _tokenRegex.allMatches(input);
+
+    for (final m in matches) {
+      final start = m.start;
+      final end = m.end;
+
+      // text before token
+      if (start > last) {
+        out.add(TextSpan(text: input.substring(last, start)));
+      }
+
+      final token = input.substring(start, end);
+      final asset = tokenToAsset[token];
+
+      if (asset == null) {
+        // Unknown token -> render as text (no crash)
+        out.add(TextSpan(text: token));
+      } else {
+        out.add(
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2),
+              child: Image.asset(
+                asset,
+                width: 18,
+                height: 18,
+                fit: BoxFit.contain,
+                filterQuality: FilterQuality.high,
+              ),
+            ),
+          ),
+        );
+      }
+
+      last = end;
+    }
+
+    // remaining text
+    if (last < input.length) {
+      out.add(TextSpan(text: input.substring(last)));
+    }
+
+    return out;
+  }
 }
 
-/// ✅ helper you can use in MessageBubble
-bool mwContainsAnyToken(String s) {
-  for (final t in MwTokenText.tokenToAsset.keys) {
-    if (s.contains(t)) return true;
+class _TokenSticker extends StatelessWidget {
+  final String asset;
+  final double size;
+
+  const _TokenSticker({
+    required this.asset,
+    required this.size,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Image.asset(
+      asset,
+      width: size,
+      height: size,
+      fit: BoxFit.contain,
+      filterQuality: FilterQuality.high,
+    );
   }
-  return false;
 }

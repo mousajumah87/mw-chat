@@ -5,16 +5,14 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/ui/app_info.dart';
 import '../../widgets/ui/mw_background.dart';
 
 class TermsOfUseScreen extends StatelessWidget {
   const TermsOfUseScreen({super.key});
 
-  static const String _appVersion = 'v1.0';
-  static const String _websiteUrl = 'https://www.mwchats.com';
-
   Future<void> _openMwWebsite() async {
-    final uri = Uri.parse(_websiteUrl);
+    final uri = Uri.parse(AppInfo.websiteUrl);
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
@@ -47,7 +45,7 @@ class TermsOfUseScreen extends StatelessWidget {
             style: textStyle,
           ),
           Text(
-            _appVersion,
+            AppInfo.version,
             style: versionStyle,
           ),
           InkWell(

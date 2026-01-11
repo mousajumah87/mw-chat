@@ -7,18 +7,17 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/ui/app_info.dart';
 import '../../widgets/ui/mw_background.dart';
 import '../legal/terms_of_use_screen.dart';
 
 class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key});
 
-  static const String _appVersion = 'v1.0';
-  static const String _websiteUrl = 'https://www.mwchats.com';
-  static const String _supportEmail = 'support@mwchats.com';
+  static const String _supportEmail = AppInfo.supportEmail;
 
   Future<void> _openMwWebsite() async {
-    final uri = Uri.parse(_websiteUrl);
+    final uri = Uri.parse(AppInfo.websiteUrl);
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
@@ -50,7 +49,7 @@ class AboutScreen extends StatelessWidget {
         alignment: WrapAlignment.center,
         children: [
           Text(l10n.appBrandingBeta, style: base),
-          Text(_appVersion, style: versionStyle),
+          Text(AppInfo.version, style: versionStyle),
           InkWell(
             onTap: _openMwWebsite,
             borderRadius: BorderRadius.circular(16),

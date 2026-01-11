@@ -56,9 +56,26 @@ class MwReactions {
     return null;
   }
 
+  /// ✅ Remove user from ALL emojis (cleans "dirty" data where user has 2+ reactions).
+  static void _removeUserFromAll({
+    required Map<String, List<String>> reactions,
+    required String userId,
+  }) {
+    final keys = reactions.keys.toList(growable: false);
+    for (final k in keys) {
+      final list = List<String>.from(reactions[k] ?? const <String>[]);
+      list.removeWhere((x) => x == userId);
+      if (list.isEmpty) {
+        reactions.remove(k);
+      } else {
+        reactions[k] = list;
+      }
+    }
+  }
+
   /// ✅ WhatsApp-like single reaction per user:
   /// - If user taps same emoji -> remove reaction
-  /// - If user taps different emoji -> remove old and add new
+  /// - If user taps different emoji -> remove old (even if multiple) and add new
   ///
   /// NOTE: This writes the whole reactions map (simple + robust).
   static Future<void> setSingleReaction({
@@ -78,26 +95,19 @@ class MwReactions {
       final raw = data[fieldReactions];
       final current = normalize(raw);
 
-      final oldEmoji = findUserReactionEmoji(reactions: current, userId: uid);
+      // ✅ decide toggle BEFORE cleanup
+      final hadThisEmoji = (current[e]?.contains(uid) ?? false);
 
-      // Remove user from old emoji list if exists
-      if (oldEmoji != null) {
-        final oldList = List<String>.from(current[oldEmoji] ?? const <String>[]);
-        oldList.removeWhere((x) => x == uid);
-        if (oldList.isEmpty) {
-          current.remove(oldEmoji);
-        } else {
-          current[oldEmoji] = oldList;
-        }
-      }
+      // ✅ Always clean user from ALL emojis
+      _removeUserFromAll(reactions: current, userId: uid);
 
-      // Toggle off if same emoji
-      if (oldEmoji == e) {
+      // Toggle off
+      if (hadThisEmoji) {
         tx.update(messageRef, {fieldReactions: current});
         return;
       }
 
-      // Add new emoji
+      // Add new emoji (single reaction)
       final newList = List<String>.from(current[e] ?? const <String>[]);
       if (!newList.contains(uid)) newList.add(uid);
       current[e] = newList;
@@ -198,13 +208,11 @@ class _ReactionChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bg = mine
-        ? kPrimaryGold.withOpacity(0.22)
-        : kSurfaceAltColor.withOpacity(0.60);
+    final bg =
+    mine ? kPrimaryGold.withOpacity(0.22) : kSurfaceAltColor.withOpacity(0.60);
 
-    final border = mine
-        ? kPrimaryGold.withOpacity(0.65)
-        : kBorderColor.withOpacity(0.45);
+    final border =
+    mine ? kPrimaryGold.withOpacity(0.65) : kBorderColor.withOpacity(0.45);
 
     final pad = compact ? const EdgeInsets.all(6) : const EdgeInsets.all(8);
 
@@ -228,9 +236,8 @@ class _ReactionChip extends StatelessWidget {
 }
 
 /// ✅ Floating overlay bar above the message bubble.
-/// FIXED:
-/// - Can align left/right based on bubble
-/// - Never clips off screen (constrained + horizontal scroll)
+/// Fix: do NOT cover the AppBar area with the dismiss barrier.
+/// This makes AppBar icons (Delete/Report/Copy) work on FIRST tap.
 class MwReactionOverlay {
   static OverlayEntry? _entry;
 
@@ -241,6 +248,115 @@ class MwReactionOverlay {
     _entry = null;
   }
 
+  static double _appBarBlockHeight(BuildContext ctx) {
+    final media = MediaQuery.of(ctx);
+    // Safe top (status bar) + standard toolbar height
+    return media.padding.top + kToolbarHeight;
+  }
+
+  /// ✅ Keep the FIRST quick bar the same (small).
+  static const List<String> kDefaultQuickEmojis = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+
+  /// ✅ Full set used ONLY when pressing "+" (more picker).
+  static const List<String> kFullEmojis = [
+    '👍','❤️','😂','😮','😢','🙏','🔥','🎉','👏','✅','❌','😡','💯','✨','🤝','😍',
+    '😎','😭','😁','😅','😆','😉','😊','🙂','🙃','😘','🤗','🤔','😴','😬','🥳','🤩',
+    '😇','😈','🤯','😤','😱','🤦‍♂️','🤦‍♀️','🙌','💪','👀','💔','💙','💚','💛','🧡','💜',
+    '⭐','🌟','⚡','☕','🍕','🍔','🍟','🍿','🥤','🎁','🎈','🏆','📌','📎','🧠','📣',
+  ];
+
+  /// ✅ anchor-by-position API
+  static void show({
+    required BuildContext context,
+    required Offset? anchor,
+    required String currentUserId,
+    required Map<String, List<String>> currentReactions,
+    required Future<void> Function(String emoji) onSelectEmoji,
+    required Future<void> Function() onOpenPicker,
+    required bool alignToRightBubble,
+    List<String> quickEmojis = kDefaultQuickEmojis,
+  }) {
+    hide();
+
+    final overlay = Overlay.of(context, rootOverlay: true);
+    if (overlay == null) return;
+
+    _entry = OverlayEntry(
+      builder: (ctx) {
+        final media = MediaQuery.of(ctx);
+        final size = media.size;
+
+        const horizontalSafe = 12.0;
+        final maxBarWidth =
+        (size.width - (horizontalSafe * 2)).clamp(220.0, size.width);
+
+        final a = anchor ??
+            Offset(
+              size.width / 2,
+              (size.height * 0.55).clamp(120.0, size.height - 120.0),
+            );
+
+        const barHeightGuess = 54.0;
+        final double desiredLeft =
+        alignToRightBubble ? (a.dx - maxBarWidth + 30) : (a.dx - 30);
+        final double desiredTop = a.dy - barHeightGuess - 18;
+
+        final left = desiredLeft.clamp(
+          horizontalSafe,
+          size.width - maxBarWidth - horizontalSafe,
+        );
+        final top = desiredTop.clamp(12.0, size.height - barHeightGuess - 12.0);
+
+        final appBarH = _appBarBlockHeight(ctx);
+
+        return Stack(
+          children: [
+            // ✅ Barrier ONLY below the app bar (so header buttons get the tap)
+            Positioned(
+              left: 0,
+              right: 0,
+              top: appBarH,
+              bottom: 0,
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: hide,
+                child: const SizedBox.expand(),
+              ),
+            ),
+
+            // Reaction bar
+            Positioned(
+              left: left,
+              top: top,
+              width: maxBarWidth,
+              child: SafeArea(
+                child: Material(
+                  color: Colors.transparent,
+                  child: _ReactionBar(
+                    currentUserId: currentUserId,
+                    currentReactions: currentReactions,
+                    quickEmojis: quickEmojis,
+                    onEmojiTap: (e) async {
+                      await onSelectEmoji(e);
+                      hide();
+                    },
+                    onPlusTap: () async {
+                      hide();
+                      await onOpenPicker();
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    overlay.insert(_entry!);
+  }
+
+  /// ✅ LayerLink anchored
   static void showAbove({
     required BuildContext context,
     required LayerLink link,
@@ -248,11 +364,8 @@ class MwReactionOverlay {
     required Map<String, List<String>> currentReactions,
     required Future<void> Function(String emoji) onSelectEmoji,
     required Future<void> Function() onOpenPicker,
-
-    /// ✅ pass from MessageBubble (isMe) so we align correctly
     required bool alignToRightBubble,
-
-    List<String> quickEmojis = const ['👍', '❤️', '😂', '😮', '😢', '🙏'],
+    List<String> quickEmojis = kDefaultQuickEmojis,
   }) {
     hide();
 
@@ -264,19 +377,24 @@ class MwReactionOverlay {
         final media = MediaQuery.of(ctx);
         final w = media.size.width;
 
-        // Keep bar fully inside screen
         const horizontalSafe = 12.0;
         final maxBarWidth = (w - (horizontalSafe * 2)).clamp(220.0, w);
 
-        // Align to same side as bubble to avoid going خارج الشاشة
         final followerAnchor =
         alignToRightBubble ? Alignment.bottomRight : Alignment.bottomLeft;
         final targetAnchor =
         alignToRightBubble ? Alignment.topRight : Alignment.topLeft;
 
+        final appBarH = _appBarBlockHeight(ctx);
+
         return Stack(
           children: [
-            Positioned.fill(
+            // ✅ Barrier ONLY below the app bar
+            Positioned(
+              left: 0,
+              right: 0,
+              top: appBarH,
+              bottom: 0,
               child: GestureDetector(
                 behavior: HitTestBehavior.translucent,
                 onTap: hide,
@@ -289,7 +407,6 @@ class MwReactionOverlay {
               showWhenUnlinked: false,
               followerAnchor: followerAnchor,
               targetAnchor: targetAnchor,
-              // lift it a bit above bubble
               offset: const Offset(0, -10),
               child: SafeArea(
                 child: Padding(
@@ -451,98 +568,129 @@ class _PlusButton extends StatelessWidget {
   }
 }
 
-/// ✅ Full emoji picker (opened via "+" button).
+/// ✅ Full picker (no emoji_picker_flutter dependency)
+/// Used for "+" only. Shows your FULL emoji list, without changing workflow.
 class MwFullEmojiPicker {
-  static Future<String?> open(BuildContext context) async {
-    const emojis = [
-      '👍','❤️','😂','😮','😢','🙏','🔥','🎉','👏','✅','❌','😡','💯','✨','🤝','😍',
-      '😎','😭','😁','😅','😆','😉','😊','🙂','🙃','😘','🤗','🤔','😴','😬','🥳','🤩',
-      '😇','😈','🤯','😤','😱','🤦‍♂️','🤦‍♀️','🙌','💪','👀','💔','💙','💚','💛','🧡','💜',
-      '⭐','🌟','⚡','☕','🍕','🍔','🍟','🍿','🥤','🎁','🎈','🏆','📌','📎','🧠','📣',
-    ];
+  static const List<String> _fullEmojis = MwReactionOverlay.kFullEmojis;
 
-    return showDialog<String>(
+  static Future<String?> open(BuildContext context) async {
+    String? selected;
+
+    await showModalBottomSheet<void>(
       context: context,
       useRootNavigator: true,
-      barrierColor: Colors.black.withOpacity(0.55),
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
       builder: (ctx) {
-        final w = MediaQuery.of(ctx).size.width;
-        final maxW = w > 560 ? 560.0 : double.infinity;
+        final media = MediaQuery.of(ctx);
+        final h = media.size.height;
+        final sheetH = (h * 0.55).clamp(340.0, 520.0);
 
-        return Center(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: maxW),
-            child: Material(
+        return SafeArea(
+          child: Container(
+            height: sheetH,
+            decoration: BoxDecoration(
               color: kSurfaceAltColor.withOpacity(0.98),
-              borderRadius: BorderRadius.circular(18),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'Pick an emoji',
-                      style: TextStyle(
-                        color: kTextPrimary.withOpacity(0.95),
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      height: 320,
-                      child: GridView.builder(
-                        itemCount: emojis.length,
-                        gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 8,
-                          mainAxisSpacing: 10,
-                          crossAxisSpacing: 10,
-                        ),
-                        itemBuilder: (_, i) {
-                          final e = emojis[i];
-                          return InkWell(
-                            onTap: () => Navigator.of(ctx).pop(e),
-                            borderRadius: BorderRadius.circular(12),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.06),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: Colors.white.withOpacity(0.10),
-                                ),
-                              ),
-                              alignment: Alignment.center,
-                              child: Text(
-                                e,
-                                style: const TextStyle(fontSize: 22),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton(
-                        onPressed: () => Navigator.of(ctx).pop(),
-                        child: Text(
-                          'Cancel',
-                          style: TextStyle(
-                            color: kTextPrimary.withOpacity(0.9),
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+              border: Border.all(color: Colors.white.withOpacity(0.10)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.35),
+                  blurRadius: 18,
+                  offset: const Offset(0, -10),
                 ),
-              ),
+              ],
+            ),
+            child: _MwEmojiGridPicker(
+              emojis: _fullEmojis,
+              onPick: (emoji) {
+                selected = emoji;
+                Navigator.of(ctx).pop();
+              },
             ),
           ),
         );
       },
+    );
+
+    return selected;
+  }
+}
+
+/// Internal grid picker used by MwFullEmojiPicker.
+class _MwEmojiGridPicker extends StatelessWidget {
+  final List<String> emojis;
+  final void Function(String emoji) onPick;
+
+  const _MwEmojiGridPicker({
+    required this.emojis,
+    required this.onPick,
+  });
+
+  int _crossAxisCountForWidth(double w) {
+    if (w >= 900) return 12;
+    if (w >= 600) return 10;
+    return 8;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final w = MediaQuery.of(context).size.width;
+    final crossAxisCount = _crossAxisCountForWidth(w);
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'More reactions',
+                  style: TextStyle(
+                    color: kTextPrimary.withOpacity(0.92),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+              IconButton(
+                onPressed: () => Navigator.of(context).pop(),
+                icon: Icon(Icons.close, color: kTextPrimary.withOpacity(0.85)),
+                splashRadius: 18,
+              ),
+            ],
+          ),
+        ),
+        Divider(height: 1, color: Colors.white.withOpacity(0.08)),
+        Expanded(
+          child: GridView.builder(
+            padding: const EdgeInsets.all(12),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: crossAxisCount,
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
+            ),
+            itemCount: emojis.length,
+            itemBuilder: (ctx, i) {
+              final e = emojis[i];
+              return InkWell(
+                onTap: () => onPick(e),
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white.withOpacity(0.10)),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(e, style: const TextStyle(fontSize: 20)),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }

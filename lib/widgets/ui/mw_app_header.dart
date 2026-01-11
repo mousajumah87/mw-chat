@@ -4,16 +4,15 @@ import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../screens/home/invite_friends.dart';
 import '../../screens/profile/presence_privacy_screen.dart';
+import '../../screens/profile/profile_screen.dart';
+import '../../screens/profile/typography_settings_screen.dart';
+import '../../screens/about/about_screen.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/presence_service.dart';
-import '../../utils/locale_provider.dart';
-import '../../screens/about/about_screen.dart';
-import '../../screens/profile/profile_screen.dart';
 import 'mw_language_button.dart';
 import 'mw_avatar.dart';
 
@@ -92,11 +91,28 @@ class _MwAppHeaderState extends State<MwAppHeader>
     _menuEntry = OverlayEntry(
       builder: (ctx) {
         final media = MediaQuery.of(ctx);
+
         final topPadding = media.padding.top;
+        final bottomPadding = media.padding.bottom;
+
         final headerHeight = widget.showTabs ? 118.0 : 78.0;
 
         final screenW = media.size.width;
+        final screenH = media.size.height;
+
+        // Responsive width
         final maxPanelW = screenW < 420 ? screenW - 24 : 420.0;
+
+        // ✅ Max height to prevent overflow on small screens / landscape / web small window
+        // Keep some breathing space from top and bottom.
+        final maxPanelH = (screenH - (topPadding + bottomPadding) - headerHeight - 28)
+            .clamp(180.0, 520.0);
+
+        // Position just under header, but ensure it never goes too far down on tiny heights
+        final top = (topPadding + headerHeight + 10).clamp(
+          topPadding + 8,
+          (screenH - bottomPadding - maxPanelH - 8),
+        );
 
         return Stack(
           children: [
@@ -111,10 +127,10 @@ class _MwAppHeaderState extends State<MwAppHeader>
               ),
             ),
             PositionedDirectional(
-              top: topPadding + headerHeight + 10,
+              top: top,
               start: 12,
               child: ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: maxPanelW),
+                constraints: BoxConstraints(maxWidth: maxPanelW, maxHeight: maxPanelH),
                 child: SlideTransition(
                   position: _slide,
                   child: FadeTransition(
@@ -316,150 +332,181 @@ class _MenuPanel extends StatelessWidget {
 
     return Material(
       color: Colors.transparent,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        decoration: BoxDecoration(
-          color: kSurfaceAltColor.withOpacity(0.72),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: kBorderColor.withOpacity(0.75), width: 1),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.45),
-              blurRadius: 22,
-              offset: const Offset(0, 12),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          decoration: BoxDecoration(
+            color: kSurfaceAltColor.withOpacity(0.72),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: kBorderColor.withOpacity(0.75), width: 1),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.45),
+                blurRadius: 22,
+                offset: const Offset(0, 12),
+              ),
+              BoxShadow(
+                color: kGoldDeep.withOpacity(0.10),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+
+          // ✅ Scroll inside the panel if needed (small height / landscape / web)
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Language row
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: _MenuTile(
+                    leading: Icon(
+                      Icons.language_rounded,
+                      color: kOffWhite.withOpacity(0.92),
+                      size: 22,
+                    ),
+                    title: '',
+                    isLanguageRow: true,
+                    trailing: MwLanguageButton(
+                      onChanged: () {
+                        Future.microtask(
+                              () => onClose(immediate: true, updateState: true),
+                        );
+                      },
+                    ),
+                    onTap: () {},
+                  ),
+                ),
+
+                // Account
+                if (currentUser != null)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    child: _ProfileTile(
+                      currentUser: currentUser,
+                      onTap: () {
+                        closeThen(() {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                          );
+                        });
+                      },
+                    ),
+                  ),
+
+                // Font & Display
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: _MenuTile(
+                    leading: Icon(
+                      Icons.text_fields_rounded,
+                      color: kOffWhite.withOpacity(0.92),
+                      size: 22,
+                    ),
+                    title: l10n?.fontAndDisplay ?? 'Font & Display',
+                    onTap: () {
+                      closeThen(() {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const TypographySettingsScreen(),
+                          ),
+                        );
+                      });
+                    },
+                  ),
+                ),
+
+                // Privacy
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: _MenuTile(
+                    leading: Icon(
+                      Icons.privacy_tip_outlined,
+                      color: kOffWhite.withOpacity(0.92),
+                      size: 22,
+                    ),
+                    title: l10n?.privacyTitle ?? 'Privacy Settings',
+                    onTap: () {
+                      closeThen(() {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const PresencePrivacyScreen(),
+                          ),
+                        );
+                      });
+                    },
+                  ),
+                ),
+
+                // Invite
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: _MenuTile(
+                    leading: Icon(
+                      Icons.group_add_outlined,
+                      color: kOffWhite.withOpacity(0.92),
+                      size: 22,
+                    ),
+                    title: l10n?.inviteFriendsTitle ?? 'Invite Friends',
+                    onTap: () {
+                      closeThen(() {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const InviteFriendsTab()),
+                        );
+                      });
+                    },
+                  ),
+                ),
+
+                // About
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: _MenuTile(
+                    leading: Icon(
+                      Icons.info_outline_rounded,
+                      color: kOffWhite.withOpacity(0.92),
+                      size: 22,
+                    ),
+                    title: l10n?.aboutTitle ?? 'About MW Chat',
+                    onTap: () {
+                      closeThen(() {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const AboutScreen()),
+                        );
+                      });
+                    },
+                  ),
+                ),
+
+                // Logout
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: _MenuTile(
+                    leading: Icon(
+                      Icons.logout_rounded,
+                      color: kOffWhite.withOpacity(0.92),
+                      size: 22,
+                    ),
+                    title: l10n?.logout ?? 'Logout',
+                    onTap: () {
+                      closeThen(() async {
+                        await PresenceService.instance.markOffline();
+                        await FirebaseAuth.instance.signOut();
+                        if (context.mounted) {
+                          Navigator.of(context).popUntil((route) => route.isFirst);
+                        }
+                      });
+                    },
+                  ),
+                ),
+              ],
             ),
-            BoxShadow(
-              color: kGoldDeep.withOpacity(0.10),
-              blurRadius: 20,
-              offset: const Offset(0, 10),
-            ),
-          ],
+          ),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // ✅ Language row: no overflow + consistent row sizing/alignment
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              child: _MenuTile(
-                leading: Icon(
-                  Icons.language_rounded,
-                  color: kOffWhite.withOpacity(0.92),
-                  size: 22,
-                ),
-                title: '',
-                isLanguageRow: true,
-                trailing: MwLanguageButton(
-                  onChanged: () {
-                    Future.microtask(() => onClose(immediate: true, updateState: true));
-                  },
-                ),
-                onTap: () {
-                  // tapping the row does nothing now (toggle handles changes)
-                  // keep it safe (avoid accidental double toggle)
-                },
-              ),
-            ),
-
-            if (currentUser != null)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: _ProfileTile(
-                  currentUser: currentUser,
-                  onTap: () {
-                    closeThen(() {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const ProfileScreen()),
-                      );
-                    });
-                  },
-                ),
-              ),
-
-            // ✅ Privacy
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              child: _MenuTile(
-                leading: Icon(
-                  Icons.privacy_tip_outlined,
-                  color: kOffWhite.withOpacity(0.92),
-                  size: 22,
-                ),
-                title: l10n?.privacyTitle ?? 'Privacy',
-                onTap: () {
-                  closeThen(() {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const PresencePrivacyScreen()),
-                    );
-                  });
-                },
-              ),
-            ),
-
-            // ✅ NEW: Invite Friends (place it here: after Privacy, before About)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              child: _MenuTile(
-                leading: Icon(
-                  Icons.group_add_outlined,
-                  color: kOffWhite.withOpacity(0.92),
-                  size: 22,
-                ),
-                title: l10n?.inviteFriendsTitle ?? 'Invite Friends',
-                onTap: () {
-                  closeThen(() {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const InviteFriendsTab()),
-                    );
-                  });
-                },
-              ),
-            ),
-
-            // ✅ About
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              child: _MenuTile(
-                leading: Icon(
-                  Icons.info_outline_rounded,
-                  color: kOffWhite.withOpacity(0.92),
-                  size: 22,
-                ),
-                title: l10n?.aboutTitle ?? 'About MW Chat',
-                onTap: () {
-                  closeThen(() {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const AboutScreen()),
-                    );
-                  });
-                },
-              ),
-            ),
-
-            // ✅ Logout (keep last)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              child: _MenuTile(
-                leading: Icon(
-                  Icons.logout_rounded,
-                  color: kOffWhite.withOpacity(0.92),
-                  size: 22,
-                ),
-                title: l10n?.logout ?? 'Logout',
-                onTap: () {
-                  closeThen(() async {
-                    await PresenceService.instance.markOffline();
-                    await FirebaseAuth.instance.signOut();
-                    if (context.mounted) {
-                      Navigator.of(context).popUntil((route) => route.isFirst);
-                    }
-                  });
-                },
-              ),
-            ),
-          ],
-        ),
-
       ),
     );
   }
@@ -471,7 +518,6 @@ class _MenuTile extends StatelessWidget {
   final Widget? trailing;
   final VoidCallback? onTap;
 
-  /// When true: trailing expands into remaining width (language row)
   final bool isLanguageRow;
 
   const _MenuTile({
@@ -489,7 +535,6 @@ class _MenuTile extends StatelessWidget {
     const double leadingSlotW = 34.0;
     const double rowMinH = 48.0;
     const double hPad = 12.0;
-
     final double gapAfterLeading = hasTitle ? 10.0 : 8.0;
 
     return InkWell(
@@ -528,7 +573,6 @@ class _MenuTile extends StatelessWidget {
                     child: Align(
                       alignment: AlignmentDirectional.centerStart,
                       child: FittedBox(
-                        // ✅ prevents overflow on extremely tiny widths while keeping good size normally
                         fit: BoxFit.scaleDown,
                         alignment: AlignmentDirectional.centerStart,
                         child: trailing!,
@@ -598,7 +642,7 @@ class _ProfileTile extends StatelessWidget {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      l10n?.profileTitle ?? 'Profile',
+                      l10n?.account ?? 'Account',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(

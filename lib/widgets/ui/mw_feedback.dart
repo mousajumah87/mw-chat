@@ -1,13 +1,18 @@
-//lib/widgets/ui/mw_feedback.dart
+// lib/widgets/ui/mw_feedback.dart
 
 import 'dart:async';
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
 import '../../l10n/app_localizations.dart';
 
 /// ✅ Public enum (so other files can use it)
-enum MwFeedbackType { normal, success, error }
+/// NOTE:
+/// - `info` is supported for callers, but visually it's the same as `normal`
+///   (still shows the info icon + outline accent, no extra "blue" color hardcode).
+enum MwFeedbackType { normal, info, success, error }
 
 enum _ToastKind { normal, success, error }
 
@@ -25,12 +30,17 @@ class MwFeedback {
         MwFeedbackType type = MwFeedbackType.normal,
       }) {
     final kind = switch (type) {
-      MwFeedbackType.normal => _ToastKind.normal,
       MwFeedbackType.success => _ToastKind.success,
       MwFeedbackType.error => _ToastKind.error,
+      MwFeedbackType.normal => _ToastKind.normal,
+      MwFeedbackType.info => _ToastKind.normal, // ✅ treated same as normal
     };
 
-    final haptic = (type != MwFeedbackType.normal);
+    // ✅ Haptics:
+    // - success/error: yes
+    // - info/normal: no (subtle)
+    final haptic = (type == MwFeedbackType.success || type == MwFeedbackType.error);
+
     return _showToast(
       context,
       message: message,
@@ -64,6 +74,19 @@ class MwFeedback {
         duration: duration,
         kind: _ToastKind.error,
         haptic: true,
+      );
+
+  // Optional convenience (so other files can call MwFeedback.info(...))
+  static Future<void> info(
+      BuildContext context, {
+        required String message,
+        Duration duration = const Duration(seconds: 2),
+      }) =>
+      show(
+        context,
+        message: message,
+        duration: duration,
+        type: MwFeedbackType.info,
       );
 
   static Future<void> _showToast(

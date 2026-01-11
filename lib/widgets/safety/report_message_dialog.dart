@@ -10,20 +10,68 @@ import '../../theme/app_theme.dart';
 import '../ui/mw_feedback.dart';
 
 class ReportMessageDialog {
+  /// Backward compatible:
+  /// ✅ OLD usage (still supported):
+  ///   ReportMessageDialog.open(context, roomId: id, messageDoc: doc)
+  ///
+  /// ✅ NEW usage (supported):
+  ///   ReportMessageDialog.open(
+  ///     context,
+  ///     roomId: id,
+  ///     messageId: doc.id,
+  ///     reportedUserId: otherId,
+  ///     messageData: doc.data(),
+  ///   )
   static Future<void> open(
       BuildContext context, {
         required String roomId,
-        required DocumentSnapshot<Map<String, dynamic>> messageDoc,
+
+        // OLD API
+        DocumentSnapshot<Map<String, dynamic>>? messageDoc,
+
+        // NEW API
+        String? messageId,
+        String? reportedUserId,
+        Map<String, dynamic>? messageData,
       }) async {
     final l10n = AppLocalizations.of(context);
     if (l10n == null) return;
+
+    // Normalize messageId/data from either messageDoc or new args.
+    final normalizedId = (messageId ?? messageDoc?.id)?.trim();
+    final normalizedData =
+        messageData ?? messageDoc?.data() ?? const <String, dynamic>{};
+
+    if (normalizedId == null || normalizedId.isEmpty) {
+      debugPrint('[ReportMessageDialog] open() missing messageId.');
+      await MwFeedback.error(
+        context,
+        message: l10n.generalErrorMessage,
+      );
+      return;
+    }
+
+    // If caller did not pass reportedUserId, attempt to infer from message data.
+    final inferredReportedUserId =
+    (reportedUserId ?? normalizedData['senderId'])?.toString().trim();
+
+    if (inferredReportedUserId == null || inferredReportedUserId.isEmpty) {
+      debugPrint('[ReportMessageDialog] open() missing reportedUserId/senderId.');
+      await MwFeedback.error(
+        context,
+        message: l10n.generalErrorMessage,
+      );
+      return;
+    }
 
     await showDialog<void>(
       context: context,
       useRootNavigator: true,
       builder: (_) => _ReportMessageDialogContent(
         roomId: roomId,
-        messageDoc: messageDoc,
+        messageId: normalizedId,
+        messageData: normalizedData,
+        reportedUserId: inferredReportedUserId,
       ),
     );
   }
@@ -31,11 +79,15 @@ class ReportMessageDialog {
 
 class _ReportMessageDialogContent extends StatefulWidget {
   final String roomId;
-  final DocumentSnapshot<Map<String, dynamic>> messageDoc;
+  final String messageId;
+  final Map<String, dynamic> messageData;
+  final String reportedUserId;
 
   const _ReportMessageDialogContent({
     required this.roomId,
-    required this.messageDoc,
+    required this.messageId,
+    required this.messageData,
+    required this.reportedUserId,
   });
 
   @override
@@ -74,7 +126,6 @@ class _ReportMessageDialogContentState extends State<_ReportMessageDialogContent
         required String label,
         String? hint,
       }) {
-    // Build InputDecoration (Flutter will merge with theme.inputDecorationTheme).
     return InputDecoration(
       labelText: label,
       hintText: hint,
@@ -104,25 +155,30 @@ class _ReportMessageDialogContentState extends State<_ReportMessageDialogContent
       final detailsRaw = _reasonController.text.trim();
       final details = detailsRaw.isEmpty ? null : detailsRaw;
 
-      final data = widget.messageDoc.data() ?? const <String, dynamic>{};
+      final data = widget.messageData;
       final type = (data['type'] ?? 'text').toString();
 
       try {
         await FirebaseFirestore.instance.collection('contentReports').add({
           'type': type,
           'roomId': widget.roomId,
-          'messageId': widget.messageDoc.id,
+          'messageId': widget.messageId,
 
+          // reported user (sender)
+          'reportedUserId': widget.reportedUserId,
           'senderId': data['senderId'],
           'senderEmail': data['senderEmail'],
 
+          // reporter
           'reporterId': user.uid,
           'reasonCategory': _selectedCategory,
           'reasonDetails': details,
 
           // Keep this field if you use it elsewhere
-          'reason': details == null ? _selectedCategory : '$_selectedCategory – $details',
+          'reason':
+          details == null ? _selectedCategory : '$_selectedCategory – $details',
 
+          // message payload snapshot
           'text': (data['text'] ?? '').toString(),
           'fileUrl': data['fileUrl'],
           'fileName': data['fileName'],
@@ -141,7 +197,7 @@ class _ReportMessageDialogContentState extends State<_ReportMessageDialogContent
       }
     }
 
-    // Close dialog first (prevents rebuild/dispose race)
+    // Close dialog first
     if (mounted) Navigator.of(context).pop();
 
     // Toast after close using safe root context
@@ -212,9 +268,8 @@ class _ReportMessageDialogContentState extends State<_ReportMessageDialogContent
                   ),
                 )
                     .toList(),
-                onChanged: _saving
-                    ? null
-                    : (val) => setState(() => _selectedCategory = val),
+                onChanged:
+                _saving ? null : (val) => setState(() => _selectedCategory = val),
               ),
               const SizedBox(height: 12),
               TextField(
@@ -224,7 +279,7 @@ class _ReportMessageDialogContentState extends State<_ReportMessageDialogContent
                 style: theme.textTheme.bodyMedium?.copyWith(color: kTextPrimary),
                 decoration: _fieldDecoration(
                   context,
-                  label: l10n.reasonOther, // if you don't have it, see note below
+                  label: l10n.reasonOther,
                   hint: l10n.reportMessageHint,
                 ),
               ),
