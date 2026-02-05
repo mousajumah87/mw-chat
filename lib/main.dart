@@ -4,16 +4,20 @@
 
 import 'dart:async';
 
-import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb, debugPrint, kDebugMode;
-import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart'
+    show debugPrint, defaultTargetPlatform, kDebugMode, kProfileMode, kIsWeb;
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:mw/widgets/ui/mw_swipe_back.dart';
 import 'package:provider/provider.dart';
 
+import 'calls/incoming_call_listener.dart';
+import 'calls/mw_call_push_ui.dart';
 import 'firebase_options.dart';
 import 'l10n/app_localizations.dart';
 import 'screens/auth/auth_screen.dart';
@@ -24,6 +28,9 @@ import 'utils/current_chat_tracker.dart';
 import 'utils/locale_provider.dart';
 import 'utils/presence_service.dart';
 import 'utils/typography_provider.dart';
+
+/// ✅ All push UI must show ONLY this title (no body, no sender).
+const String kMwOnlyPushTitle = 'MW';
 
 /// GLOBAL SNACKBAR KEY (FOR FOREGROUND NOTIFICATIONS)
 final GlobalKey<ScaffoldMessengerState> rootScaffoldMessengerKey =
@@ -38,6 +45,99 @@ final CurrentChatTracker currentChatTracker = CurrentChatTracker.instance;
 /// ✅ Prevent duplicate foreground listeners (hot-restart, logout/login, rebuilds)
 StreamSubscription<RemoteMessage>? _foregroundMsgSub;
 StreamSubscription<RemoteMessage>? _onOpenSub;
+
+/// ------------------------------
+/// Small helpers for push parsing
+/// ------------------------------
+
+String _asString(dynamic v) {
+  if (v == null) return '';
+  if (v is String) return v.trim();
+  return v.toString().trim();
+}
+
+bool _isCallPush(RemoteMessage m) =>
+    _asString(m.data['type']).toLowerCase() == 'call';
+
+String _extractCallId(RemoteMessage m) => _asString(m.data['callId']);
+
+/// Optional: if you ever send `callType` from backend (audio|video)
+String _extractCallType(RemoteMessage m) => _asString(m.data['callType']);
+
+String _extractRoomId(RemoteMessage message) {
+  final data = message.data;
+
+  const keys = <String>[
+    'roomId',
+    'room_id',
+    'chatId',
+    'chat_id',
+    'rid',
+    'threadId',
+    'thread_id',
+  ];
+
+  for (final k in keys) {
+    final val = _asString(data[k]);
+    if (val.isNotEmpty) return val;
+  }
+  return '';
+}
+
+String _extractSenderId(RemoteMessage message) {
+  final data = message.data;
+  const keys = <String>[
+    'senderId',
+    'sender_id',
+    'fromUid',
+    'from_uid',
+    'uid',
+  ];
+  for (final k in keys) {
+    final val = _asString(data[k]);
+    if (val.isNotEmpty) return val;
+  }
+  return '';
+}
+
+bool _isChatMessage(RemoteMessage message) {
+  final t = _asString(message.data['type']).toLowerCase();
+  if (t == 'chat' || t == 'chat_message' || t == 'message') return true;
+
+  final rid = _extractRoomId(message);
+  final sid = _extractSenderId(message);
+  return rid.isNotEmpty || sid.isNotEmpty;
+}
+
+void _showForegroundBanner({required String title}) {
+  rootScaffoldMessengerKey.currentState?.hideCurrentSnackBar();
+  rootScaffoldMessengerKey.currentState?.showSnackBar(
+    SnackBar(
+      content: Row(
+        children: [
+          const Icon(Icons.notifications_active_rounded, size: 18),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Text(
+              title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+      behavior: SnackBarBehavior.floating,
+      duration: const Duration(seconds: 3),
+    ),
+  );
+}
+
+/// ---------------------------------------------------------------------------
+/// CallKit answer race guard (shared between CallKit events + Flutter UI)
+/// ---------------------------------------------------------------------------
+
+bool isHandlingCallKitAnswer = false;
+void setHandlingCallKitAnswer(bool v) => isHandlingCallKitAnswer = v;
 
 /// ------------------------------
 /// Firebase Init Guard (FIXES: [DEFAULT] already exists)
@@ -75,6 +175,19 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
   debugPrint('🔔 BACKGROUND MESSAGE: ${message.messageId}');
   debugPrint('🔔 DATA: ${message.data}');
+
+  if (!_isCallPush(message)) return;
+
+  final callId = _extractCallId(message);
+  if (callId.isEmpty) return;
+
+  try {
+    await MwCallPushUi.ensureInit();
+  } catch (e) {
+    debugPrint('⚠️ MwCallPushUi.ensureInit failed in BG: $e');
+  }
+
+  await MwCallPushUi.showIncomingCallNotificationFromBg(message.data);
 }
 
 /// ------------------------------
@@ -112,18 +225,8 @@ Future<void> _syncCurrentTokenIfPossible() async {
   if (user == null) return;
 
   try {
-    if (kIsWeb) {
-      // ✅ If you configure Web Push (VAPID), you can pass it here.
-      // If not configured, getToken() may throw; we just skip safely.
-      final token = await FirebaseMessaging.instance.getToken();
-      if (token == null || token.isEmpty) return;
-      await _storeTokenForUserIfChanged(uid: user.uid, token: token);
-      return;
-    }
-
     final token = await FirebaseMessaging.instance.getToken();
     if (token == null || token.isEmpty) return;
-
     await _storeTokenForUserIfChanged(uid: user.uid, token: token);
   } on FirebaseException catch (e) {
     if (e.code == 'apns-token-not-set') {
@@ -136,183 +239,100 @@ Future<void> _syncCurrentTokenIfPossible() async {
   }
 }
 
-void _setupAuthDrivenTokenSync() {
-  _authTokenSyncSub?.cancel();
-  _authTokenSyncSub = FirebaseAuth.instance.authStateChanges().listen((user) {
-    if (user == null) return;
-    unawaited(_syncCurrentTokenIfPossible());
-  });
-}
-
-/// ✅ Fix for Web “refresh needed”
 /// Ensure token is ready BEFORE we run Firestore-heavy screens/queries.
 Future<void> _ensureIdTokenReady(User user) async {
   try {
-    // Web benefits from forcing a token refresh once after login.
     await user.getIdToken(true);
   } catch (e) {
     debugPrint('⚠️ getIdToken(true) failed: $e');
-    // Still continue; we’ll rely on idTokenChanges + Firestore retry paths.
   }
 }
 
 /// ------------------------------
-/// Foreground notification helpers
+/// VoIP Token Sync (iOS PushKit)
 /// ------------------------------
+const MethodChannel _voipChannel = MethodChannel('mw.voip');
 
-String _asString(dynamic v) {
-  if (v == null) return '';
-  if (v is String) return v.trim();
-  return v.toString().trim();
-}
+String? _pendingVoipToken;
+String? _lastStoredVoipToken;
+String? _lastStoredVoipUid;
+bool _voipBridgeReady = false;
 
-/// Try hard to extract roomId from common backend payload keys.
-String _extractRoomId(RemoteMessage message) {
-  final data = message.data;
+bool get _isIosDevice => !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
-  // Common key variants (add more if your backend differs)
-  const keys = <String>[
-    'roomId',
-    'room_id',
-    'chatId',
-    'chat_id',
-    'rid',
-    'threadId',
-    'thread_id',
-  ];
+Future<void> _storeVoipTokenForUserIfChanged({
+  required String uid,
+  required String token,
+}) async {
+  if (_lastStoredVoipUid == uid && _lastStoredVoipToken == token) return;
 
-  for (final k in keys) {
-    final val = _asString(data[k]);
-    if (val.isNotEmpty) return val;
-  }
-  return '';
-}
+  _lastStoredVoipUid = uid;
+  _lastStoredVoipToken = token;
 
-String _extractSenderId(RemoteMessage message) {
-  final data = message.data;
-  const keys = <String>[
-    'senderId',
-    'sender_id',
-    'fromUid',
-    'from_uid',
-    'uid',
-  ];
-  for (final k in keys) {
-    final val = _asString(data[k]);
-    if (val.isNotEmpty) return val;
-  }
-  return '';
-}
-
-String _extractSenderName(RemoteMessage message) {
-  final data = message.data;
-  const keys = <String>[
-    'senderName',
-    'sender_name',
-    'fromName',
-    'from_name',
-    'name',
-  ];
-  for (final k in keys) {
-    final val = _asString(data[k]);
-    if (val.isNotEmpty) return val;
-  }
-  // fallback to notification title
-  final title = (message.notification?.title ?? '').trim();
-  return title.isNotEmpty ? title : 'MW Chat';
-}
-
-bool _isChatMessage(RemoteMessage message) {
-  // If your backend sets a type, use it. Otherwise treat any payload with roomId/senderId as chat-ish.
-  final t = _asString(message.data['type']).toLowerCase();
-  if (t == 'chat' || t == 'chat_message' || t == 'message') return true;
-
-  final rid = _extractRoomId(message);
-  final sid = _extractSenderId(message);
-  return rid.isNotEmpty || sid.isNotEmpty;
-}
-
-void _showForegroundBanner({required String title}) {
-  rootScaffoldMessengerKey.currentState?.hideCurrentSnackBar();
-  rootScaffoldMessengerKey.currentState?.showSnackBar(
-    SnackBar(
-      content: Row(
-        children: [
-          const Icon(Icons.notifications_active_rounded, size: 18),
-          const SizedBox(width: 10),
-          Flexible(
-            child: Text(
-              title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ],
-      ),
-      behavior: SnackBarBehavior.floating,
-      duration: const Duration(seconds: 3),
-    ),
+  await FirebaseFirestore.instance.collection('users').doc(uid).set(
+    {
+      'voipToken': token,
+      'voipUpdatedAt': FieldValue.serverTimestamp(),
+    },
+    SetOptions(merge: true),
   );
+
+  debugPrint('✅ Stored VoIP token for user $uid (len=${token.length})');
 }
 
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+void _initVoipBridgeOnce() {
+  if (!_isIosDevice) return;
+  if (_voipBridgeReady) return;
+  _voipBridgeReady = true;
 
-  await _ensureFirebaseInitialized();
+  _voipChannel.setMethodCallHandler((call) async {
+    if (call.method != 'voipToken') return;
 
-  if (!kIsWeb) {
-    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-  }
+    final token = (call.arguments as String?)?.trim() ?? '';
+    debugPrint('📞 [VoIP] token from iOS len=${token.length}');
 
-  // AppCheck:
-  // - Web: depends on your setup; keep your current behavior (skip).
-  // - Mobile: keep.
-  if (!kIsWeb) {
-    try {
-      await FirebaseAppCheck.instance.activate(
-        androidProvider: AndroidProvider.playIntegrity,
-        appleProvider: kDebugMode ? AppleProvider.debug : AppleProvider.appAttest,
-      );
-    } catch (e) {
-      debugPrint('⚠️ App Check init skipped: $e');
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      _pendingVoipToken = token;
+      debugPrint('📞 [VoIP] user not logged in → cached token');
+      return;
     }
-  }
 
-  // ✅ Init push on all platforms, but web stays safe (won’t crash if not configured)
-  await _initPushNotifications();
-  _setupAuthDrivenTokenSync();
-
-  PresenceService.instance.init();
-
-  runApp(
-    MultiProvider(
-      providers: [
-        // ✅ TypographyProvider first (needed by LocaleProvider)
-        ChangeNotifierProvider<TypographyProvider>(
-          create: (_) {
-            final p = TypographyProvider();
-            p.start(); // IMPORTANT
-            return p;
-          },
-        ),
-
-        // ✅ LocaleProvider gets TypographyProvider injected
-        ChangeNotifierProvider<LocaleProvider>(
-          create: (ctx) => LocaleProvider(
-            typographyProvider: ctx.read<TypographyProvider>(),
-          ),
-        ),
-
-        ChangeNotifierProvider<CurrentChatTracker>.value(
-          value: currentChatTracker,
-        ),
-      ],
-      child: const MyApp(),
-    ),
-  );
+    await _storeVoipTokenForUserIfChanged(uid: user.uid, token: token);
+  });
 }
 
-/// FULL SAFE FCM INITIALIZATION (ALL PLATFORMS)
+Future<void> _flushPendingVoipIfAny(User user) async {
+  if (!_isIosDevice) return;
+  final pending = _pendingVoipToken;
+  if (pending == null) return;
+
+  _pendingVoipToken = null;
+  await _storeVoipTokenForUserIfChanged(uid: user.uid, token: pending);
+  debugPrint('📞 [VoIP] flushed cached token after login');
+}
+
+/// ------------------------------
+/// Auth-driven token sync
+/// ------------------------------
+void _setupAuthDrivenTokenSync() {
+  _authTokenSyncSub?.cancel();
+  _authTokenSyncSub =
+      FirebaseAuth.instance.authStateChanges().listen((user) async {
+        if (user == null) return;
+
+        // tokens
+        unawaited(_syncCurrentTokenIfPossible());
+        await _flushPendingVoipIfAny(user);
+
+        // ✅ presence reliability: after login force online once
+        unawaited(PresenceService.instance.markOnline());
+      });
+}
+
+/// ------------------------------
+/// Push init (FCM listeners + dedupe)
+/// ------------------------------
 Future<void> _initPushNotifications() async {
   final messaging = FirebaseMessaging.instance;
 
@@ -322,7 +342,6 @@ Future<void> _initPushNotifications() async {
     debugPrint('⚠️ setAutoInitEnabled failed/skipped: $e');
   }
 
-  // Permissions (no-op on many web setups, safe)
   try {
     final settings = await messaging.requestPermission(
       alert: true,
@@ -334,7 +353,6 @@ Future<void> _initPushNotifications() async {
     debugPrint('⚠️ requestPermission failed/skipped: $e');
   }
 
-  // iOS: ensure foreground system alerts are off (you show your own banner)
   if (!kIsWeb) {
     try {
       await messaging.setForegroundNotificationPresentationOptions(
@@ -357,20 +375,25 @@ Future<void> _initPushNotifications() async {
     },
   );
 
-  // Initial token sync (safe on web; if not configured it will just fail gracefully)
   await _syncCurrentTokenIfPossible();
 
-  // ✅ Prevent duplicate listeners
   await _foregroundMsgSub?.cancel();
   await _onOpenSub?.cancel();
 
-  // ✅ Foreground messages (in-app banner)
   _foregroundMsgSub = FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-    final String pushRoomId = _extractRoomId(message);
-    final String pushSenderId = _extractSenderId(message);
-    final String pushSenderName = _extractSenderName(message);
+    if (_isCallPush(message)) {
+      final callId = _extractCallId(message);
+      debugPrint(
+          '📞 FOREGROUND CALL PUSH callId=$callId type=${_extractCallType(message)}');
+      if (callId.isNotEmpty) {
+        MwCallPushUi.handleCallPushInForeground(message.data);
+      }
+      return;
+    }
 
-    final String activeRoomId = (currentChatTracker.activeRoomId ?? '').trim();
+    final pushRoomId = _extractRoomId(message);
+    final pushSenderId = _extractSenderId(message);
+    final activeRoomId = (currentChatTracker.activeRoomId ?? '').trim();
 
     debugPrint(
       '🔔 FOREGROUND | inChat=${currentChatTracker.isInChat} '
@@ -379,7 +402,6 @@ Future<void> _initPushNotifications() async {
 
     final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
 
-    // ❌ Never show banner for own messages
     if (currentUid.isNotEmpty &&
         pushSenderId.isNotEmpty &&
         pushSenderId == currentUid) {
@@ -387,36 +409,112 @@ Future<void> _initPushNotifications() async {
       return;
     }
 
-    // ❌ HARD RULE: if user is inside ANY chat, suppress all chat banners
     if (currentChatTracker.isInChat && _isChatMessage(message)) {
       debugPrint('🔕 In chat screen → suppress foreground banner.');
       return;
     }
 
-    // System / non-chat pushes are allowed
-    if (!_isChatMessage(message)) {
-      _showForegroundBanner(title: pushSenderName);
-      return;
-    }
-
-    // Default case: user is not in chat, show banner
-    _showForegroundBanner(title: pushSenderName);
+    _showForegroundBanner(title: kMwOnlyPushTitle);
   });
 
-  _onOpenSub =
-      FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-        debugPrint('🔔 OPENED FROM NOTIFICATION');
-      });
+  _onOpenSub = FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+    debugPrint('🔔 OPENED FROM NOTIFICATION');
 
-  // Terminated state open (mobile + web when supported)
+    if (_isCallPush(message)) {
+      final callId = _extractCallId(message);
+      debugPrint(
+          '📞 OPENED CALL PUSH callId=$callId type=${_extractCallType(message)}');
+      MwCallPushUi.handleCallPushOnOpen(message.data);
+      return;
+    }
+  });
+
   try {
     final initial = await FirebaseMessaging.instance.getInitialMessage();
     if (initial != null) {
       debugPrint('🔔 APP OPENED FROM TERMINATED PUSH');
+      if (_isCallPush(initial)) {
+        final callId = _extractCallId(initial);
+        debugPrint(
+            '📞 TERMINATED CALL PUSH callId=$callId type=${_extractCallType(initial)}');
+        MwCallPushUi.handleCallPushOnOpen(initial.data);
+      }
     }
   } catch (e) {
     debugPrint('⚠️ getInitialMessage skipped: $e');
   }
+}
+
+void _kickPresenceOnlineSoon() {
+  // Ensures presence goes online even if lifecycle "resumed" doesn't fire yet.
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    // ignore: unawaited_futures
+    PresenceService.instance.markOnline();
+  });
+}
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await _ensureFirebaseInitialized();
+
+  _initVoipBridgeOnce();
+
+  if (!kIsWeb) {
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  }
+
+  if (!kIsWeb) {
+    try {
+      await FirebaseAppCheck.instance.activate(
+        androidProvider: AndroidProvider.playIntegrity,
+        appleProvider: (kDebugMode || kProfileMode)
+            ? AppleProvider.debug
+            : AppleProvider.appAttest,
+      );
+    } catch (e) {
+      debugPrint('⚠️ App Check init skipped: $e');
+    }
+  }
+
+  try {
+    await MwCallPushUi.ensureInit();
+  } catch (e) {
+    debugPrint('⚠️ MwCallPushUi.ensureInit skipped: $e');
+  }
+
+  // ✅ Presence FIRST
+  // PresenceService.instance.init();
+  _kickPresenceOnlineSoon();
+
+  // ✅ Token sync listens to auth and will also mark online
+  _setupAuthDrivenTokenSync();
+  PresenceService.instance.init();
+
+  // ✅ Push init last (auth-driven token sync will handle storing)
+  await _initPushNotifications();
+
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider<TypographyProvider>(
+          create: (_) {
+            final p = TypographyProvider();
+            p.start();
+            return p;
+          },
+        ),
+        ChangeNotifierProvider<LocaleProvider>(
+          create: (ctx) => LocaleProvider(
+            typographyProvider: ctx.read<TypographyProvider>(),
+          ),
+        ),
+        ChangeNotifierProvider<CurrentChatTracker>.value(
+          value: currentChatTracker,
+        ),
+      ],
+      child: const MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -428,48 +526,49 @@ class MyApp extends StatelessWidget {
     final locale = localeProvider.locale;
     final bool isArabic = locale.languageCode == 'ar';
 
-    // ✅ Global typography (scale + family)
     final typo = context.watch<TypographyProvider>();
+    final rawFamily = (typo.fontFamily ?? '').trim();
+    final selected = rawFamily.isNotEmpty ? rawFamily : null;
 
-    final String rawFamily = (typo.fontFamily ?? '').trim();
-    final String? selected = rawFamily.isNotEmpty ? rawFamily : null;
-
-    final String resolvedFamily = resolveMwFontFamily(
+    final resolvedFamily = resolveMwFontFamily(
       isArabic: isArabic,
       override: selected,
     );
 
-    return MaterialApp(
-      navigatorKey: rootNavigatorKey,
-      scaffoldMessengerKey: rootScaffoldMessengerKey,
-      debugShowCheckedModeBanner: false,
-      theme: buildAppTheme(
-        isArabic: isArabic,
-        fontScale: 1.0, // keep 1.0; MediaQuery handles scaling
-        fontFamily: resolvedFamily,
+    return IncomingCallListener(
+      child: MaterialApp(
+        navigatorKey: rootNavigatorKey,
+        scaffoldMessengerKey: rootScaffoldMessengerKey,
+        debugShowCheckedModeBanner: false,
+        theme: buildAppTheme(
+          isArabic: isArabic,
+          fontScale: 1.0,
+          fontFamily: resolvedFamily,
+        ),
+        locale: localeProvider.locale,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        onGenerateTitle: (ctx) =>
+        AppLocalizations.of(ctx)?.mainTitle ?? 'MW Chat',
+        builder: (context, child) {
+          if (child == null) return const SizedBox.shrink();
+
+          final mq = MediaQuery.of(context);
+          final scaledChild = MediaQuery(
+            data: mq.copyWith(
+              textScaler: TextScaler.linear(typo.fontScale),
+            ),
+            child: child,
+          );
+
+          return MwSwipeBack(
+            navigatorKey: rootNavigatorKey,
+            enabled: true,
+            child: scaledChild,
+          );
+        },
+        home: const AuthGate(),
       ),
-      locale: localeProvider.locale,
-      localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
-      onGenerateTitle: (ctx) => AppLocalizations.of(ctx)?.mainTitle ?? 'MW Chat',
-      builder: (context, child) {
-        if (child == null) return const SizedBox.shrink();
-
-        final mq = MediaQuery.of(context);
-        final scaledChild = MediaQuery(
-          data: mq.copyWith(
-            textScaler: TextScaler.linear(typo.fontScale),
-          ),
-          child: child,
-        );
-
-        return MwSwipeBack(
-          navigatorKey: rootNavigatorKey,
-          enabled: true,
-          child: scaledChild,
-        );
-      },
-      home: const AuthGate(),
     );
   }
 }
@@ -481,7 +580,6 @@ class AuthGate extends StatelessWidget {
   bool _coerceIsActive(Map<String, dynamic> data) {
     final v = data['isActive'];
     if (v is bool) return v;
-    // Backward compatible: if missing, treat as active
     return true;
   }
 
@@ -489,8 +587,6 @@ class AuthGate extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
 
-    // ✅ IMPORTANT:
-    // idTokenChanges() is safer for Web because it only emits when a usable token exists.
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.idTokenChanges(),
       builder: (context, authSnap) {
@@ -503,7 +599,6 @@ class AuthGate extends StatelessWidget {
         final user = authSnap.data;
         if (user == null) return const AuthScreen();
 
-        // ✅ Ensure token is actually ready before heavy Firestore screens run.
         return FutureBuilder<void>(
           future: _ensureIdTokenReady(user),
           builder: (context, tokenSnap) {

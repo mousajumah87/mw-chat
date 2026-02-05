@@ -1300,4 +1300,223 @@ class AppLocalizationsAr extends AppLocalizations {
 
   @override
   String get newLabel => 'جديد';
+
+  @override
+  String get callLogs_title => 'سجل المكالمات';
+
+  @override
+  String get callLogs_notSignedIn => 'لم يتم تسجيل الدخول';
+
+  @override
+  String get callLogs_filter_all => 'الكل';
+
+  @override
+  String get callLogs_filter_missed => 'فائتة';
+
+  @override
+  String get callLogs_filter_incoming => 'واردة';
+
+  @override
+  String get callLogs_filter_outgoing => 'صادرة';
+
+  @override
+  String get callLogs_tooltip_retry => 'إعادة المحاولة';
+
+  @override
+  String get callLogs_tooltip_markMissedRead => 'وضع المكالمات الفائتة كمقروءة';
+
+  @override
+  String get callLogs_tooltip_clearLogs => 'مسح السجل';
+
+  @override
+  String get callLogs_snack_markedMissedRead =>
+      'تم وضع المكالمات الفائتة كمقروءة';
+
+  @override
+  String get callLogs_snack_markedAsRead => 'تم وضعها كمقروءة';
+
+  @override
+  String callLogs_snack_failedWithError(Object error) {
+    return 'فشل: $error';
+  }
+
+  @override
+  String callLogs_snack_clearedWithCount(Object count, Object filter) {
+    return 'تم مسح $count من سجل مكالمات $filter';
+  }
+
+  @override
+  String callLogs_snack_clearFailedWithError(Object error) {
+    return 'فشل المسح: $error';
+  }
+
+  @override
+  String callLogs_confirm_clearTitle(Object filter) {
+    return 'مسح سجل مكالمات $filter؟';
+  }
+
+  @override
+  String get callLogs_confirm_clearAllBody =>
+      'سيؤدي هذا إلى حذف جميع سجلات المكالمات من تاريخك.';
+
+  @override
+  String callLogs_confirm_clearFilterBody(Object filter) {
+    return 'سيؤدي هذا إلى حذف سجلات مكالمات $filter فقط من تاريخك.';
+  }
+
+  @override
+  String callLogs_chip_errorPermission(String title) {
+    return '$title (لا توجد صلاحية)';
+  }
+
+  @override
+  String get common_cancel => 'إلغاء';
+
+  @override
+  String get common_clear => 'مسح';
+
+  @override
+  String get common_retry => 'إعادة المحاولة';
+
+  @override
+  String get callLogs_error_indexRequired => 'مطلوب فهرس في Firestore';
+
+  @override
+  String get callLogs_error_failedToLoad => 'تعذر تحميل سجل المكالمات';
+
+  @override
+  String get callLogs_error_createIndexHint =>
+      'أنشئ الفهرس المركّب الموضح في رابط خطأ Firestore.';
+
+  @override
+  String get callLogs_loading => 'جارٍ التحميل...';
+
+  @override
+  String get callLogs_empty_all => 'لا يوجد سجل مكالمات بعد';
+
+  @override
+  String get callLogs_empty_missed => 'لا توجد مكالمات فائتة';
+
+  @override
+  String get callLogs_empty_incoming => 'لا توجد مكالمات واردة';
+
+  @override
+  String get callLogs_empty_outgoing => 'لا توجد مكالمات صادرة';
+
+  @override
+  String get callLogs_unknownUser => 'غير معروف';
+
+  @override
+  String get callLogs_result_ended => 'انتهت';
+
+  @override
+  String get callLogs_result_declined => 'مرفوضة';
+
+  @override
+  String get callLogs_result_canceled => 'أُلغيت';
+
+  @override
+  String get callLogs_result_missed => 'فائتة';
+
+  @override
+  String get callLogs_result_busy => 'مشغول';
+
+  @override
+  String get callLogs_direction_incoming => 'واردة';
+
+  @override
+  String get callLogs_direction_outgoing => 'صادرة';
+
+  @override
+  String callLogs_chip_indexNeeded(String title) {
+    return '$title (مطلوب فهرس)';
+  }
+
+  @override
+  String callLogs_chip_error(String title) {
+    return '$title (خطأ)';
+  }
+
+  @override
+  String callLogs_chip_missedCount(
+    String title,
+    String missedLabel,
+    int count,
+  ) {
+    return '$title • $missedLabel ($count)';
+  }
+
+  @override
+  String get debug_insertedCallLog => 'تصحيح: تم إدراج سجل مكالمة';
+
+  @override
+  String get callLogs_tooltip_voiceCall => 'مكالمة صوتية';
+
+  @override
+  String get callLogs_tooltip_videoCall => 'مكالمة فيديو';
+
+  @override
+  String get outgoingCall_failedToStart => 'فشل بدء المكالمة';
+
+  @override
+  String get outgoingCall_calling => 'جارٍ الاتصال…';
+
+  @override
+  String get outgoingCall_connecting => 'جارٍ الاتصال…';
+
+  @override
+  String get outgoingCall_pleaseWait => 'يرجى الانتظار…';
+
+  @override
+  String get outgoingCall_notSignedIn => 'لم يتم تسجيل الدخول';
+
+  @override
+  String get outgoingCall_invalidPeer => 'جهة الاتصال غير صالحة';
+
+  @override
+  String get call_status_ringing => 'جارٍ الرنين…';
+
+  @override
+  String get call_status_inCall => 'في مكالمة';
+
+  @override
+  String get call_status_answering => 'جارٍ الرد…';
+
+  @override
+  String get call_status_declined => 'تم الرفض';
+
+  @override
+  String get call_status_missed => 'مكالمة فائتة';
+
+  @override
+  String get call_status_canceled => 'تم الإلغاء';
+
+  @override
+  String get call_status_busy => 'المستخدم مشغول';
+
+  @override
+  String get call_status_ended => 'انتهت المكالمة';
+
+  @override
+  String get call_status_canceling => 'جارٍ الإلغاء…';
+
+  @override
+  String call_failedWithError(Object error) {
+    return 'فشلت المكالمة: $error';
+  }
+
+  @override
+  String get incomingCall_voice => 'مكالمة صوتية واردة';
+
+  @override
+  String get incomingCall_video => 'مكالمة فيديو واردة';
+
+  @override
+  String get incomingCall_accept => 'قبول';
+
+  @override
+  String get incomingCall_decline => 'رفض';
+
+  @override
+  String get incomingCall_unknownCaller => 'متصل غير معروف';
 }

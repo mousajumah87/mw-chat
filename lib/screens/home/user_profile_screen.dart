@@ -41,8 +41,11 @@ class _UserProfileScreenState extends State<UserProfileScreen>
   Map<String, dynamic>? _cachedFriendData;
 
   // Presence privacy values
+  static const String _presenceEveryone = 'everyone';
   static const String _presenceFriends = 'friends';
   static const String _presenceNobody = 'nobody';
+
+
 
   // Profile privacy values
   static const String _privacyEveryone = 'everyone';
@@ -56,6 +59,39 @@ class _UserProfileScreenState extends State<UserProfileScreen>
   // Legacy field names
   static const String _legacyFriendRequestsField = 'friendRequests';
   static const String _legacyShowOnlineStatusField = 'showOnlineStatus';
+
+  // ✅ Email visibility values (same stable strings used in PresencePrivacyScreen)
+  static const String _fieldEmailVisibility = 'emailVisibility';
+
+  Timestamp? _readTs(Map<String, dynamic> m, String k) {
+    final v = m[k];
+    return v is Timestamp ? v : null;
+  }
+
+  String _readEmailVisibility(Map<String, dynamic> data) {
+    final raw = (data[_fieldEmailVisibility] as String?)?.trim().toLowerCase();
+    if (raw == _privacyNobody) return _privacyNobody;
+    if (raw == _privacyEveryone) return _privacyEveryone;
+    if (raw == _privacyFriends) return _privacyFriends;
+    return _privacyFriends; // ✅ privacy-first default
+  }
+
+  bool _canSeeEmail({
+    required String emailVisibility,
+    required String? friendStatus,
+    required bool isBlockedRelationship,
+    required bool isActive,
+    required bool isSelf,
+  }) {
+    if (!isActive) return false;
+    if (isBlockedRelationship) return false;
+    if (isSelf) return true;
+
+    if (emailVisibility == _privacyNobody) return false;
+    if (emailVisibility == _privacyEveryone) return true;
+
+    return ChatFriendshipService.isFriends(friendStatus);
+  }
 
   @override
   void initState() {
@@ -79,13 +115,20 @@ class _UserProfileScreenState extends State<UserProfileScreen>
   }
 
   bool _isOnlineWithTtl({
+    required bool canSeePresence,
     required bool rawIsOnline,
-    required Timestamp? lastSeen,
+    required Timestamp? lastActive,
   }) {
-    if (!rawIsOnline || lastSeen == null) return false;
-    final diffSeconds = DateTime.now().difference(lastSeen.toDate()).inSeconds;
+    if (!canSeePresence) return false;
+    if (!rawIsOnline) return false;
+
+    // ✅ If lastActive missing, still trust isOnline=true (prevents "always offline" bug)
+    if (lastActive == null) return true;
+
+    final diffSeconds = DateTime.now().difference(lastActive.toDate()).inSeconds;
     return diffSeconds <= _onlineTtlSeconds;
   }
+
 
   (String label, Color color) _buildPresenceStatus(
       AppLocalizations l10n, {
@@ -107,7 +150,6 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     return years.toString();
   }
 
-  // ✅ Open profile image in full screen (Instagram-like)
   void _openProfilePhotoFullScreen({
     required String imageUrl,
     required String heroTag,
@@ -135,7 +177,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
 
   String _normalizePrivacy(String? raw) {
     final v = raw?.trim().toLowerCase();
-    if (v == null || v.isEmpty) return _privacyEveryone; // backward compatible
+    if (v == null || v.isEmpty) return _privacyEveryone;
     if (v == _privacyFriends) return _privacyFriends;
     if (v == _privacyNobody) return _privacyNobody;
     return _privacyEveryone;
@@ -156,14 +198,20 @@ class _UserProfileScreenState extends State<UserProfileScreen>
   }
 
   String _readPresenceVisibility(Map<String, dynamic> data) {
+    // Legacy boolean wins: false => nobody
     final dynamic rawShow = data[_legacyShowOnlineStatusField];
     if (rawShow is bool && rawShow == false) return _presenceNobody;
 
     final raw = (data['presenceVisibility'] as String?)?.trim().toLowerCase();
-    if (raw == _presenceNobody) return _presenceNobody;
 
-    return _presenceFriends; // privacy-first default
+    if (raw == _presenceNobody) return _presenceNobody;
+    if (raw == _presenceEveryone) return _presenceEveryone;
+    if (raw == _presenceFriends) return _presenceFriends;
+
+    // default
+    return _presenceFriends;
   }
+
 
   bool _canViewProfile({
     required String profileVisibility,
@@ -190,8 +238,11 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     if (isBlockedRelationship) return false;
     if (presenceVisibility == _presenceNobody) return false;
 
+    if (presenceVisibility == _presenceEveryone) return true;
+
     return ChatFriendshipService.isFriends(friendStatus);
   }
+
 
   String? _normalizeFriendStatusFromDoc(Map<String, dynamic>? data) {
     if (data == null) return null;
@@ -199,7 +250,6 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     final normalized = ChatFriendshipService.normalizeStatus(rawStatus);
     if (normalized == null || normalized.isEmpty) return null;
 
-    // keep parity with Friends tab mapping
     if (normalized == ChatFriendshipService.statusRequestReceivedAlias) {
       return ChatFriendshipService.statusIncoming;
     }
@@ -343,16 +393,21 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     );
   }
 
-  // ✅ Helper: extract user snapshot data, but keep cache if stream is reconnecting
+  // ✅ Helper: extract user snapshot data, but keep cache if stream is reconnecting.
+  // ✅ CRITICAL: if doc definitively does NOT exist -> return null (do NOT show stale cached data).
   Map<String, dynamic>? _safeDataFromSnapshot(
       AsyncSnapshot<DocumentSnapshot<Map<String, dynamic>>> snap,
       Map<String, dynamic>? cache,
       ) {
-    if (snap.hasData && snap.data != null && snap.data!.exists) {
+    if (snap.hasData && snap.data != null) {
+      if (!snap.data!.exists) {
+        return null; // doc deleted / not found -> never reuse cache
+      }
       final d = snap.data!.data();
       if (d != null) return d;
     }
-    // If reconnecting (waiting), return cache to prevent flashing
+
+    // If reconnecting / waiting, return cache to prevent flashing
     return cache;
   }
 
@@ -366,7 +421,6 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     final width = MediaQuery.of(context).size.width;
     final isWide = width >= 900;
 
-    // If user not signed in, still allow viewing with limited features.
     final myDocStream = (currentUid == null)
         ? null
         : FirebaseFirestore.instance.collection('users').doc(currentUid).snapshots();
@@ -412,7 +466,6 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                       child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
                         stream: myDocStream,
                         builder: (context, mySnap) {
-                          // ✅ cache my user doc to avoid flashing
                           final myDataCandidate = _safeDataFromSnapshot(mySnap, _cachedMyData);
                           if (myDataCandidate != null) _cachedMyData = myDataCandidate;
                           final myData = myDataCandidate ?? const <String, dynamic>{};
@@ -429,20 +482,19 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                                 .doc(widget.userId)
                                 .snapshots(),
                             builder: (context, snapshot) {
-                              // ✅ cache target profile doc to avoid shimmer on return
                               final userDataCandidate =
                               _safeDataFromSnapshot(snapshot, _cachedUserData);
 
                               if (userDataCandidate != null) _cachedUserData = userDataCandidate;
 
-                              // Show shimmer ONLY if we have nothing cached yet (true first load)
-                              final hasAnyProfileData = userDataCandidate != null;
+                              final dataToUse = userDataCandidate ?? _cachedUserData;
+
+                              // Show shimmer ONLY if we have nothing at all yet (true first load)
+                              final hasAnyProfileData = dataToUse != null;
                               if (!hasAnyProfileData) {
-                                // If stream is still connecting and we have no cache, show loader
                                 if (snapshot.connectionState == ConnectionState.waiting) {
                                   return const _ShimmerLoader();
                                 }
-                                // If not found
                                 return Center(
                                   child: Text(
                                     l10n.userNotFound,
@@ -451,7 +503,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                                 );
                               }
 
-                              final data = userDataCandidate!;
+                              final data = dataToUse!;
 
                               final firstName = (data['firstName'] ?? '').toString();
                               final lastName = (data['lastName'] ?? '').toString();
@@ -462,7 +514,6 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                               final gender = (data['gender'] ?? '').toString();
                               final isActive = data['isActive'] != false;
 
-                              // Who they block (includes: if they blocked me)
                               final theirBlockedDynamic =
                                   (data['blockedUserIds'] as List<dynamic>?) ?? const [];
                               final theirBlocked =
@@ -472,7 +523,6 @@ class _UserProfileScreenState extends State<UserProfileScreen>
 
                               final isBlockedRelationship = isBlockedByMe || hasBlockedMe;
 
-                              // Relationship doc stream: /users/{me}/friends/{them}
                               final friendDocStream = (currentUid == null || isSelf)
                                   ? null
                                   : FirebaseFirestore.instance
@@ -485,10 +535,15 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                               return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
                                 stream: friendDocStream,
                                 builder: (context, relSnap) {
-                                  // ✅ cache relationship doc too (prevents banner/buttons flicker)
                                   Map<String, dynamic>? relCandidate;
-                                  if (relSnap.hasData && relSnap.data != null && relSnap.data!.exists) {
-                                    relCandidate = relSnap.data!.data();
+                                  if (relSnap.hasData && relSnap.data != null) {
+                                    if (!relSnap.data!.exists) {
+                                      relCandidate = null;
+                                      _cachedFriendData = null; // ✅ clear stale relationship cache
+                                    } else {
+                                      relCandidate = relSnap.data!.data();
+                                      if (relCandidate != null) _cachedFriendData = relCandidate;
+                                    }
                                   } else {
                                     relCandidate = _cachedFriendData;
                                   }
@@ -497,7 +552,6 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                                   final friendStatus =
                                   _normalizeFriendStatusFromDoc(relCandidate);
 
-                                  // Privacy decisions
                                   final profileVisibility =
                                   _readPrivacyValue(data, _fieldProfileVisibility);
                                   final canViewProfile = _canViewProfile(
@@ -508,27 +562,32 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                                   );
 
                                   final presenceVisibility = _readPresenceVisibility(data);
-                                  final canSeePresence = _canSeePresence(
+                                  final canSeePresence = isSelf
+                                      ? true
+                                      : _canSeePresence(
                                     presenceVisibility: presenceVisibility,
                                     friendStatus: friendStatus,
                                     isBlockedRelationship: isBlockedRelationship,
                                     isActive: isActive,
                                   );
 
-                                  // Presence fields
-                                  final rawIsOnline = isActive && data['isOnline'] == true;
-                                  final lastSeen = data['lastSeen'] is Timestamp
-                                      ? data['lastSeen'] as Timestamp
-                                      : null;
+                                  final bool rawIsOnline = isActive &&
+                                      ((data['isOnline'] == true) || (data['online'] == true));
 
-                                  final effectiveOnline = canSeePresence &&
-                                      _isOnlineWithTtl(
-                                        rawIsOnline: rawIsOnline,
-                                        lastSeen: lastSeen,
-                                      );
+                                  // ✅ TTL uses lastActive first, then legacy fallbacks (align with Friends tab)
+                                  final Timestamp? lastActive =
+                                      _readTs(data, 'lastActive') ??
+                                          _readTs(data, 'updatedAt') ??
+                                          _readTs(data, 'lastSeen');
 
-                                  final (presenceLabel, presenceColor) =
-                                  _buildPresenceStatus(
+                                  final effectiveOnline = _isOnlineWithTtl(
+                                    canSeePresence: canSeePresence,
+                                    rawIsOnline: rawIsOnline,
+                                    lastActive: lastActive,
+                                  );
+
+
+                                  final (presenceLabel, presenceColor) = _buildPresenceStatus(
                                     l10n,
                                     isActive: isActive,
                                     effectiveOnline: effectiveOnline,
@@ -540,12 +599,12 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                                     dob = rawBirthday.toDate();
                                   }
 
-                                  // If profile is private, don’t show personal fields.
                                   final ageLabel =
                                   canViewProfile ? _ageLabel(dob, l10n) : l10n.unknown;
                                   final birthdayLabel = (canViewProfile && dob != null)
                                       ? DateFormat.yMMMd(l10n.localeName).format(dob)
                                       : l10n.unknown;
+
                                   String _localizedGender(
                                       AppLocalizations l10n,
                                       String gender,
@@ -564,12 +623,13 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                                         return l10n.notSpecified;
                                     }
                                   }
+
                                   final genderLabel = _localizedGender(
                                     l10n,
                                     gender,
                                     canViewProfile,
                                   );
-                                  // Show avatar image only if viewer can view profile & not blocked
+
                                   final bool canShowProfilePhoto =
                                       canViewProfile && !isBlockedRelationship;
 
@@ -642,7 +702,6 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                                     ),
                                   );
 
-                                  // ✅ Safety tools ONLY for friends (accepted)
                                   final bool canShowSafetyTools = !isSelf &&
                                       currentUid != null &&
                                       ChatFriendshipService.isFriends(friendStatus);
@@ -671,7 +730,6 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                                             ),
                                             const SizedBox(height: 12),
 
-                                            // Presence chip (respects privacy)
                                             AnimatedContainer(
                                               duration: const Duration(milliseconds: 400),
                                               padding: const EdgeInsets.symmetric(
@@ -744,13 +802,37 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                                               value: birthdayLabel,
                                             ),
                                             const SizedBox(height: 10),
+
+                                            // Gender row (you had genderLabel computed but not shown)
                                             _InfoRow(
                                               icon: Icons.person_outline,
-                                              label: l10n.genderLabel,
+                                              label: l10n.genderLabel ?? 'Gender',
                                               value: genderLabel,
                                             ),
 
-                                            // ✅ Safety Tools (friends only)
+                                            const SizedBox(height: 10),
+
+                                            Builder(builder: (_) {
+                                              final emailVisibility = _readEmailVisibility(data);
+                                              final canSeeEmail = _canSeeEmail(
+                                                emailVisibility: emailVisibility,
+                                                friendStatus: friendStatus,
+                                                isBlockedRelationship: isBlockedRelationship,
+                                                isActive: isActive,
+                                                isSelf: isSelf,
+                                              );
+
+                                              final emailValue = canSeeEmail
+                                                  ? (data['email'] ?? '').toString()
+                                                  : l10n.unknown;
+
+                                              return _InfoRow(
+                                                icon: Icons.email_outlined,
+                                                label: l10n.email,
+                                                value: (emailValue.isEmpty ? l10n.unknown : emailValue),
+                                              );
+                                            }),
+
                                             if (canShowSafetyTools) ...[
                                               const SizedBox(height: 28),
                                               const Divider(color: Colors.white24),
@@ -917,7 +999,6 @@ class _ShimmerLoader extends StatelessWidget {
   }
 }
 
-// ✅ Full-screen image viewer (Instagram-like) WITH CACHED NETWORK IMAGE
 class _FullScreenImageViewer extends StatefulWidget {
   final String imageUrl;
   final String heroTag;

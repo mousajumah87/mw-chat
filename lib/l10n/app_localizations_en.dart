@@ -1300,4 +1300,222 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get newLabel => 'New';
+
+  @override
+  String get callLogs_title => 'Call logs';
+
+  @override
+  String get callLogs_notSignedIn => 'Not signed in';
+
+  @override
+  String get callLogs_filter_all => 'All';
+
+  @override
+  String get callLogs_filter_missed => 'Missed';
+
+  @override
+  String get callLogs_filter_incoming => 'Incoming';
+
+  @override
+  String get callLogs_filter_outgoing => 'Outgoing';
+
+  @override
+  String get callLogs_tooltip_retry => 'Retry';
+
+  @override
+  String get callLogs_tooltip_markMissedRead => 'Mark missed as read';
+
+  @override
+  String get callLogs_tooltip_clearLogs => 'Clear logs';
+
+  @override
+  String get callLogs_snack_markedMissedRead => 'Marked missed calls as read';
+
+  @override
+  String get callLogs_snack_markedAsRead => 'Marked as read';
+
+  @override
+  String callLogs_snack_failedWithError(Object error) {
+    return 'Failed: $error';
+  }
+
+  @override
+  String callLogs_snack_clearedWithCount(Object count, Object filter) {
+    return 'Cleared $count $filter call logs';
+  }
+
+  @override
+  String callLogs_snack_clearFailedWithError(Object error) {
+    return 'Clear failed: $error';
+  }
+
+  @override
+  String callLogs_confirm_clearTitle(Object filter) {
+    return 'Clear $filter call logs?';
+  }
+
+  @override
+  String get callLogs_confirm_clearAllBody =>
+      'This will delete all call logs from your history.';
+
+  @override
+  String callLogs_confirm_clearFilterBody(Object filter) {
+    return 'This will delete only the $filter call logs from your history.';
+  }
+
+  @override
+  String callLogs_chip_errorPermission(String title) {
+    return '$title (permission denied)';
+  }
+
+  @override
+  String get common_cancel => 'Cancel';
+
+  @override
+  String get common_clear => 'Clear';
+
+  @override
+  String get common_retry => 'Retry';
+
+  @override
+  String get callLogs_error_indexRequired => 'Firestore index required';
+
+  @override
+  String get callLogs_error_failedToLoad => 'Failed to load call logs';
+
+  @override
+  String get callLogs_error_createIndexHint =>
+      'Create the composite index shown in the Firestore error link.';
+
+  @override
+  String get callLogs_loading => 'Loading...';
+
+  @override
+  String get callLogs_empty_all => 'No call logs yet';
+
+  @override
+  String get callLogs_empty_missed => 'No missed calls';
+
+  @override
+  String get callLogs_empty_incoming => 'No incoming calls';
+
+  @override
+  String get callLogs_empty_outgoing => 'No outgoing calls';
+
+  @override
+  String get callLogs_unknownUser => 'Unknown';
+
+  @override
+  String get callLogs_result_ended => 'Ended';
+
+  @override
+  String get callLogs_result_declined => 'Declined';
+
+  @override
+  String get callLogs_result_canceled => 'Canceled';
+
+  @override
+  String get callLogs_result_missed => 'Missed';
+
+  @override
+  String get callLogs_result_busy => 'Busy';
+
+  @override
+  String get callLogs_direction_incoming => 'Incoming';
+
+  @override
+  String get callLogs_direction_outgoing => 'Outgoing';
+
+  @override
+  String callLogs_chip_indexNeeded(String title) {
+    return '$title (index needed)';
+  }
+
+  @override
+  String callLogs_chip_error(String title) {
+    return '$title (error)';
+  }
+
+  @override
+  String callLogs_chip_missedCount(
+    String title,
+    String missedLabel,
+    int count,
+  ) {
+    return '$title • $missedLabel ($count)';
+  }
+
+  @override
+  String get debug_insertedCallLog => 'DEBUG: Inserted call log';
+
+  @override
+  String get callLogs_tooltip_voiceCall => 'Voice call';
+
+  @override
+  String get callLogs_tooltip_videoCall => 'Video call';
+
+  @override
+  String get outgoingCall_failedToStart => 'Failed to start call';
+
+  @override
+  String get outgoingCall_calling => 'Calling…';
+
+  @override
+  String get outgoingCall_connecting => 'Connecting…';
+
+  @override
+  String get outgoingCall_pleaseWait => 'Please wait…';
+
+  @override
+  String get outgoingCall_notSignedIn => 'Not signed in';
+
+  @override
+  String get outgoingCall_invalidPeer => 'Invalid peer';
+
+  @override
+  String get call_status_ringing => 'Ringing…';
+
+  @override
+  String get call_status_inCall => 'In call';
+
+  @override
+  String get call_status_answering => 'Answering…';
+
+  @override
+  String get call_status_declined => 'Declined';
+
+  @override
+  String get call_status_missed => 'Missed call';
+
+  @override
+  String get call_status_canceled => 'Canceled';
+
+  @override
+  String get call_status_busy => 'User busy';
+
+  @override
+  String get call_status_ended => 'Call ended';
+
+  @override
+  String get call_status_canceling => 'Canceling…';
+
+  @override
+  String call_failedWithError(Object error) {
+    return 'Call failed: $error';
+  }
+
+  @override
+  String get incomingCall_voice => 'Incoming voice call';
+
+  @override
+  String get incomingCall_video => 'Incoming video call';
+
+  @override
+  String get incomingCall_accept => 'Accept';
+
+  @override
+  String get incomingCall_decline => 'Decline';
+
+  @override
+  String get incomingCall_unknownCaller => 'Unknown caller';
 }

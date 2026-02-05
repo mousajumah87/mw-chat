@@ -7,13 +7,15 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart' show UploadTask;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // ✅ haptics + clipboard
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../utils/chat_attachment_utils.dart';
 import '../../utils/current_chat_tracker.dart';
 import '../../utils/presence_service.dart';
 import '../../widgets/chat/chat_input_bar.dart';
+import '../../widgets/chat/chat_media_preview_sheet.dart';
 import '../../widgets/chat/message_reactions.dart';
 import '../../widgets/chat/message_reply.dart';
 import '../../widgets/chat/mw_emoji_panel.dart';
@@ -29,6 +31,18 @@ import 'chat_screen_deletion.dart';
 
 import 'package:mw/utils/voice_recorder_controller.dart' as vrc;
 import '../../widgets/chat/mw_reply_to.dart';
+
+import 'dart:typed_data'; // ✅ Uint8List
+import 'package:path/path.dart' as p; // ✅ p.extension, p.join
+import 'package:path_provider/path_provider.dart'; // ✅ getTemporaryDirectory
+
+// ✅ Web-safe: conditional import for io File helper (you already use this pattern in other files)
+import '../../utils/io/io_file_stub.dart'
+if (dart.library.io) '../../utils/io/io_file.dart';
+
+import 'package:wechat_assets_picker/wechat_assets_picker.dart';
+
+import '../../calls/call_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   final String roomId;
@@ -47,6 +61,7 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final _msgController = TextEditingController();
   final FocusNode _composerFocusNode = FocusNode(debugLabel: 'mwComposer');
+
 
   // ✅ Key to control ChatMessageList scroll programmatically
   final GlobalKey<ChatMessageListState> _listKey = GlobalKey<ChatMessageListState>();
@@ -303,6 +318,99 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     });
   }
 
+  bool _isUsableLocalPath(String? path) {
+    final p = (path ?? '').trim();
+    if (p.isEmpty) return false;
+
+    // iOS Photos asset identifiers can look like ph://... which is not a real file path
+    if (p.startsWith('ph://')) return false;
+
+    // Some pickers return file://... normalize later, still usable
+    return true;
+  }
+
+  String _stripFileScheme(String path) {
+    final p = path.trim();
+    if (p.startsWith('file://')) return p.replaceFirst('file://', '');
+    return p;
+  }
+
+  /// Ensures PlatformFile is uploadable by your media service:
+  /// - If it already has a usable local path: keep it.
+  /// - Else if it has bytes (non-web): write temp file and return a new PlatformFile with a real path.
+  /// - Else return as-is (media service might still handle it, but likely will fail).
+  Future<PlatformFile> _preparePlatformFileForUpload(PlatformFile pf, {required String forcedType}) async {
+    if (kIsWeb) return pf;
+
+    final rawPath = pf.path;
+    if (_isUsableLocalPath(rawPath)) {
+      final normalized = _stripFileScheme(rawPath!.trim());
+      if (normalized == rawPath) return pf;
+
+      return PlatformFile(
+        name: pf.name,
+        size: pf.size,
+        bytes: pf.bytes, // keep if present
+        path: normalized,
+        readStream: pf.readStream,
+      );
+    }
+
+    final bytes = pf.bytes;
+    if (bytes != null && bytes.isNotEmpty) {
+      // ✅ Write to temp so ChatMediaService can upload by file path
+      final tmp = await _writeTempPickedBytesToFile(
+        bytes: bytes,
+        originalName: pf.name,
+        forcedType: forcedType,
+      );
+
+      if (tmp != null && tmp.trim().isNotEmpty) {
+        return PlatformFile(
+          name: pf.name,
+          size: bytes.length,
+          path: tmp,
+          // important: don’t keep huge bytes around unless you really need them
+          bytes: null,
+        );
+      }
+    }
+
+    return pf;
+  }
+
+  /// Writes picked bytes to a temp file (non-web).
+  Future<String?> _writeTempPickedBytesToFile({
+    required Uint8List bytes,
+    required String originalName,
+    required String forcedType,
+  }) async {
+    try {
+      final dir = await getTemporaryDirectory();
+
+      final ext = p.extension(originalName).toLowerCase();
+      String safeExt = ext;
+
+      if (safeExt.isEmpty) {
+        // fallback based on type
+        if (forcedType == 'video') safeExt = '.mp4';
+        else if (forcedType == 'image') safeExt = '.jpg';
+        else if (forcedType == 'audio') safeExt = '.m4a';
+        else safeExt = '.bin';
+      }
+
+      final fileName = 'mw_pick_${forcedType}_${DateTime.now().millisecondsSinceEpoch}$safeExt';
+      final fullPath = p.join(dir.path, fileName);
+
+      final f = ioFile(fullPath);
+      await f.writeAsBytes(bytes, flush: true);
+      return fullPath;
+    } catch (_) {
+      return null;
+    }
+  }
+
+
   // ------------------------------------------------------------
   // ✅ Scroll helpers
   // ------------------------------------------------------------
@@ -345,10 +453,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       return null;
     }
 
-    final rawPreview = (map['previewText'] ?? map['text'] ?? map['message'] ?? '')
-        .toString()
-        .trim();
-
+    final rawPreview = (map['previewText'] ?? map['text'] ?? map['message'] ?? '').toString().trim();
     final rawMessageId = (map['messageId'] ?? map['id'] ?? '').toString().trim();
     final rawSenderId = (map['senderId'] ?? map['fromId'] ?? '').toString().trim();
 
@@ -410,6 +515,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       if (box is RenderBox && box.hasSize) {
         final h = box.size.height;
         if (h > 0 && (h - _composerAreaHeight).abs() > 1) {
+          if (!mounted || _disposed) return;
           setState(() => _composerAreaHeight = h);
         }
       }
@@ -508,11 +614,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final roomRef = FirebaseFirestore.instance.collection('privateChats').doc(widget.roomId);
 
     try {
-      final snap = await roomRef
-          .collection('messages')
-          .orderBy('createdAt', descending: true)
-          .limit(40)
-          .get();
+      final snap = await roomRef.collection('messages').orderBy('createdAt', descending: true).limit(40).get();
 
       if (_disposed) return;
 
@@ -620,8 +722,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     if (_isChatAccessRestricted) {
       _toastInfo(
-        l10n?.profilePrivateChatRestricted ??
-            'This user’s profile is private. You must be friends to chat.',
+        l10n?.profilePrivateChatRestricted ?? 'This user’s profile is private. You must be friends to chat.',
       );
       return false;
     }
@@ -835,10 +936,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         title: Text(l10n.deleteMessageTitle ?? 'Delete message'),
         content: Text(
           canEveryone
-              ? (l10n.deleteMessageDescriptionEveryone ??
-              'Choose how you want to delete this message.')
-              : (l10n.deleteMessageDescriptionMe ??
-              'This will delete the message for you only.'),
+              ? (l10n.deleteMessageDescriptionEveryone ?? 'Choose how you want to delete this message.')
+              : (l10n.deleteMessageDescriptionMe ?? 'This will delete the message for you only.'),
         ),
         actions: [
           TextButton(
@@ -1104,7 +1203,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
       batch.set(msgRef, msgData);
 
-
       batch.set(
         roomRef,
         {
@@ -1144,6 +1242,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       return;
     }
 
+    // ✅ Snapshot reply ONCE
+    final replySnapshot = _replyingTo;
+    final replyPayload = _replyToPayloadOrNull(replySnapshot);
+
     if (!mounted || _disposed) return;
     setState(() => _uploadProgress = 0.0);
 
@@ -1166,19 +1268,27 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         return;
       }
 
+      // ✅ Ensure uploadable on non-web (real path if needed)
+      final prepared = await _preparePlatformFileForUpload(pf, forcedType: 'audio');
+
       task = await media.sendFileMessage(
-        pf,
+        prepared,
         forcedType: 'audio',
         forcedContentType: mime,
+        extraMessageFields: replyPayload != null ? {'replyTo': replyPayload} : null,
         onProgress: (p) {
           if (!mounted || _disposed) return;
-          setState(() => _uploadProgress = p);
+          setState(() => _uploadProgress = p.clamp(0.0, 1.0));
         },
       );
 
+      // ✅ Clear reply only after success
       if (mounted && !_disposed && _replyingTo != null) {
         setState(() => _replyingTo = null);
       }
+
+      // ✅ Clear selection (WhatsApp-like)
+      if (_hasSelection) _clearSelection();
 
       if (mounted && !_disposed) {
         await _hapticLight();
@@ -1186,6 +1296,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       }
 
       _scheduleMarkSeen();
+    } catch (_) {
+      _toastError('Failed to send voice note.');
     } finally {
       if (!mounted || _disposed) return;
       setState(() => _uploadProgress = null);
@@ -1270,7 +1382,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     ListTile(
                       leading: const Icon(Icons.photo, color: Colors.white70),
                       title: Text(l10n.attachPhotoFromGallery),
-                      onTap: () => closeThen(_pickImageFromGallery),
+                      onTap: () => closeThen(() async {
+                        final items = await _pickImagesMultiFromGallery();
+                        if (!mounted || _disposed) return;
+                        if (items.isEmpty) return;
+
+                        await ChatMediaPreviewSheet.open(
+                          context,
+                          items: items,
+                          onSend: (picked, caption) => _sendBatchWithProgress(picked, caption: caption),
+                        );
+                      }),
                     ),
                     ListTile(
                       leading: const Icon(Icons.videocam, color: Colors.white70),
@@ -1292,7 +1414,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     ListTile(
                       leading: const Icon(Icons.insert_drive_file, color: Colors.white70),
                       title: Text(l10n.attachFileFromDevice),
-                      onTap: () => closeThen(_pickAndSendFile),
+                      onTap: () => closeThen(() async {
+                        final items = await _pickFilesMulti();
+                        if (!mounted || _disposed) return;
+                        if (items.isEmpty) return;
+
+                        await ChatMediaPreviewSheet.open(
+                          context,
+                          items: items,
+                          onSend: (picked, caption) => _sendBatchWithProgress(picked, caption: caption),
+                        );
+                      }),
                     ),
                   ],
                 ),
@@ -1302,6 +1434,221 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         );
       },
     );
+  }
+
+  // previeow media
+  Future<void> _sendTextMessageDirect(
+      String text, {
+        Map<String, dynamic>? replyPayload,
+      }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    if (!_guardCanSendWithSnackbar()) return;
+
+    final clean = text.trim();
+    if (clean.isEmpty) return;
+
+    final error = _validateMessageContent(clean);
+    if (error != null) {
+      _toastInfo(error);
+      return;
+    }
+
+    final otherId = _otherUserId;
+    if (otherId == null || otherId.trim().isEmpty) return;
+
+    final meta = await _getSenderMeta(user);
+    final profileUrl = meta['profileUrl'];
+    final avatarType = meta['avatarType'];
+
+    final batch = FirebaseFirestore.instance.batch();
+    final roomRef = FirebaseFirestore.instance.collection('privateChats').doc(widget.roomId);
+    final msgRef = roomRef.collection('messages').doc();
+
+    batch.set(msgRef, {
+      'type': 'text',
+      'text': clean,
+      'senderId': user.uid,
+      'senderEmail': user.email,
+      'profileUrl': profileUrl,
+      'avatarType': avatarType,
+      'createdAt': FieldValue.serverTimestamp(),
+      'clientCreatedAt': Timestamp.now(),
+      'seenBy': <String>[],
+      if (replyPayload != null) 'replyTo': replyPayload,
+    });
+
+    batch.set(
+      roomRef,
+      {
+        'participants': [user.uid, otherId],
+        'unreadCounts': {
+          otherId: FieldValue.increment(1),
+          user.uid: 0,
+        },
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+
+    await batch.commit();
+  }
+
+
+  Future<List<PendingAttachment>> _pickImagesMultiFromGallery() async {
+    try {
+      // image_picker supports multi-image
+      final xs = await _picker.pickMultiImage(imageQuality: 88);
+      if (xs.isEmpty) return const [];
+
+      final capped = xs.take(ChatAttachmentUtils.defaultMaxSelection).toList();
+
+      final out = <PendingAttachment>[];
+      for (final x in capped) {
+        if (kIsWeb) {
+          final bytes = await x.readAsBytes();
+          out.add(PendingAttachment(
+            type: 'image',
+            file: PlatformFile(name: x.name, size: bytes.length, bytes: bytes, path: null),
+          ));
+        } else {
+          out.add(PendingAttachment(
+            type: 'image',
+            file: PlatformFile(name: x.name, size: 0, path: x.path),
+          ));
+        }
+      }
+      return out;
+    } catch (_) {
+      _toastError('Unable to pick photos.');
+      return const [];
+    }
+  }
+
+  Future<List<PendingAttachment>> _pickFilesMulti() async {
+    try {
+      final res = await FilePicker.platform.pickFiles(
+        allowMultiple: true,
+        withData: kIsWeb, // ✅ web needs bytes for video thumb + upload
+      );
+
+      final files = res?.files ?? const <PlatformFile>[];
+      if (files.isEmpty) return const [];
+
+      final capped = files.take(ChatAttachmentUtils.defaultMaxSelection).toList();
+
+      return capped.map((pf) {
+        final type = _detectAttachmentType(pf);
+        return PendingAttachment(type: type, file: pf);
+      }).toList();
+    } catch (_) {
+      _toastError('Unable to pick files.');
+      return const [];
+    }
+  }
+
+
+  String _detectAttachmentType(PlatformFile pf) {
+    final name = pf.name.toLowerCase();
+    final ext = name.contains('.') ? name.split('.').last : '';
+
+    const img = {'jpg', 'jpeg', 'png', 'gif', 'webp', 'heic'};
+    const vid = {'mp4', 'mov', 'm4v', 'webm', 'mkv', 'avi'};
+    const aud = {'mp3', 'm4a', 'aac', 'wav', 'ogg', 'flac'};
+
+    if (img.contains(ext)) return 'image';
+    if (vid.contains(ext)) return 'video';
+    if (aud.contains(ext)) return 'audio';
+    return 'file';
+  }
+
+  Future<void> _sendBatchWithProgress(
+      List<PendingAttachment> items, {
+        required String caption,
+      }) async {
+    if (items.isEmpty) return;
+    if (!_guardCanSendWithSnackbar()) return;
+
+    _ensureMediaService();
+    final media = _mediaService;
+    if (media == null) {
+      _toastInfo('Unable to attach right now.');
+      return;
+    }
+
+    // ✅ Snapshot reply ONCE, and decide who receives it (caption or first attachment)
+    final replySnapshot = _replyingTo;
+    final replyPayload = _replyToPayloadOrNull(replySnapshot);
+
+    final cleanCaption = caption.trim();
+    final hasCaption = cleanCaption.isNotEmpty;
+
+    if (!mounted || _disposed) return;
+    setState(() => _uploadProgress = 0.0);
+
+    try {
+      // ✅ Send caption first (as independent message).
+      // WhatsApp-like: if caption exists, it receives the replyTo, attachments do NOT.
+      if (hasCaption) {
+        await _sendTextMessageDirect(
+          cleanCaption,
+          replyPayload: replyPayload,
+        );
+      }
+
+      final total = items.length;
+
+      for (int i = 0; i < total; i++) {
+        final it = items[i];
+
+        // ✅ If NO caption, first attachment carries replyTo
+        final attachReply = (!hasCaption && i == 0) ? replyPayload : null;
+
+        // ✅ Ensure PlatformFile is uploadable on non-web (real path if needed)
+        final prepared = await _preparePlatformFileForUpload(
+          it.file,
+          forcedType: it.type,
+        );
+
+        await media.sendFileMessage(
+          prepared,
+          forcedType: it.type,
+          forcedContentType: it.type == 'image'
+              ? 'image/*'
+              : it.type == 'video'
+              ? 'video/*'
+              : it.type == 'audio'
+              ? 'audio/*'
+              : null,
+
+          // ✅ Only include replyTo if your ChatMediaService supports extra fields.
+          extraMessageFields: attachReply != null ? {'replyTo': attachReply} : null,
+
+          onProgress: (p) {
+            if (!mounted || _disposed) return;
+            final overall = (i + (p.clamp(0.0, 1.0))) / total;
+            setState(() => _uploadProgress = overall);
+          },
+        );
+      }
+
+      // ✅ clear reply only after everything succeeds
+      if (mounted && !_disposed && _replyingTo != null) {
+        setState(() => _replyingTo = null);
+      }
+
+      if (mounted && !_disposed) {
+        await _hapticLight();
+        unawaited(_scrollToLatestAndFocus(animated: true, afterNextFrame: true));
+      }
+
+      _scheduleMarkSeen();
+    } catch (_) {
+      _toastError('Failed to send attachments.');
+    } finally {
+      if (!mounted || _disposed) return;
+      setState(() => _uploadProgress = null);
+    }
   }
 
   Future<void> _sendPlatformFile(
@@ -1320,23 +1667,35 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       return;
     }
 
+    // ✅ Snapshot reply ONCE
+    final replySnapshot = _replyingTo;
+    final replyPayload = _replyToPayloadOrNull(replySnapshot);
+
     if (!mounted || _disposed) return;
     setState(() => _uploadProgress = 0.0);
 
     try {
+      final ft = (forcedType ?? _detectAttachmentType(file)).trim();
+      final prepared = await _preparePlatformFileForUpload(file, forcedType: ft);
+
       await media.sendFileMessage(
-        file,
+        prepared,
         forcedType: forcedType,
         forcedContentType: forcedContentType,
+        extraMessageFields: replyPayload != null ? {'replyTo': replyPayload} : null,
         onProgress: (p) {
           if (!mounted || _disposed) return;
-          setState(() => _uploadProgress = p);
+          setState(() => _uploadProgress = p.clamp(0.0, 1.0));
         },
       );
 
+      // ✅ Clear reply only after success
       if (mounted && !_disposed && _replyingTo != null) {
         setState(() => _replyingTo = null);
       }
+
+      // ✅ Clear selection (WhatsApp-like)
+      if (_hasSelection) _clearSelection();
 
       if (mounted && !_disposed) {
         await _hapticLight();
@@ -1352,37 +1711,75 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _pickImageFromGallery() async {
-    try {
-      final x = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 88);
-      if (x == null) return;
-
-      if (kIsWeb) {
-        final bytes = await x.readAsBytes();
-        final pf = PlatformFile(name: x.name, size: bytes.length, bytes: bytes, path: null);
-        await _sendPlatformFile(pf, forcedType: 'image', forcedContentType: 'image/*');
-      } else {
-        final pf = PlatformFile(name: x.name, size: 0, path: x.path);
-        await _sendPlatformFile(pf, forcedType: 'image', forcedContentType: 'image/*');
-      }
-    } catch (_) {
-      _toastError('Unable to pick photo.');
-    }
-  }
-
   Future<void> _pickVideoFromGallery() async {
     try {
-      final x = await _picker.pickVideo(source: ImageSource.gallery);
-      if (x == null) return;
-
+      // ✅ WEB: keep FilePicker (works)
       if (kIsWeb) {
-        final bytes = await x.readAsBytes();
-        final pf = PlatformFile(name: x.name, size: bytes.length, bytes: bytes, path: null);
-        await _sendPlatformFile(pf, forcedType: 'video', forcedContentType: 'video/*');
-      } else {
-        final pf = PlatformFile(name: x.name, size: 0, path: x.path);
-        await _sendPlatformFile(pf, forcedType: 'video', forcedContentType: 'video/*');
+        final res = await FilePicker.platform.pickFiles(
+          allowMultiple: true,
+          withData: true,
+          type: FileType.custom,
+          allowedExtensions: const ['mp4', 'mov', 'm4v', 'webm', 'mkv', 'avi'],
+        );
+
+        final files = res?.files ?? const <PlatformFile>[];
+        if (files.isEmpty) return;
+
+        final capped = files.take(ChatAttachmentUtils.defaultMaxSelection).toList();
+        final items = capped.map((pf) => PendingAttachment(type: 'video', file: pf)).toList();
+
+        if (!mounted || _disposed) return;
+
+        await ChatMediaPreviewSheet.open(
+          context,
+          items: items,
+          onSend: (picked, caption) => _sendBatchWithProgress(picked, caption: caption),
+        );
+        return;
       }
+
+      // ✅ iOS/Android: real gallery multi-select for videos
+      final assets = await AssetPicker.pickAssets(
+        context,
+        pickerConfig: AssetPickerConfig(
+          requestType: RequestType.video,
+          maxAssets: ChatAttachmentUtils.defaultMaxSelection,
+          // Optional: keeps UI snappy
+          sortPathDelegate: SortPathDelegate.common,
+        ),
+      );
+
+      if (assets == null || assets.isEmpty) return;
+
+      final items = <PendingAttachment>[];
+
+      for (final a in assets) {
+        final file = await a.file; // ✅ returns a real local file (path)
+        if (file == null) continue;
+
+        final path = file.path;
+        if (path.trim().isEmpty) continue;
+
+        items.add(
+          PendingAttachment(
+            type: 'video',
+            file: PlatformFile(
+              name: path.split('/').last,
+              size: await file.length(),
+              path: path,
+            ),
+          ),
+        );
+      }
+
+      if (items.isEmpty) return;
+      if (!mounted || _disposed) return;
+
+      await ChatMediaPreviewSheet.open(
+        context,
+        items: items,
+        onSend: (picked, caption) => _sendBatchWithProgress(picked, caption: caption),
+      );
     } catch (_) {
       _toastError('Unable to pick video.');
     }
@@ -1412,25 +1809,25 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       );
       if (x == null) return;
 
-      final pf = PlatformFile(name: x.name, size: 0, path: x.path);
-      await _sendPlatformFile(pf, forcedType: 'video', forcedContentType: 'video/*');
+      final path = x.path.trim();
+      if (path.isEmpty) return;
+
+      final items = <PendingAttachment>[
+        PendingAttachment(
+          type: 'video',
+          file: PlatformFile(name: x.name, size: 0, path: path),
+        ),
+      ];
+
+      if (!mounted || _disposed) return;
+
+      await ChatMediaPreviewSheet.open(
+        context,
+        items: items,
+        onSend: (picked, caption) => _sendBatchWithProgress(picked, caption: caption),
+      );
     } catch (_) {
       _toastError('Unable to record video.');
-    }
-  }
-
-  Future<void> _pickAndSendFile() async {
-    try {
-      final res = await FilePicker.platform.pickFiles(
-        allowMultiple: false,
-        withData: kIsWeb,
-      );
-      final pf = res?.files.firstOrNull;
-      if (pf == null) return;
-
-      await _sendPlatformFile(pf);
-    } catch (_) {
-      _toastError('Unable to pick file.');
     }
   }
 
@@ -1600,11 +1997,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         String prefix = '';
         String suffix = '';
 
-        if (start > 0 && !text[start - 1].trim().isEmpty) {
+        if (start > 0 && text[start - 1].trim().isNotEmpty) {
           prefix = ' ';
         }
-
-        if (start < text.length && !text[start].trim().isEmpty) {
+        if (start < text.length && text[start].trim().isNotEmpty) {
           suffix = ' ';
         }
 
@@ -1658,6 +2054,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       if (!mounted || _disposed) return;
       CurrentChatTracker.instance.enterRoom(widget.roomId);
       _scheduleMarkSeen();
+      _measureComposerHeight(); // ✅ initial composer height
     });
 
     _resetMyUnread();
@@ -1745,7 +2142,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _friendSub = null;
 
     _friendshipService.dispose();
-
     try {
       _mediaService?.dispose();
     } catch (_) {}
@@ -1801,8 +2197,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
       if (parsed != _myAvatarType) {
         setState(() => _myAvatarType = parsed);
-      } else {
-        _myAvatarType = parsed;
       }
     });
   }
@@ -2113,6 +2507,19 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           _hideReactionOverlay();
           _clearSelection();
         },
+        onAudioCall: (!_isAnyBlock && _canSendMessages && otherUserId != null && otherUserId.isNotEmpty)
+            ? () {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => CallScreen.outgoing(
+                roomId: widget.roomId,
+                callerId: _currentUserId,
+                calleeId: otherUserId,
+                video: false,
+              ),
+            ),
+          );
+        } : null,
         onCopySelected: _canCopySelected ? _onHeaderCopyPressed : null,
         onDeleteSelected: _canDeleteSelected ? _onHeaderDeletePressed : null,
         onReportSelected: _canReportSelected ? _onHeaderReportPressed : null,
@@ -2137,9 +2544,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       body: GestureDetector(
         behavior: HitTestBehavior.translucent,
         onTap: () {
-          FocusManager.instance.primaryFocus?.unfocus();
+          // ✅ FIX: always dismiss keyboard + emoji panel when tapping outside
+          _dismissKeyboardAndPanel();
           _hideReactionOverlay();
-          if (_panelVisible && mounted && !_disposed) setState(() => _panelVisible = false);
           if (_hasSelection) _clearSelection();
         },
         child: MwBackground(
@@ -2152,21 +2559,32 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               final showIndicator = !_isAnyBlock && (_isOtherTyping || _isOtherRecording);
               final showPanel = _panelVisible && !keyboardOpen;
 
-              final double listBottomInset = _composerAreaHeight +
-                  (showPanel ? _panelHeight : 0) +
-                  (showIndicator ? 72 : 0) +
-                  8;
+              // ✅ FIX: reserve keyboardInset too (because bottomOverlay grows by keyboardInset)
+              final safeBottom = mq.padding.bottom;
+
+              // ✅ When keyboard is open, DO NOT also add safeBottom,
+              // because the keyboard already defines the bottom occlusion.
+              final effectiveSafeBottom = keyboardOpen ? 0.0 : safeBottom;
+
+              final double listBottomInset =
+                  _composerAreaHeight +
+                      (showPanel ? _panelHeight : 0) +
+                      (showIndicator ? 72 : 0) +
+                      keyboardInset +
+                      effectiveSafeBottom +
+                      8;
 
               final bottomOverlay = Material(
                 color: Colors.transparent,
-                child: SafeArea(
-                  top: false,
-                  child: AnimatedPadding(
-                    duration: const Duration(milliseconds: 140),
-                    curve: Curves.easeOut,
-                    padding: EdgeInsets.only(bottom: keyboardInset),
+                child: AnimatedPadding(
+                  duration: const Duration(milliseconds: 140),
+                  curve: Curves.easeOut,
+                  // ✅ Move overlay up by keyboard height when open
+                  padding: EdgeInsets.only(bottom: keyboardInset),
+                  child: Padding(
+                    // ✅ Only apply safe-area bottom when keyboard is CLOSED
+                    padding: EdgeInsets.only(bottom: keyboardOpen ? 0.0 : mq.padding.bottom),
                     child: Column(
-                      key: _composerAreaKey,
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         if (!_isAnyBlock)
@@ -2190,12 +2608,18 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                             )
                                 : const SizedBox.shrink(),
                           ),
+
                         if (showPanel)
                           SizedBox(
                             height: _panelHeight,
                             child: _buildCustomPanel(context),
                           ),
-                        composerWidget,
+
+                        // ✅ measure ONLY composerWidget (reply + input)
+                        KeyedSubtree(
+                          key: _composerAreaKey,
+                          child: composerWidget,
+                        ),
                       ],
                     ),
                   ),
@@ -2208,28 +2632,43 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     children: [
                       _buildFriendshipBanner(l10n),
                       Expanded(
-                        child: _isLoadingBlock
-                            ? const Center(child: CircularProgressIndicator())
-                            : ChatMessageList(
-                          key: _listKey,
-                          roomId: widget.roomId,
-                          currentUserId: _currentUserId,
-                          otherUserId: otherUserId,
-                          isBlocked: _isAnyBlock,
-                          bottomInset: listBottomInset,
-                          onReply: _setReplyTo,
-                          onReactionTapAsync: _onReactionTapAsync,
-                          selectedMessageId: _selectedMessageId,
-                          selectedMessageIds: _selectedMessageIds,
-                          onMessageTap: () {
-                            _hideReactionOverlay();
-                            if (_hasSelection) _clearSelection();
+                        child: NotificationListener<ScrollNotification>(
+                          onNotification: (n) {
+                            // ✅ Optional but very helpful: hide keyboard when user starts scrolling the chat
+                            if (n is ScrollStartNotification || n is UserScrollNotification) {
+                              if (MediaQuery.of(context).viewInsets.bottom > 0 || _panelVisible) {
+                                _dismissKeyboardAndPanel();
+                              }
+                              _hideReactionOverlay();
+                              if (_hasSelection) _clearSelection();
+                            }
+                            return false;
                           },
-                          onMessageLongPress: (doc, isMe) async {
-                            if (!mounted || _disposed) return;
-                            await _hapticLight();
-                            _toggleSingleSelection(doc, isMe);
-                          },
+                          child: _isLoadingBlock
+                              ? const Center(child: CircularProgressIndicator())
+                              : ChatMessageList(
+                            key: _listKey,
+                            roomId: widget.roomId,
+                            currentUserId: _currentUserId,
+                            otherUserId: otherUserId,
+                            isBlocked: _isAnyBlock,
+                            bottomInset: listBottomInset,
+                            onReply: _setReplyTo,
+                            onReactionTapAsync: _onReactionTapAsync,
+                            selectedMessageId: _selectedMessageId,
+                            selectedMessageIds: _selectedMessageIds,
+                            onMessageTap: () {
+                              // ✅ FIX: tapping on chat dismisses keyboard (was missing before)
+                              _dismissKeyboardAndPanel();
+                              _hideReactionOverlay();
+                              if (_hasSelection) _clearSelection();
+                            },
+                            onMessageLongPress: (doc, isMe) async {
+                              if (!mounted || _disposed) return;
+                              await _hapticLight();
+                              _toggleSingleSelection(doc, isMe);
+                            },
+                          ),
                         ),
                       ),
                     ],

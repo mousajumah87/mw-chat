@@ -1,5 +1,6 @@
 // lib/widgets/chat/message_bubble.dart
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -10,17 +11,31 @@ import 'package:video_player/video_player.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/mw_linkify.dart'; // ✅ linkify in util
 import 'message_reactions.dart';
+import 'mw_audio_hub.dart';
 import 'mw_token_text.dart'; // ✅ IMPORTANT: unified token rendering
 
 class MessageBubble extends StatefulWidget {
+  final String messageId; // ✅ REQUIRED
   final String text;
   final String timeLabel;
   final bool isMe;
   final bool isSeen;
+
   final String? fileUrl;
   final String? fileName;
   final String? fileType; // "image", "video", "audio", "file", "voice"
+
+  /// ✅ NEW: Firestore stored thumbnail url for videos (aligned with chat_message_list.dart)
+  /// ✅ Video thumbnail url (supports multiple firestore keys)
+  final String? thumbUrl; // newest / preferred
+  final String? thumbnailUrl; // legacy
+  final String? videoThumbUrl; // legacy
+
+  /// ✅ Call event payload (stored on message doc)
+  final Map<String, dynamic>? callInfo;
+
   final bool showTimestamp;
 
   /// Reply payload saved on message doc.
@@ -55,6 +70,7 @@ class MessageBubble extends StatefulWidget {
 
   const MessageBubble({
     super.key,
+    required this.messageId,
     required this.text,
     required this.timeLabel,
     required this.isMe,
@@ -62,6 +78,15 @@ class MessageBubble extends StatefulWidget {
     this.fileUrl,
     this.fileName,
     this.fileType,
+
+    // ✅ thumbnails (support all possible keys)
+    this.thumbUrl,
+    this.thumbnailUrl,
+    this.videoThumbUrl,
+
+    // ✅ call
+    this.callInfo,
+
     this.showTimestamp = true,
     this.replyTo,
     this.currentUserId,
@@ -83,7 +108,8 @@ class MessageBubble extends StatefulWidget {
 
 class _MessageBubbleState extends State<MessageBubble>
     with AutomaticKeepAliveClientMixin {
-  final AudioPlayer _player = AudioPlayer();
+  // ✅ Shared player (single instance) - DO NOT create per bubble
+  late final AudioPlayer _player = MwAudioHub.instance.player;
 
   StreamSubscription<PlayerState>? _stateSub;
   StreamSubscription<Duration>? _posSub;
@@ -133,7 +159,6 @@ class _MessageBubbleState extends State<MessageBubble>
 
   // ✅ IMPORTANT:
   // In lists, State might be reused if parent doesn't supply stable keys.
-  // So we make the LayerLink replaceable, and reset it when bubble identity changes.
   LayerLink _reactionLink = LayerLink();
   String _identitySig = '';
 
@@ -149,6 +174,253 @@ class _MessageBubbleState extends State<MessageBubble>
   void _resetSwipe() {
     _swipeDx = 0.0;
     _replyTriggered = false;
+  }
+
+  String get _resolvedThumbUrl {
+    final a = (widget.thumbUrl ?? '').trim();
+    if (a.isNotEmpty) return a;
+
+    final b = (widget.thumbnailUrl ?? '').trim();
+    if (b.isNotEmpty) return b;
+
+    final c = (widget.videoThumbUrl ?? '').trim();
+    if (c.isNotEmpty) return c;
+
+    return '';
+  }
+
+  // ---------------------------------------------------------------------------
+  // ✅ Call event rendering (reuse Call Logs style)
+  // ---------------------------------------------------------------------------
+
+  bool get isCallMessage => (widget.callInfo != null && widget.callInfo!.isNotEmpty);
+
+  String _tCall(Object? v) => (v ?? '').toString().trim();
+
+  String _callTypeLower() {
+    final m = widget.callInfo ?? const <String, dynamic>{};
+    final v = _tCall(m['callType']).isNotEmpty
+        ? _tCall(m['callType'])
+        : (_tCall(m['type']).isNotEmpty ? _tCall(m['type']) : _tCall(m['media']));
+    final s = v.toLowerCase();
+    if (s.contains('video')) return 'video';
+    if (s.contains('audio')) return 'audio';
+    return s;
+  }
+
+  String _callResultLower() {
+    final m = widget.callInfo ?? const <String, dynamic>{};
+
+    // Support multiple schemas:
+    // - result: ended/missed/declined/canceled/busy
+    // - status/callStatus
+    // - endedReason / endReason
+    final raw = _tCall(m['result']).isNotEmpty
+        ? _tCall(m['result'])
+        : (_tCall(m['callStatus']).isNotEmpty
+        ? _tCall(m['callStatus'])
+        : (_tCall(m['status']).isNotEmpty
+        ? _tCall(m['status'])
+        : (_tCall(m['endedReason']).isNotEmpty
+        ? _tCall(m['endedReason'])
+        : _tCall(m['endReason']))));
+
+    final s = raw.toLowerCase().trim();
+
+    // Normalize common variants
+    if (s == 'no_answer' || s == 'noanswer' || s == 'timeout') return 'missed';
+    if (s == 'rejected') return 'declined';
+    if (s == 'cancelled') return 'canceled';
+    if (s == 'completed' || s == 'success' || s == 'ok') return 'ended';
+
+    // Sometimes you store "missed_call"
+    if (s.contains('missed')) return 'missed';
+    if (s.contains('declin') || s.contains('reject')) return 'declined';
+    if (s.contains('cancel')) return 'canceled';
+    if (s.contains('busy')) return 'busy';
+    if (s.contains('end') || s.contains('complete')) return 'ended';
+
+    return s;
+  }
+
+  String _callDirectionForViewerLower() {
+    final m = widget.callInfo ?? const <String, dynamic>{};
+
+    // Preferred explicit direction stored in message
+    final explicit = _tCall(m['direction']).toLowerCase();
+    if (explicit == 'incoming' || explicit == 'outgoing') return explicit;
+
+    // If we have caller/callee IDs, compute direction from viewer perspective
+    final me = (widget.currentUserId ?? '').trim();
+    final callerId = _tCall(m['callerId']).isNotEmpty ? _tCall(m['callerId']) : _tCall(m['fromId']);
+    final calleeId = _tCall(m['calleeId']).isNotEmpty ? _tCall(m['calleeId']) : _tCall(m['toId']);
+
+    if (me.isNotEmpty) {
+      if (callerId.isNotEmpty && callerId == me) return 'outgoing';
+      if (calleeId.isNotEmpty && calleeId == me) return 'incoming';
+    }
+
+    // Final fallback:
+    // If *this bubble* is authored by me => outgoing for me, else incoming.
+    return widget.isMe ? 'outgoing' : 'incoming';
+  }
+
+  bool _callIsMissed() {
+    final r = _callResultLower();
+    return r == 'missed';
+  }
+
+  bool _callIsDeclined() {
+    final r = _callResultLower();
+    return r == 'declined';
+  }
+
+  bool _callIsCanceled() {
+    final r = _callResultLower();
+    return r == 'canceled';
+  }
+
+  bool _callIsBusy() {
+    final r = _callResultLower();
+    return r == 'busy';
+  }
+
+  bool _callIsEnded() {
+    final r = _callResultLower();
+    return r == 'ended';
+  }
+
+  String _prettyResultLabel(AppLocalizations l10n) {
+    // If your l10n has callLogs_result_* you can swap these easily later.
+    final r = _callResultLower();
+    switch (r) {
+      case 'missed':
+        return 'Missed';
+      case 'declined':
+        return 'Declined';
+      case 'canceled':
+        return 'Canceled';
+      case 'busy':
+        return 'Busy';
+      case 'ended':
+        return 'Ended';
+      default:
+      // Unknown => title-case-ish
+        if (r.isEmpty) return '';
+        return r[0].toUpperCase() + r.substring(1);
+    }
+  }
+
+  Color _callAccentColor() {
+    if (_callIsMissed()) return Colors.redAccent;
+    if (_callIsDeclined() || _callIsBusy()) return Colors.orangeAccent;
+    if (_callIsEnded()) return kPrimaryGold;
+    if (_callIsCanceled()) return Colors.white70;
+    return Colors.white70;
+  }
+
+  IconData _callMediaIcon() {
+    final type = _callTypeLower();
+    return (type == 'video') ? Icons.videocam_rounded : Icons.call_rounded;
+  }
+
+  IconData _callDirArrowIcon() {
+    final dir = _callDirectionForViewerLower();
+    return dir == 'incoming'
+        ? Icons.call_received_rounded
+        : Icons.call_made_rounded;
+  }
+
+  String _callTitleLine() {
+    final dir = _callDirectionForViewerLower();
+    final kind = (_callTypeLower() == 'video') ? 'Video call' : 'Voice call';
+    // Keep it consistent with call logs: show Incoming/Outgoing
+    return dir == 'incoming' ? 'Incoming $kind' : 'Outgoing $kind';
+  }
+
+  Widget _buildCallBubble(AppLocalizations l10n) {
+    final accent = _callAccentColor();
+    final title = _callTitleLine();
+    final status = _prettyResultLabel(l10n);
+    final when = widget.timeLabel; // already formatted by parent (chat time)
+
+    // Same "log tile" feel (no actions)
+    return Container(
+      margin: const EdgeInsets.only(top: 2, bottom: 2),
+      decoration: BoxDecoration(
+        color: kSurfaceAltColor.withOpacity(0.55),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: _callIsMissed() ? Colors.redAccent.withOpacity(0.55) : kBorderColor.withOpacity(0.55),
+        ),
+      ),
+      padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Left icon (compact)
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: accent.withOpacity(0.14),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: accent.withOpacity(0.25)),
+            ),
+            child: Icon(_callMediaIcon(), size: 18, color: accent),
+          ),
+          const SizedBox(width: 10),
+
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(_callDirArrowIcon(), size: 14, color: Colors.white38),
+                    const SizedBox(width: 6),
+                    Text(
+                      status.isEmpty ? 'Call' : status,
+                      style: const TextStyle(
+                        color: Colors.white60,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  when,
+                  style: TextStyle(
+                    color: kTextSecondary.withOpacity(0.75),
+                    fontSize: 12,
+                    height: 1.1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Missed dot (optional)
+          if (_callIsMissed()) ...[
+            const SizedBox(width: 10),
+            const Icon(Icons.circle, size: 10, color: Colors.redAccent),
+          ],
+        ],
+      ),
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -541,11 +813,13 @@ class _MessageBubbleState extends State<MessageBubble>
   bool _looksLikeSoftDeletedFromContent({
     required bool hasAnyReactions,
   }) {
+    // ✅ Call events can have no text + no file; never treat them as deleted.
+    if (isCallMessage) return false;
+
     final noText = widget.text.trim().isEmpty;
     final noFile = (widget.fileUrl ?? '').trim().isEmpty;
-    final noType = (widget.fileType ?? '').trim().isEmpty;
     final noReply = widget.replyTo == null;
-    return noText && noFile && noType && noReply && !hasAnyReactions;
+    return noText && noFile && noReply && !hasAnyReactions;
   }
 
   String _deletedPlaceholder(AppLocalizations l10n) {
@@ -555,7 +829,7 @@ class _MessageBubbleState extends State<MessageBubble>
   }
 
   // ---------------------------------------------------------------------------
-  // Audio
+  // Audio (via MwAudioHub)
   // ---------------------------------------------------------------------------
 
   @override
@@ -564,70 +838,216 @@ class _MessageBubbleState extends State<MessageBubble>
 
     _identitySig = _makeIdentitySig(widget);
 
+    final hub = MwAudioHub.instance;
+
+    // Ensure release mode once
+    _player.setReleaseMode(ReleaseMode.stop);
+
     _stateSub = _player.onPlayerStateChanged.listen((s) {
       if (!mounted) return;
-      setState(() => _playing = s == PlayerState.playing);
+
+      if (!hub.isActive(widget.messageId)) {
+        if (_playing || _loading) {
+          setState(() {
+            _playing = false;
+            _loading = false;
+          });
+        }
+        return;
+      }
+
+      final nextPlaying = (s == PlayerState.playing);
+      if (nextPlaying == _playing) return;
+      setState(() => _playing = nextPlaying);
     });
 
     _posSub = _player.onPositionChanged.listen((p) {
       if (!mounted) return;
-      setState(() => _pos = p);
+      if (!hub.isActive(widget.messageId)) return;
+
+      Duration nextPos = p;
+
+      if (nextPos == Duration.zero && _pos > Duration.zero) {
+        return;
+      }
+
+      final total = _dur;
+      if (total > Duration.zero && nextPos > total) {
+        nextPos = total;
+      }
+
+      if (nextPos == _pos) return;
+      setState(() => _pos = nextPos);
+
+      if (_dur == Duration.zero) {
+        unawaited(_syncFromSharedPlayerIfActive());
+      }
     });
 
     _durSub = _player.onDurationChanged.listen((d) {
       if (!mounted) return;
-      setState(() => _dur = d);
+      if (!hub.isActive(widget.messageId)) return;
+
+      if (d == Duration.zero) return;
+
+      final nextDur = d;
+      final nextPos = (_pos > nextDur) ? nextDur : _pos;
+
+      if (nextDur == _dur && nextPos == _pos) return;
+      setState(() {
+        _dur = nextDur;
+        _pos = nextPos;
+      });
     });
 
     _completeSub = _player.onPlayerComplete.listen((_) {
       if (!mounted) return;
+      if (!hub.isActive(widget.messageId)) return;
+
       setState(() {
         _playing = false;
-        _pos = _dur == Duration.zero ? Duration.zero : _dur;
+        _pos = (_dur == Duration.zero) ? Duration.zero : _dur;
       });
     });
 
-    _player.setReleaseMode(ReleaseMode.stop);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(_syncFromSharedPlayerIfActive());
+    });
   }
 
   String _makeIdentitySig(MessageBubble w) {
-    // NOTE: This is a fallback safety net in case parent didn't pass stable keys.
-    // If you DO have messageId, your parent SHOULD pass ValueKey(messageId).
     final parts = [
+      w.messageId,
       w.text,
       w.timeLabel,
       w.fileUrl ?? '',
       w.fileType ?? '',
       w.fileName ?? '',
+      w.thumbUrl ?? '',
+      w.thumbnailUrl ?? '',
+      w.videoThumbUrl ?? '',
+      (w.callInfo == null ? '' : w.callInfo.toString()),
       (w.isMe ? 'me' : 'other'),
+      (w.isDeleted ? 'deleted' : 'alive'),
+      (w.isSelected ? 'sel' : 'nosel'),
     ];
     return parts.join('|');
+  }
+
+  Future<void> _syncFromSharedPlayerIfActive() async {
+    final hub = MwAudioHub.instance;
+    if (!mounted) return;
+    if (!hub.isActive(widget.messageId)) return;
+
+    try {
+      final beforeActive = hub.activeMessageId;
+      final beforePrepared = _preparedUrl;
+
+      final p = await _player.getCurrentPosition();
+      final d = await _player.getDuration();
+      final s = _player.state;
+
+      if (!mounted) return;
+      if (hub.activeMessageId != beforeActive) return;
+      if (!hub.isActive(widget.messageId)) return;
+
+      Duration nextDur = _dur;
+      if (d != null && d > Duration.zero) {
+        nextDur = d;
+      }
+
+      Duration nextPos = _pos;
+      if (p != null && p >= Duration.zero) {
+        nextPos = p;
+      }
+
+      if (nextDur > Duration.zero && nextPos > nextDur) {
+        nextPos = nextDur;
+      }
+
+      final nextPlaying = (s == PlayerState.playing);
+
+      if (nextDur == Duration.zero &&
+          (beforePrepared ?? '').isNotEmpty &&
+          beforePrepared == (widget.fileUrl ?? '').trim()) {
+        unawaited(_ensureAudioReady(beforePrepared!));
+      }
+
+      final bool changed =
+          nextPos != _pos || nextDur != _dur || nextPlaying != _playing;
+
+      if (!changed) return;
+
+      setState(() {
+        _pos = nextPos;
+        _dur = nextDur;
+        _playing = nextPlaying;
+      });
+    } catch (_) {}
   }
 
   @override
   void didUpdateWidget(covariant MessageBubble oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    // ✅ Protect overlay correctness when State is reused for a different message.
+    final hub = MwAudioHub.instance;
+
     final newSig = _makeIdentitySig(widget);
     if (newSig != _identitySig) {
       _identitySig = newSig;
       MwReactionOverlay.hide();
-      _reactionLink = LayerLink(); // ✅ new anchor for the new message
+      _reactionLink = LayerLink();
       _resetSwipe();
     }
 
     final oldUrl = (oldWidget.fileUrl ?? '').trim();
-    final newUrl2 = (widget.fileUrl ?? '').trim();
+    final newUrl = (widget.fileUrl ?? '').trim();
 
     final oldType = (oldWidget.fileType ?? '').trim().toLowerCase();
     final newType = (widget.fileType ?? '').trim().toLowerCase();
 
-    final urlChanged = oldUrl != newUrl2;
-    final typeChanged = oldType != newType;
+    final bool urlChanged = oldUrl != newUrl;
+    final bool typeChanged = oldType != newType;
 
-    if (urlChanged || (typeChanged && !isAudio)) {
-      _stopAndResetAudioUi();
+    final bool wasActive = hub.isActive(oldWidget.messageId);
+    final bool isActive = hub.isActive(widget.messageId);
+
+    if (wasActive && !isActive) {
+      if (!mounted) return;
+      setState(() {
+        _pos = Duration.zero;
+        _dur = Duration.zero;
+        _playing = false;
+        _loading = false;
+        _audioError = false;
+        _preparedUrl = null;
+      });
+      return;
+    }
+
+    if (isActive) {
+      if (urlChanged || (typeChanged && !isAudio)) {
+        _stopAndResetAudioUi();
+      } else {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          unawaited(_syncFromSharedPlayerIfActive());
+        });
+      }
+      return;
+    }
+
+    if (urlChanged || typeChanged || oldWidget.messageId != widget.messageId) {
+      if (!mounted) return;
+      setState(() {
+        _pos = Duration.zero;
+        _dur = Duration.zero;
+        _playing = false;
+        _loading = false;
+        _audioError = false;
+        _preparedUrl = null;
+      });
     }
   }
 
@@ -681,17 +1101,27 @@ class _MessageBubbleState extends State<MessageBubble>
     if (url.isEmpty) return;
     if (_loading) return;
 
-    try {
-      if (_playing) {
+    final hub = MwAudioHub.instance;
+
+    if (hub.isActive(widget.messageId) && _playing) {
+      try {
         await _player.pause();
-        return;
-      }
+      } catch (_) {}
+      return;
+    }
 
-      setState(() {
-        _loading = true;
-        _audioError = false;
-      });
+    await hub.activate(widget.messageId);
 
+    unawaited(_syncFromSharedPlayerIfActive());
+
+    if (!mounted) return;
+
+    setState(() {
+      _loading = true;
+      _audioError = false;
+    });
+
+    try {
       final ok = await _ensureAudioReady(url);
       if (!ok) return;
 
@@ -702,12 +1132,11 @@ class _MessageBubbleState extends State<MessageBubble>
         if (mounted) setState(() => _pos = Duration.zero);
       }
 
-      try {
-        await _player.resume().timeout(const Duration(seconds: 5));
-      } catch (_) {
-        await _player.stop().catchError((_) {});
-        await _player.play(UrlSource(url)).timeout(const Duration(seconds: 6));
-      }
+      await _player.play(UrlSource(url)).timeout(const Duration(seconds: 6));
+
+      unawaited(_syncFromSharedPlayerIfActive());
+    } catch (_) {
+      if (mounted) setState(() => _audioError = true);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -842,10 +1271,12 @@ class _MessageBubbleState extends State<MessageBubble>
     );
   }
 
+  // ✅ UPDATED: uses thumbUrl if available, falls back safely
   Widget _buildVideoBubbleLightweight() {
     final l10n = AppLocalizations.of(context)!;
-    final url = widget.fileUrl ?? '';
+    final url = (widget.fileUrl ?? '').trim();
     final title = _attachmentLabel(l10n);
+    final thumb = _resolvedThumbUrl;
 
     return GestureDetector(
       onTap: _openVideoFullScreen,
@@ -862,14 +1293,13 @@ class _MessageBubbleState extends State<MessageBubble>
             alignment: Alignment.center,
             children: [
               Positioned.fill(
-                child: Opacity(
-                  opacity: 0.10,
-                  child: Image.network(
-                    url,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                  ),
+                child: _VideoThumbBackground(
+                  thumbUrl: thumb,
+                  fallbackUrl: url,
                 ),
+              ),
+              Container(
+                color: Colors.black.withOpacity(0.18),
               ),
               Column(
                 mainAxisSize: MainAxisSize.min,
@@ -915,136 +1345,6 @@ class _MessageBubbleState extends State<MessageBubble>
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // ✅ Linkify (URLs clickable) while preserving MwTokenText for non-link chunks
-  // ---------------------------------------------------------------------------
-
-  static final RegExp _urlRegex = RegExp(
-    r'((https?:\/\/|www\.)[^\s<>()]+)',
-    caseSensitive: false,
-  );
-
-  String _normalizeUrl(String raw) {
-    final t = raw.trim();
-    if (t.isEmpty) return t;
-    final low = t.toLowerCase();
-    if (low.startsWith('http://') || low.startsWith('https://')) return t;
-    if (low.startsWith('www.')) return 'https://$t';
-    return t;
-  }
-
-  Future<void> _openUrl(String raw) async {
-    final normalized = _normalizeUrl(raw);
-    final uri = Uri.tryParse(normalized);
-    if (uri == null) return;
-
-    try {
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      }
-    } catch (_) {
-      // no-op
-    }
-  }
-
-  Widget _buildLinkifiedBody({
-    required String text,
-    required TextStyle style,
-    required TextDirection textDirection,
-    required TextAlign textAlign,
-    required bool disableLinks,
-  }) {
-    if (!_urlRegex.hasMatch(text) || disableLinks) {
-      return MwTokenText(
-        text: text,
-        style: style,
-        textDirection: textDirection,
-        textAlign: textAlign,
-      );
-    }
-
-    final matches = _urlRegex.allMatches(text).toList();
-    if (matches.isEmpty) {
-      return MwTokenText(
-        text: text,
-        style: style,
-        textDirection: textDirection,
-        textAlign: textAlign,
-      );
-    }
-
-    final segments = <Widget>[];
-    int cursor = 0;
-
-    for (final m in matches) {
-      final start = m.start;
-      final end = m.end;
-
-      if (start > cursor) {
-        final normalChunk = text.substring(cursor, start);
-        if (normalChunk.trim().isNotEmpty || normalChunk.contains('\n')) {
-          segments.add(
-            MwTokenText(
-              text: normalChunk,
-              style: style,
-              textDirection: textDirection,
-              textAlign: textAlign,
-            ),
-          );
-        }
-      }
-
-      final urlChunk = text.substring(start, end);
-      segments.add(
-        InkWell(
-          onTap: () => _openUrl(urlChunk),
-          borderRadius: BorderRadius.circular(6),
-          child: Text(
-            urlChunk,
-            textDirection: TextDirection.ltr,
-            style: style.copyWith(
-              decoration: TextDecoration.underline,
-              color: kPrimaryGold.withOpacity(0.95),
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-      );
-
-      cursor = end;
-    }
-
-    if (cursor < text.length) {
-      final tail = text.substring(cursor);
-      if (tail.trim().isNotEmpty || tail.contains('\n')) {
-        segments.add(
-          MwTokenText(
-            text: tail,
-            style: style,
-            textDirection: textDirection,
-            textAlign: textAlign,
-          ),
-        );
-      }
-    }
-
-    return Directionality(
-      textDirection: textDirection,
-      child: Align(
-        alignment:
-        textAlign == TextAlign.right ? Alignment.centerRight : Alignment.centerLeft,
-        child: Wrap(
-          alignment:
-          textAlign == TextAlign.right ? WrapAlignment.end : WrapAlignment.start,
-          runAlignment: WrapAlignment.center,
-          spacing: 0,
-          runSpacing: 0,
-          children: segments,
-        ),
-      ),
-    );
-  }
-
   Widget _buildAudioBubble() {
     final l10n = AppLocalizations.of(context)!;
     final dir = _effectiveDir(context);
@@ -1054,7 +1354,17 @@ class _MessageBubbleState extends State<MessageBubble>
 
     final total = _dur;
     final pos = (_pos > total && total != Duration.zero) ? total : _pos;
-    final canSeek = total.inMilliseconds > 0;
+
+    final totalMs = total.inMilliseconds;
+    final posMs = pos.inMilliseconds;
+
+    final hasKnownDuration = totalMs > 0;
+    final sliderMax = hasKnownDuration
+        ? totalMs.toDouble()
+        : math.max(posMs.toDouble(), 1.0);
+    final sliderValue = math.min(posMs.toDouble(), sliderMax);
+
+    final canSeek = hasKnownDuration;
 
     return Directionality(
       textDirection: TextDirection.ltr,
@@ -1135,9 +1445,9 @@ class _MessageBubbleState extends State<MessageBubble>
                       const RoundSliderThumbShape(enabledThumbRadius: 7),
                     ),
                     child: Slider(
-                      value: canSeek ? pos.inMilliseconds.toDouble() : 0,
+                      value: sliderValue,
                       min: 0,
-                      max: canSeek ? total.inMilliseconds.toDouble() : 1,
+                      max: sliderMax,
                       onChanged: canSeek
                           ? (v) => _seek(Duration(milliseconds: v.round()))
                           : null,
@@ -1216,19 +1526,19 @@ class _MessageBubbleState extends State<MessageBubble>
   @override
   void dispose() {
     MwReactionOverlay.hide();
-    _player.stop().catchError((_) {});
+
     _stateSub?.cancel();
     _posSub?.cancel();
     _durSub?.cancel();
     _completeSub?.cancel();
-    _player.dispose();
+
     super.dispose();
   }
 
-  late bool _effectiveIsDeleted;
+  bool _effectiveIsDeleted = false;
 
   bool get _canReact =>
-      !(_effectiveIsDeleted) &&
+      !_effectiveIsDeleted &&
           (widget.currentUserId ?? '').trim().isNotEmpty &&
           widget.onReactionTapAsync != null;
 
@@ -1268,7 +1578,6 @@ class _MessageBubbleState extends State<MessageBubble>
       currentUserId: currentUserId,
       currentReactions: rx,
       alignToRightBubble: widget.isMe,
-
       onSelectEmoji: (emoji) async {
         final fn = widget.onReactionTapAsync;
         if (fn == null) return;
@@ -1277,10 +1586,9 @@ class _MessageBubbleState extends State<MessageBubble>
         MwReactionOverlay.hide();
         widget.onReactionCommitted?.call();
       },
-
       onOpenPicker: () async {
         final picked = await MwFullEmojiPicker.open(context);
-        if (picked == null || picked.trim().isEmpty) return;
+        if (picked == null || picked.trim().isNotEmpty == false) return;
 
         final fn = widget.onReactionTapAsync;
         if (fn == null) return;
@@ -1296,8 +1604,6 @@ class _MessageBubbleState extends State<MessageBubble>
     widget.onBubbleLongPress?.call();
 
     if (_effectiveIsDeleted) return;
-
-    // ✅ If bubble is already selected, don't open emoji overlay again.
     if (widget.isSelected) return;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1356,9 +1662,6 @@ class _MessageBubbleState extends State<MessageBubble>
       ),
     );
 
-    // ✅ IMPORTANT:
-    // We DO NOT use margin inside bubble decoration anymore.
-    // Margin created confusing “floating space” and reactions looked detached.
     final bubbleDecorated = Container(
       constraints: BoxConstraints(maxWidth: maxWidth, minWidth: 70),
       padding: const EdgeInsets.all(10),
@@ -1374,16 +1677,20 @@ class _MessageBubbleState extends State<MessageBubble>
         children: [
           if (showReply) _buildReplyPreview(l10n, replyMap!),
 
+          // ✅ Call event uses the SAME "call logs" style (compact)
+          if (!_effectiveIsDeleted && isCallMessage) _buildCallBubble(l10n),
+
           if (!_effectiveIsDeleted && hasAttachment && isImage) _buildImageBubble(),
           if (!_effectiveIsDeleted && hasAttachment && isVideo)
             _buildVideoBubbleLightweight(),
           if (!_effectiveIsDeleted && hasAttachment && isAudio) _buildAudioBubble(),
-          if (!_effectiveIsDeleted && hasAttachment && isGenericFile) _buildFileBubble(),
+          if (!_effectiveIsDeleted && hasAttachment && isGenericFile)
+            _buildFileBubble(),
 
           if (_effectiveIsDeleted)
             deletedBody
           else if (displayText.isNotEmpty)
-            _buildLinkifiedBody(
+            MwLinkify.build(
               text: displayText,
               style: messageStyle,
               textDirection: msgDir,
@@ -1424,13 +1731,12 @@ class _MessageBubbleState extends State<MessageBubble>
       ),
     );
 
-    // ✅ Outer spacing: this reserves room for reactions (so next message never overlaps)
     final bubbleWithOuterSpacing = Padding(
       padding: EdgeInsets.fromLTRB(
         6,
         4,
         6,
-        hasReactions ? 16 : 6, // ✅ space for reactions below
+        hasReactions ? 16 : 6,
       ),
       child: bubbleDecorated,
     );
@@ -1443,8 +1749,8 @@ class _MessageBubbleState extends State<MessageBubble>
           ? (_) => WidgetsBinding.instance
           .addPostFrameCallback((_) => _handleLongPress())
           : null,
-
-      onHorizontalDragStart: _canSwipeReply ? (_) => _replyTriggered = false : null,
+      onHorizontalDragStart:
+      _canSwipeReply ? (_) => _replyTriggered = false : null,
       onHorizontalDragUpdate: _canSwipeReply
           ? (d) {
         if (_effectiveIsDeleted) return;
@@ -1486,23 +1792,18 @@ class _MessageBubbleState extends State<MessageBubble>
       ),
     );
 
-    // ✅ This Stack is now tight to the bubble itself (no weird margin space),
-    // so reactions visually belong to the correct message.
     final stacked = Stack(
       clipBehavior: Clip.none,
       children: [
         gesture,
-
         if (hasReactions)
-          PositionedDirectional(
-            // ✅ attach closer to bubble edge (NOT floating in the gap)
+          Positioned(
             bottom: 2,
-            start: widget.isMe ? null : 18,
-            end: widget.isMe ? 18 : null,
+            left: widget.isMe ? null : 18, // incoming -> left
+            right: widget.isMe ? 18 : null, // outgoing -> right
             child: Material(
               color: Colors.transparent,
               child: DecoratedBox(
-                // subtle backing makes it obviously attached to the message
                 decoration: BoxDecoration(
                   color: Colors.black.withOpacity(0.06),
                   borderRadius: BorderRadius.circular(999),
@@ -1512,7 +1813,8 @@ class _MessageBubbleState extends State<MessageBubble>
                   child: MwMessageReactions(
                     reactions: rx,
                     currentUserId: currentUserId,
-                    onTap: (widget.onReactionTapAsync == null || _effectiveIsDeleted)
+                    onTap: (widget.onReactionTapAsync == null ||
+                        _effectiveIsDeleted)
                         ? null
                         : (e) async {
                       await widget.onReactionTapAsync!(e);
@@ -1531,6 +1833,78 @@ class _MessageBubbleState extends State<MessageBubble>
       child: CompositedTransformTarget(
         link: _reactionLink,
         child: stacked,
+      ),
+    );
+  }
+}
+
+class _VideoThumbBackground extends StatelessWidget {
+  final String thumbUrl;
+  final String fallbackUrl;
+
+  const _VideoThumbBackground({
+    required this.thumbUrl,
+    required this.fallbackUrl,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = thumbUrl.trim();
+
+    // ✅ Primary: thumbUrl (works iOS/Android/Web)
+    if (t.isNotEmpty) {
+      return Image.network(
+        t,
+        fit: BoxFit.cover,
+        filterQuality: FilterQuality.medium,
+        errorBuilder: (_, __, ___) => _placeholder(context),
+        loadingBuilder: (context, child, progress) {
+          if (progress == null) return child;
+          return Stack(
+            children: [
+              _placeholder(context),
+              Positioned.fill(
+                child: Center(
+                  child: SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      );
+    }
+
+    // ✅ Fallback: try rendering from video url lightly (often fails, so still safe)
+    final u = fallbackUrl.trim();
+    if (u.isNotEmpty) {
+      return Opacity(
+        opacity: 0.14,
+        child: Image.network(
+          u,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => _placeholder(context),
+        ),
+      );
+    }
+
+    return _placeholder(context);
+  }
+
+  Widget _placeholder(BuildContext context) {
+    return Container(
+      color: kSurfaceAltColor.withOpacity(0.55),
+      alignment: Alignment.center,
+      child: Icon(
+        Icons.videocam_rounded,
+        color: kTextSecondary.withOpacity(0.75),
+        size: 30,
       ),
     );
   }

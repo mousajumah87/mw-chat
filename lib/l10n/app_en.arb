@@ -519,6 +519,150 @@
     "typographyWebTip": "Web tip: If a font looks unchanged, do a hot restart (R) to reload.",
     "englishSample": "English sample: The quick brown fox jumps over the lazy dog.",
     "arabicSample": "Arabic sample: Arabic looks beautiful with the right font.",
-    "newLabel": "New"
+    "newLabel": "New",
 
+    "callLogs_title": "Call logs",
+    "callLogs_notSignedIn": "Not signed in",
+
+    "callLogs_filter_all": "All",
+    "callLogs_filter_missed": "Missed",
+    "callLogs_filter_incoming": "Incoming",
+    "callLogs_filter_outgoing": "Outgoing",
+
+    "callLogs_tooltip_retry": "Retry",
+    "callLogs_tooltip_markMissedRead": "Mark missed as read",
+    "callLogs_tooltip_clearLogs": "Clear logs",
+
+    "callLogs_snack_markedMissedRead": "Marked missed calls as read",
+    "callLogs_snack_markedAsRead": "Marked as read",
+
+    "callLogs_snack_failedWithError": "Failed: {error}",
+    "@callLogs_snack_failedWithError": {
+    "placeholders": { "error": {} }
+    },
+
+    "callLogs_snack_clearedWithCount": "Cleared {count} {filter} call logs",
+    "@callLogs_snack_clearedWithCount": {
+    "placeholders": { "count": {}, "filter": {} }
+    },
+
+    "callLogs_snack_clearFailedWithError": "Clear failed: {error}",
+    "@callLogs_snack_clearFailedWithError": {
+    "placeholders": { "error": {} }
+    },
+
+    "callLogs_confirm_clearTitle": "Clear {filter} call logs?",
+    "@callLogs_confirm_clearTitle": {
+    "placeholders": { "filter": {} }
+    },
+
+    "callLogs_confirm_clearAllBody": "This will delete all call logs from your history.",
+    "callLogs_confirm_clearFilterBody": "This will delete only the {filter} call logs from your history.",
+    "@callLogs_confirm_clearFilterBody": {
+    "placeholders": { "filter": {} }
+    },
+
+    "callLogs_chip_errorPermission": "{title} (permission denied)",
+    "@callLogs_chip_errorPermission": {
+    "description": "Shown when Firestore permission is denied for call logs query",
+    "placeholders": {
+      "title": { "type": "String" }
+    }
+    },
+
+
+
+    "common_cancel": "Cancel",
+    "common_clear": "Clear",
+    "common_retry": "Retry",
+
+    "callLogs_error_indexRequired": "Firestore index required",
+    "callLogs_error_failedToLoad": "Failed to load call logs",
+    "callLogs_error_createIndexHint": "Create the composite index shown in the Firestore error link.",
+    "callLogs_loading": "Loading...",
+
+    "callLogs_empty_all": "No call logs yet",
+    "callLogs_empty_missed": "No missed calls",
+    "callLogs_empty_incoming": "No incoming calls",
+    "callLogs_empty_outgoing": "No outgoing calls",
+
+    "callLogs_unknownUser": "Unknown",
+
+    "callLogs_result_ended": "Ended",
+    "callLogs_result_declined": "Declined",
+    "callLogs_result_canceled": "Canceled",
+    "callLogs_result_missed": "Missed",
+    "callLogs_result_busy": "Busy",
+
+    "callLogs_direction_incoming": "Incoming",
+    "callLogs_direction_outgoing": "Outgoing",
+
+    "callLogs_chip_indexNeeded": "{title} (index needed)",
+    "@callLogs_chip_indexNeeded": {
+    "description": "Shown when a Firestore index is required for the call logs query",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+    },
+
+    "callLogs_chip_error": "{title} (error)",
+    "@callLogs_chip_error": {
+    "description": "Shown when a generic error occurs while loading call logs",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+    },
+
+    "callLogs_chip_missedCount": "{title} • {missedLabel} ({count})",
+    "@callLogs_chip_missedCount": {
+    "description": "Chip showing missed call count in call logs",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      },
+      "missedLabel": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+    },
+
+    "debug_insertedCallLog": "DEBUG: Inserted call log",
+    "callLogs_tooltip_voiceCall": "Voice call",
+    "callLogs_tooltip_videoCall": "Video call",
+
+    "outgoingCall_failedToStart": "Failed to start call",
+    "outgoingCall_calling": "Calling…",
+    "outgoingCall_connecting": "Connecting…",
+    "outgoingCall_pleaseWait": "Please wait…",
+    "outgoingCall_notSignedIn": "Not signed in",
+    "outgoingCall_invalidPeer": "Invalid peer",
+
+
+    "call_status_ringing": "Ringing…",
+    "call_status_inCall": "In call",
+    "call_status_answering": "Answering…",
+    "call_status_declined": "Declined",
+    "call_status_missed": "Missed call",
+    "call_status_canceled": "Canceled",
+    "call_status_busy": "User busy",
+    "call_status_ended": "Call ended",
+    "call_status_canceling": "Canceling…",
+
+    "call_failedWithError": "Call failed: {error}",
+    "@call_failedWithError": {
+    "placeholders": { "error": {} }
+    },
+
+    "incomingCall_voice": "Incoming voice call",
+    "incomingCall_video": "Incoming video call",
+    "incomingCall_accept": "Accept",
+    "incomingCall_decline": "Decline",
+    "incomingCall_unknownCaller": "Unknown caller"
 }

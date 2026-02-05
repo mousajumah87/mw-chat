@@ -2407,6 +2407,390 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'New'**
   String get newLabel;
+
+  /// No description provided for @callLogs_title.
+  ///
+  /// In en, this message translates to:
+  /// **'Call logs'**
+  String get callLogs_title;
+
+  /// No description provided for @callLogs_notSignedIn.
+  ///
+  /// In en, this message translates to:
+  /// **'Not signed in'**
+  String get callLogs_notSignedIn;
+
+  /// No description provided for @callLogs_filter_all.
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get callLogs_filter_all;
+
+  /// No description provided for @callLogs_filter_missed.
+  ///
+  /// In en, this message translates to:
+  /// **'Missed'**
+  String get callLogs_filter_missed;
+
+  /// No description provided for @callLogs_filter_incoming.
+  ///
+  /// In en, this message translates to:
+  /// **'Incoming'**
+  String get callLogs_filter_incoming;
+
+  /// No description provided for @callLogs_filter_outgoing.
+  ///
+  /// In en, this message translates to:
+  /// **'Outgoing'**
+  String get callLogs_filter_outgoing;
+
+  /// No description provided for @callLogs_tooltip_retry.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get callLogs_tooltip_retry;
+
+  /// No description provided for @callLogs_tooltip_markMissedRead.
+  ///
+  /// In en, this message translates to:
+  /// **'Mark missed as read'**
+  String get callLogs_tooltip_markMissedRead;
+
+  /// No description provided for @callLogs_tooltip_clearLogs.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear logs'**
+  String get callLogs_tooltip_clearLogs;
+
+  /// No description provided for @callLogs_snack_markedMissedRead.
+  ///
+  /// In en, this message translates to:
+  /// **'Marked missed calls as read'**
+  String get callLogs_snack_markedMissedRead;
+
+  /// No description provided for @callLogs_snack_markedAsRead.
+  ///
+  /// In en, this message translates to:
+  /// **'Marked as read'**
+  String get callLogs_snack_markedAsRead;
+
+  /// No description provided for @callLogs_snack_failedWithError.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed: {error}'**
+  String callLogs_snack_failedWithError(Object error);
+
+  /// No description provided for @callLogs_snack_clearedWithCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Cleared {count} {filter} call logs'**
+  String callLogs_snack_clearedWithCount(Object count, Object filter);
+
+  /// No description provided for @callLogs_snack_clearFailedWithError.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear failed: {error}'**
+  String callLogs_snack_clearFailedWithError(Object error);
+
+  /// No description provided for @callLogs_confirm_clearTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear {filter} call logs?'**
+  String callLogs_confirm_clearTitle(Object filter);
+
+  /// No description provided for @callLogs_confirm_clearAllBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This will delete all call logs from your history.'**
+  String get callLogs_confirm_clearAllBody;
+
+  /// No description provided for @callLogs_confirm_clearFilterBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This will delete only the {filter} call logs from your history.'**
+  String callLogs_confirm_clearFilterBody(Object filter);
+
+  /// Shown when Firestore permission is denied for call logs query
+  ///
+  /// In en, this message translates to:
+  /// **'{title} (permission denied)'**
+  String callLogs_chip_errorPermission(String title);
+
+  /// No description provided for @common_cancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get common_cancel;
+
+  /// No description provided for @common_clear.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear'**
+  String get common_clear;
+
+  /// No description provided for @common_retry.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get common_retry;
+
+  /// No description provided for @callLogs_error_indexRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Firestore index required'**
+  String get callLogs_error_indexRequired;
+
+  /// No description provided for @callLogs_error_failedToLoad.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load call logs'**
+  String get callLogs_error_failedToLoad;
+
+  /// No description provided for @callLogs_error_createIndexHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Create the composite index shown in the Firestore error link.'**
+  String get callLogs_error_createIndexHint;
+
+  /// No description provided for @callLogs_loading.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading...'**
+  String get callLogs_loading;
+
+  /// No description provided for @callLogs_empty_all.
+  ///
+  /// In en, this message translates to:
+  /// **'No call logs yet'**
+  String get callLogs_empty_all;
+
+  /// No description provided for @callLogs_empty_missed.
+  ///
+  /// In en, this message translates to:
+  /// **'No missed calls'**
+  String get callLogs_empty_missed;
+
+  /// No description provided for @callLogs_empty_incoming.
+  ///
+  /// In en, this message translates to:
+  /// **'No incoming calls'**
+  String get callLogs_empty_incoming;
+
+  /// No description provided for @callLogs_empty_outgoing.
+  ///
+  /// In en, this message translates to:
+  /// **'No outgoing calls'**
+  String get callLogs_empty_outgoing;
+
+  /// No description provided for @callLogs_unknownUser.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown'**
+  String get callLogs_unknownUser;
+
+  /// No description provided for @callLogs_result_ended.
+  ///
+  /// In en, this message translates to:
+  /// **'Ended'**
+  String get callLogs_result_ended;
+
+  /// No description provided for @callLogs_result_declined.
+  ///
+  /// In en, this message translates to:
+  /// **'Declined'**
+  String get callLogs_result_declined;
+
+  /// No description provided for @callLogs_result_canceled.
+  ///
+  /// In en, this message translates to:
+  /// **'Canceled'**
+  String get callLogs_result_canceled;
+
+  /// No description provided for @callLogs_result_missed.
+  ///
+  /// In en, this message translates to:
+  /// **'Missed'**
+  String get callLogs_result_missed;
+
+  /// No description provided for @callLogs_result_busy.
+  ///
+  /// In en, this message translates to:
+  /// **'Busy'**
+  String get callLogs_result_busy;
+
+  /// No description provided for @callLogs_direction_incoming.
+  ///
+  /// In en, this message translates to:
+  /// **'Incoming'**
+  String get callLogs_direction_incoming;
+
+  /// No description provided for @callLogs_direction_outgoing.
+  ///
+  /// In en, this message translates to:
+  /// **'Outgoing'**
+  String get callLogs_direction_outgoing;
+
+  /// Shown when a Firestore index is required for the call logs query
+  ///
+  /// In en, this message translates to:
+  /// **'{title} (index needed)'**
+  String callLogs_chip_indexNeeded(String title);
+
+  /// Shown when a generic error occurs while loading call logs
+  ///
+  /// In en, this message translates to:
+  /// **'{title} (error)'**
+  String callLogs_chip_error(String title);
+
+  /// Chip showing missed call count in call logs
+  ///
+  /// In en, this message translates to:
+  /// **'{title} • {missedLabel} ({count})'**
+  String callLogs_chip_missedCount(String title, String missedLabel, int count);
+
+  /// No description provided for @debug_insertedCallLog.
+  ///
+  /// In en, this message translates to:
+  /// **'DEBUG: Inserted call log'**
+  String get debug_insertedCallLog;
+
+  /// No description provided for @callLogs_tooltip_voiceCall.
+  ///
+  /// In en, this message translates to:
+  /// **'Voice call'**
+  String get callLogs_tooltip_voiceCall;
+
+  /// No description provided for @callLogs_tooltip_videoCall.
+  ///
+  /// In en, this message translates to:
+  /// **'Video call'**
+  String get callLogs_tooltip_videoCall;
+
+  /// No description provided for @outgoingCall_failedToStart.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to start call'**
+  String get outgoingCall_failedToStart;
+
+  /// No description provided for @outgoingCall_calling.
+  ///
+  /// In en, this message translates to:
+  /// **'Calling…'**
+  String get outgoingCall_calling;
+
+  /// No description provided for @outgoingCall_connecting.
+  ///
+  /// In en, this message translates to:
+  /// **'Connecting…'**
+  String get outgoingCall_connecting;
+
+  /// No description provided for @outgoingCall_pleaseWait.
+  ///
+  /// In en, this message translates to:
+  /// **'Please wait…'**
+  String get outgoingCall_pleaseWait;
+
+  /// No description provided for @outgoingCall_notSignedIn.
+  ///
+  /// In en, this message translates to:
+  /// **'Not signed in'**
+  String get outgoingCall_notSignedIn;
+
+  /// No description provided for @outgoingCall_invalidPeer.
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid peer'**
+  String get outgoingCall_invalidPeer;
+
+  /// No description provided for @call_status_ringing.
+  ///
+  /// In en, this message translates to:
+  /// **'Ringing…'**
+  String get call_status_ringing;
+
+  /// No description provided for @call_status_inCall.
+  ///
+  /// In en, this message translates to:
+  /// **'In call'**
+  String get call_status_inCall;
+
+  /// No description provided for @call_status_answering.
+  ///
+  /// In en, this message translates to:
+  /// **'Answering…'**
+  String get call_status_answering;
+
+  /// No description provided for @call_status_declined.
+  ///
+  /// In en, this message translates to:
+  /// **'Declined'**
+  String get call_status_declined;
+
+  /// No description provided for @call_status_missed.
+  ///
+  /// In en, this message translates to:
+  /// **'Missed call'**
+  String get call_status_missed;
+
+  /// No description provided for @call_status_canceled.
+  ///
+  /// In en, this message translates to:
+  /// **'Canceled'**
+  String get call_status_canceled;
+
+  /// No description provided for @call_status_busy.
+  ///
+  /// In en, this message translates to:
+  /// **'User busy'**
+  String get call_status_busy;
+
+  /// No description provided for @call_status_ended.
+  ///
+  /// In en, this message translates to:
+  /// **'Call ended'**
+  String get call_status_ended;
+
+  /// No description provided for @call_status_canceling.
+  ///
+  /// In en, this message translates to:
+  /// **'Canceling…'**
+  String get call_status_canceling;
+
+  /// No description provided for @call_failedWithError.
+  ///
+  /// In en, this message translates to:
+  /// **'Call failed: {error}'**
+  String call_failedWithError(Object error);
+
+  /// No description provided for @incomingCall_voice.
+  ///
+  /// In en, this message translates to:
+  /// **'Incoming voice call'**
+  String get incomingCall_voice;
+
+  /// No description provided for @incomingCall_video.
+  ///
+  /// In en, this message translates to:
+  /// **'Incoming video call'**
+  String get incomingCall_video;
+
+  /// No description provided for @incomingCall_accept.
+  ///
+  /// In en, this message translates to:
+  /// **'Accept'**
+  String get incomingCall_accept;
+
+  /// No description provided for @incomingCall_decline.
+  ///
+  /// In en, this message translates to:
+  /// **'Decline'**
+  String get incomingCall_decline;
+
+  /// No description provided for @incomingCall_unknownCaller.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown caller'**
+  String get incomingCall_unknownCaller;
 }
 
 class _AppLocalizationsDelegate

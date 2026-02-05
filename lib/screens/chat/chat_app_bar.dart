@@ -1,6 +1,7 @@
 // lib/screens/chat/chat_app_bar.dart
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -33,6 +34,10 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
   final VoidCallback? onDeleteSelected; // delete selected message(s)
   final VoidCallback? onReportSelected; // report selected message (usually 1)
 
+  // ✅ Calls (owned by ChatScreen)
+  final VoidCallback? onAudioCall;
+  final VoidCallback? onVideoCall;
+
   const ChatAppBar({
     super.key,
     required this.title,
@@ -46,6 +51,8 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
     this.onCopySelected,
     this.onDeleteSelected,
     this.onReportSelected,
+    this.onAudioCall,
+    this.onVideoCall,
   });
 
   @override
@@ -55,8 +62,10 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
   static const int _onlineTtlSeconds = 300;
 
   // Presence privacy values
+  static const String _presenceEveryone = 'everyone';
   static const String _presenceFriends = 'friends';
   static const String _presenceNobody = 'nobody';
+
 
   // Profile visibility values
   static const String _profileEveryone = 'everyone';
@@ -90,7 +99,6 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
     final username = clean(data['username'] as String?);
     if (username.isNotEmpty) return username;
 
-    // fallback: use provided title prop (already computed by caller)
     return title.trim().isNotEmpty ? title.trim() : l10n.unknownUser;
   }
 
@@ -112,7 +120,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
     final a = _norm(avatarType);
     if (a.isNotEmpty) {
       if (a == 'smurf') return 'girl';
-      return a; // "bear" / "girl" / future types
+      return a;
     }
     return _avatarFromGender(gender);
   }
@@ -121,7 +129,6 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
     final v = (raw ?? '').toString().trim().toLowerCase();
     if (v.isEmpty) return null;
 
-    // legacy alias supported
     if (v == ChatFriendshipService.statusRequestReceivedAlias) {
       return ChatFriendshipService.exposeIncomingAsRequestReceived
           ? ChatFriendshipService.statusRequestReceivedAlias
@@ -141,53 +148,46 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
     return null;
   }
 
-  // ✅ NEW: pick the best "activity" timestamp
-  // - lastActive is updated by heartbeat while online
-  // - lastSeen is updated when going offline
-  Timestamp? _readActivityTs(Map<String, dynamic> otherData) {
-    final la = otherData['lastActive'];
-    if (la is Timestamp) return la;
-
-    final ls = otherData['lastSeen'];
-    if (ls is Timestamp) return ls;
-
-    return null;
-  }
-
-  Timestamp? _readLastSeenTs(Map<String, dynamic> otherData) {
-    final ls = otherData['lastSeen'];
-    if (ls is Timestamp) return ls;
-    // fallback (older installs): if lastSeen missing, use lastActive for a best-effort label
-    return _readActivityTs(otherData);
-  }
-
-  /// ✅ FIXED:
-  /// Online display must be based on:
-  /// - raw isOnline == true
-  /// - AND lastActive is within TTL (prevents stale "true" when app is killed)
-  /// If timestamp missing, fall back to rawIsOnline for backward compat.
   bool _isOnlineForDisplay({
+    required bool canSeePresence,
     required bool rawIsOnline,
-    required Timestamp? activityTs,
+    required Timestamp? lastActive,
   }) {
+    if (!canSeePresence) return false;
     if (!rawIsOnline) return false;
-    if (activityTs == null) return true; // backward compat
-    final diffSeconds = DateTime.now().difference(activityTs.toDate()).inSeconds;
+
+    // ✅ IMPORTANT: if lastActive is missing (legacy users / rollout / rules),
+    // still show online when isOnline=true.
+    if (lastActive == null) return true;
+
+    final diffSeconds = DateTime.now().difference(lastActive.toDate()).inSeconds;
     return diffSeconds <= _onlineTtlSeconds;
   }
 
+
+
   String _readPresenceVisibility(Map<String, dynamic> otherData) {
+    // Legacy boolean wins: if user disabled online status → nobody
+    final dynamic legacy = otherData['showOnlineStatus'];
+    if (legacy is bool && legacy == false) return _presenceNobody;
+
     final raw = (otherData['presenceVisibility'] as String?)?.trim().toLowerCase();
+
     if (raw == _presenceNobody) return _presenceNobody;
-    return _presenceFriends; // privacy-first default
+    if (raw == _presenceEveryone) return _presenceEveryone;
+    if (raw == _presenceFriends) return _presenceFriends;
+
+    // default
+    return _presenceFriends;
   }
+
 
   String _readProfileVisibility(Map<String, dynamic> otherData) {
     final raw = (otherData['profileVisibility'] as String?)?.trim().toLowerCase();
     if (raw == _profileNobody) return _profileNobody;
     if (raw == _profileFriends) return _profileFriends;
     if (raw == _profileEveryone) return _profileEveryone;
-    return _profileEveryone; // backward compat default
+    return _profileEveryone;
   }
 
   bool _canSeePresence({
@@ -199,8 +199,12 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
     if (!isActive) return false;
     if (isBlockedRelationship) return false;
     if (presenceVisibility == _presenceNobody) return false;
-    return ChatFriendshipService.isFriends(friendStatus); // friends-only
+
+    if (presenceVisibility == _presenceEveryone) return true;
+
+    return ChatFriendshipService.isFriends(friendStatus);
   }
+
 
   bool _canViewProfile({
     required bool isActive,
@@ -214,25 +218,16 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
     if (profileVisibility == _profileNobody) return false;
     if (profileVisibility == _profileEveryone) return true;
 
-    return ChatFriendshipService.isFriends(friendStatus); // friends-only
+    return ChatFriendshipService.isFriends(friendStatus);
   }
 
-  void _toastInfo(BuildContext context, String message) {
+  Future<void> _toastInfo(BuildContext context, String message) async {
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 2),
-        ),
-      );
-  }
-
-  Future<void> _toastSuccess(BuildContext context, String message) async {
-    if (!context.mounted) return;
-    await MwFeedback.success(context, message: message);
+    await MwFeedback.show(
+      context,
+      message: message,
+      type: MwFeedbackType.info,
+    );
   }
 
   Future<void> _toastError(BuildContext context, String message) async {
@@ -261,12 +256,13 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
     );
   }
 
-  // ✅ Title when selecting messages (WhatsApp-like)
   Widget _buildSelectionTitle(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final count = selectedCount < 0 ? 0 : selectedCount;
 
-    final text = (count == 1) ? (l10n?.selectedOne ?? '1 selected') : '${count} selected';
+    final text = (count == 1)
+        ? (l10n?.selectedOne ?? '1 selected')
+        : '${count} selected';
 
     return Text(
       text,
@@ -280,12 +276,29 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
     );
   }
 
+  // --- lightweight helpers to reduce rebuild churn inside nested builders ---
+  Stream<DocumentSnapshot<Map<String, dynamic>>> _userDocStream(String uid) =>
+      FirebaseFirestore.instance.collection('users').doc(uid).snapshots();
+
+  Stream<DocumentSnapshot<Map<String, dynamic>>> _friendDocStream({
+    required String me,
+    required String other,
+  }) =>
+      FirebaseFirestore.instance
+          .collection('users')
+          .doc(me)
+          .collection('friends')
+          .doc(other)
+          .snapshots();
+
+  Map<String, dynamic> _safeMap(DocumentSnapshot<Map<String, dynamic>>? snap) => snap?.data() ?? const {};
+
   Widget _buildTitle(BuildContext context) {
     if (selectionMode) return _buildSelectionTitle(context);
 
     final l10n = AppLocalizations.of(context)!;
-
     final otherId = otherUserId;
+
     if (otherId == null || otherId.trim().isEmpty) {
       return Text(
         title,
@@ -293,23 +306,22 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
       );
     }
 
-    // Stream: other user's profile (name/avatar/privacy/presence)
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance.collection('users').doc(otherId).snapshots(),
+      stream: _userDocStream(otherId),
       builder: (context, otherSnap) {
-        final otherData = otherSnap.data?.data();
-        if (otherData == null) {
+        final otherData = _safeMap(otherSnap.data);
+
+        if (otherData.isEmpty) {
           return Text(
             title,
             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
           );
         }
 
-        // Stream: my user (blocked list)
         return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-          stream: FirebaseFirestore.instance.collection('users').doc(currentUserId).snapshots(),
+          stream: _userDocStream(currentUserId),
           builder: (context, mySnap) {
-            final myData = mySnap.data?.data() ?? {};
+            final myData = _safeMap(mySnap.data);
 
             final myBlockedList = _asStringList(myData['blockedUserIds']);
             final isBlockedByMe = myBlockedList.contains(otherId);
@@ -319,21 +331,14 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
 
             final isBlockedRelationship = isBlockedByMe || hasBlockedMe;
 
-            // Stream: friendship status (my side is enough)
             return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-              stream: FirebaseFirestore.instance
-                  .collection('users')
-                  .doc(currentUserId)
-                  .collection('friends')
-                  .doc(otherId)
-                  .snapshots(),
+              stream: _friendDocStream(me: currentUserId, other: otherId),
               builder: (context, friendSnap) {
                 final friendStatusRaw = friendSnap.data?.data()?['status'];
                 final friendStatus = _normalizeFriendStatus(friendStatusRaw);
 
                 final bool isActive = otherData['isActive'] != false;
 
-                // Presence privacy
                 final presenceVisibility = _readPresenceVisibility(otherData);
                 final canSeePresence = _canSeePresence(
                   isActive: isActive,
@@ -342,17 +347,29 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
                   friendStatus: friendStatus,
                 );
 
-                final bool rawIsOnline = isActive && (otherData['isOnline'] == true);
+                final bool rawIsOnline = isActive &&
+                    ((otherData['isOnline'] == true) || (otherData['online'] == true));
 
-                // ✅ FIX: Use lastActive for TTL (fallback to lastSeen)
-                final Timestamp? activityTs = _readActivityTs(otherData);
-                final Timestamp? lastSeenTs = _readLastSeenTs(otherData);
+                // ✅ TTL freshness should use lastActive (fallbacks are safe)
+                final Timestamp? lastActive = otherData['lastActive'] is Timestamp
+                    ? otherData['lastActive'] as Timestamp
+                    : (otherData['updatedAt'] is Timestamp
+                    ? otherData['updatedAt'] as Timestamp
+                    : (otherData['lastSeen'] is Timestamp
+                    ? otherData['lastSeen'] as Timestamp
+                    : null));
 
-                final bool effectiveOnline = canSeePresence
-                    ? _isOnlineForDisplay(rawIsOnline: rawIsOnline, activityTs: activityTs)
-                    : false;
+                // ✅ lastSeen remains "offline at" for display text only
+                final Timestamp? lastSeen =
+                otherData['lastSeen'] is Timestamp ? otherData['lastSeen'] as Timestamp : null;
 
-                // Profile privacy (tap + avatar hiding)
+                final bool effectiveOnline = _isOnlineForDisplay(
+                  canSeePresence: canSeePresence,
+                  rawIsOnline: rawIsOnline,
+                  lastActive: lastActive,
+                );
+
+
                 final profileVisibility = _readProfileVisibility(otherData);
                 final canViewProfile = _canViewProfile(
                   isActive: isActive,
@@ -368,8 +385,8 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
                   subtitle = l10n.offline;
                 } else if (effectiveOnline) {
                   subtitle = l10n.online;
-                } else if (lastSeenTs != null) {
-                  final diff = DateTime.now().difference(lastSeenTs.toDate());
+                } else if (lastSeen != null) {
+                  final diff = DateTime.now().difference(lastSeen.toDate());
                   if (diff.inMinutes < 1) {
                     subtitle = l10n.lastSeenJustNow;
                   } else if (diff.inMinutes < 60) {
@@ -389,18 +406,17 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
                 final avatarType = otherData['avatarType'] as String?;
                 final gender = otherData['gender'];
 
-                // Hide avatar if they blocked me OR profile not viewable
                 final hideRealAvatar = hasBlockedMe || !canViewProfile;
 
-                // ✅ Only show dot when presence is visible.
                 final showDot = canSeePresence && isActive && !isBlockedRelationship;
                 final dotColor = effectiveOnline ? Colors.greenAccent : Colors.grey;
 
-                void openProfile() {
+                Future<void> openProfile() async {
                   if (!canViewProfile) {
-                    _toastInfo(context, l10n.profilePrivate ?? 'This profile is private.');
+                    await _toastInfo(context, l10n.profilePrivate ?? 'This profile is private.');
                     return;
                   }
+                  if (!context.mounted) return;
                   Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => UserProfileScreen(userId: otherId)),
                   );
@@ -408,7 +424,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
 
                 return InkWell(
                   borderRadius: BorderRadius.circular(24),
-                  onTap: canViewProfile ? openProfile : null,
+                  onTap: canViewProfile ? () => openProfile() : null,
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -475,6 +491,9 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
     );
   }
 
+  // ----------------------------
+  // Menu actions (unchanged)
+  // ----------------------------
   Future<void> _confirmToggleBlockUser(
       BuildContext context, {
         required bool isCurrentlyBlocked,
@@ -535,7 +554,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
       );
 
       if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
-      await _toastSuccess(context, isCurrentlyBlocked ? l10n.userUnblocked : l10n.userBlocked);
+      await MwFeedback.success(context, message: isCurrentlyBlocked ? l10n.userUnblocked : l10n.userBlocked);
     } catch (_) {
       if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
       await _toastError(context, l10n.generalErrorMessage);
@@ -565,8 +584,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
               ),
               TextButton(
                 onPressed: () => Navigator.of(dialogContext).pop(true),
-                child: Text(l10n.removeFriendConfirm,
-                    style: const TextStyle(color: Colors.redAccent)),
+                child: Text(l10n.removeFriendConfirm, style: const TextStyle(color: Colors.redAccent)),
               ),
             ],
           ),
@@ -577,23 +595,15 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
 
     final batch = FirebaseFirestore.instance.batch();
 
-    final myRef = FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .collection('friends')
-        .doc(otherId);
-    final theirRef = FirebaseFirestore.instance
-        .collection('users')
-        .doc(otherId)
-        .collection('friends')
-        .doc(user.uid);
+    final myRef = FirebaseFirestore.instance.collection('users').doc(user.uid).collection('friends').doc(otherId);
+    final theirRef = FirebaseFirestore.instance.collection('users').doc(otherId).collection('friends').doc(user.uid);
 
     batch.delete(myRef);
     batch.delete(theirRef);
 
     try {
       await batch.commit();
-      await _toastSuccess(context, l10n.friendRemoved);
+      await MwFeedback.success(context, message: l10n.friendRemoved);
     } catch (_) {
       await _toastError(context, l10n.generalErrorMessage);
     }
@@ -622,8 +632,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
               ),
               TextButton(
                 onPressed: () => Navigator.of(dialogContext).pop(true),
-                child: Text(l10n.cancelFriendRequestConfirm,
-                    style: const TextStyle(color: Colors.redAccent)),
+                child: Text(l10n.cancelFriendRequestConfirm, style: const TextStyle(color: Colors.redAccent)),
               ),
             ],
           ),
@@ -634,23 +643,15 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
 
     final batch = FirebaseFirestore.instance.batch();
 
-    final myRef = FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .collection('friends')
-        .doc(otherId);
-    final theirRef = FirebaseFirestore.instance
-        .collection('users')
-        .doc(otherId)
-        .collection('friends')
-        .doc(user.uid);
+    final myRef = FirebaseFirestore.instance.collection('users').doc(user.uid).collection('friends').doc(otherId);
+    final theirRef = FirebaseFirestore.instance.collection('users').doc(otherId).collection('friends').doc(user.uid);
 
     batch.delete(myRef);
     batch.delete(theirRef);
 
     try {
       await batch.commit();
-      await _toastSuccess(context, l10n.friendRequestCancelled);
+      await MwFeedback.success(context, message: l10n.friendRequestCancelled);
     } catch (_) {
       await _toastError(context, l10n.generalErrorMessage);
     }
@@ -691,8 +692,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
                   Icon(icon, color: effectiveColor),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: Text(label,
-                        style: TextStyle(color: effectiveColor, fontWeight: FontWeight.w700)),
+                    child: Text(label, style: TextStyle(color: effectiveColor, fontWeight: FontWeight.w700)),
                   ),
                   const Icon(Icons.chevron_right, color: Colors.white38),
                 ],
@@ -727,9 +727,9 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.all(14),
                   child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                    stream: FirebaseFirestore.instance.collection('users').doc(currentUserId).snapshots(),
+                    stream: _userDocStream(currentUserId),
                     builder: (sheetBuildContext, mySnap) {
-                      final myData = mySnap.data?.data() ?? {};
+                      final myData = _safeMap(mySnap.data);
                       final blockedList = _asStringList(myData['blockedUserIds']);
                       final isBlocked = hasOther && otherId != null && blockedList.contains(otherId);
 
@@ -737,12 +737,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
 
                       return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
                         stream: (hasOther && otherId != null)
-                            ? FirebaseFirestore.instance
-                            .collection('users')
-                            .doc(currentUserId)
-                            .collection('friends')
-                            .doc(otherId)
-                            .snapshots()
+                            ? _friendDocStream(me: currentUserId, other: otherId)
                             : Stream<DocumentSnapshot<Map<String, dynamic>>>.empty(),
                         builder: (sheetBuildContext2, friendSnap) {
                           final friendData = friendSnap.data?.data();
@@ -768,6 +763,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
                                 ],
                               ),
                               const SizedBox(height: 12),
+
                               if (onClearChat != null)
                                 buildItem(
                                   icon: Icons.delete_outline,
@@ -776,6 +772,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
                                   onTap: () => closeThen(() => onClearChat?.call()),
                                 ),
                               if (onClearChat != null) const SizedBox(height: 10),
+
                               if (hasOther && otherId != null)
                                 buildItem(
                                   icon: Icons.info_outline_rounded,
@@ -787,6 +784,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
                                   }),
                                 ),
                               if (hasOther) const SizedBox(height: 10),
+
                               if (hasOther && otherId != null)
                                 buildItem(
                                   icon: Icons.flag_outlined,
@@ -797,6 +795,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
                                   }),
                                 ),
                               if (hasOther) const SizedBox(height: 10),
+
                               if (hasOther && otherId != null)
                                 buildItem(
                                   icon: Icons.block,
@@ -809,6 +808,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
                                     );
                                   }),
                                 ),
+
                               if (hasOther && isFriendAccepted) ...[
                                 const SizedBox(height: 10),
                                 buildItem(
@@ -818,6 +818,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
                                   onTap: () => closeThen(() => _confirmRemoveFriend(parentContext)),
                                 ),
                               ],
+
                               if (hasOther && !isFriendAccepted && isOutgoingRequested) ...[
                                 const SizedBox(height: 10),
                                 buildItem(
@@ -827,7 +828,9 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
                                   onTap: () => closeThen(() => _confirmCancelFriendRequest(parentContext)),
                                 ),
                               ],
+
                               const SizedBox(height: 10),
+
                               buildItem(
                                 icon: Icons.person_outline_rounded,
                                 label: l10n.viewMyProfile,
@@ -837,7 +840,9 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
                                   );
                                 }),
                               ),
+
                               const SizedBox(height: 10),
+
                               buildItem(
                                 icon: Icons.logout,
                                 label: l10n.logout,
@@ -864,6 +869,17 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
     return l10n?.menuTitle ?? 'Menu';
   }
 
+  // ✅ Reuse your call logs tooltips if they exist (so you don’t add new keys)
+  String _voiceCallTooltip(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return l10n?.callLogs_tooltip_voiceCall ?? 'Voice call';
+  }
+
+  String _videoCallTooltip(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return l10n?.callLogs_tooltip_videoCall ?? 'Video call';
+  }
+
   @override
   Widget build(BuildContext context) {
     final canPop = Navigator.of(context).canPop();
@@ -873,18 +889,36 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
       required IconData icon,
       required VoidCallback? onPressed,
     }) {
+      final enabled = onPressed != null;
       return IconButton(
         tooltip: tooltip,
         onPressed: onPressed,
-        icon: Icon(icon, color: Colors.white70),
+        icon: Icon(icon, color: enabled ? Colors.white70 : Colors.white24),
         padding: EdgeInsets.zero,
         constraints: const BoxConstraints.tightFor(width: 40, height: 40),
         visualDensity: VisualDensity.compact,
       );
     }
 
-    // ✅ In selection mode we show header actions instead of menu
+    // ✅ Calls should NEVER show during selection mode (matches WhatsApp)
+    final hasOther = (otherUserId ?? '').trim().isNotEmpty;
+    final canShowCallButtons = !selectionMode && hasOther;
+
+    Future<void> safeCall(VoidCallback cb) async {
+      // small UX polish: consistent haptic + safe error toast
+      try {
+        HapticFeedback.selectionClick();
+      } catch (_) {}
+      try {
+        cb();
+      } catch (e) {
+        final l10n = AppLocalizations.of(context);
+        await _toastError(context, l10n?.generalErrorMessage ?? 'Something went wrong');
+      }
+    }
+
     final actions = <Widget>[];
+
     if (selectionMode) {
       final l10n = AppLocalizations.of(context);
 
@@ -893,7 +927,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
           compactIconButton(
             tooltip: l10n?.copy ?? 'Copy',
             icon: Icons.copy_rounded,
-            onPressed: onCopySelected,
+            onPressed: (selectedCount > 0) ? onCopySelected : null,
           ),
         );
       }
@@ -903,7 +937,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
           compactIconButton(
             tooltip: l10n?.delete ?? 'Delete',
             icon: Icons.delete_outline_rounded,
-            onPressed: onDeleteSelected,
+            onPressed: (selectedCount > 0) ? onDeleteSelected : null,
           ),
         );
       }
@@ -920,9 +954,32 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
       }
 
       actions.add(const SizedBox(width: 8));
+    } else {
+      if (canShowCallButtons) {
+        // ✅ Voice
+        actions.add(
+          compactIconButton(
+            tooltip: _voiceCallTooltip(context),
+            icon: Icons.call_rounded,
+            onPressed: (onAudioCall != null) ? () => safeCall(onAudioCall!) : null,
+          ),
+        );
+
+        // ✅ Video
+        actions.add(
+          compactIconButton(
+            tooltip: _videoCallTooltip(context),
+            icon: Icons.videocam_rounded,
+            onPressed: (onVideoCall != null) ? () => safeCall(onVideoCall!) : null,
+          ),
+        );
+
+        actions.add(const SizedBox(width: 6));
+      }
     }
 
     final sideWidth = canPop ? 88.0 : 48.0;
+    final l10n = AppLocalizations.of(context);
 
     return Container(
       decoration: const BoxDecoration(
@@ -945,11 +1002,10 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // ✅ back OR close selection (WhatsApp-like)
               if (canPop)
                 compactIconButton(
                   tooltip: selectionMode
-                      ? (AppLocalizations.of(context)?.cancel ?? 'Cancel')
+                      ? (l10n?.cancel ?? 'Cancel')
                       : MaterialLocalizations.of(context).backButtonTooltip,
                   icon: selectionMode ? Icons.close_rounded : Icons.arrow_back_ios_new_rounded,
                   onPressed: () {
@@ -962,12 +1018,11 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
                 )
               else if (selectionMode)
                 compactIconButton(
-                  tooltip: AppLocalizations.of(context)?.cancel ?? 'Cancel',
+                  tooltip: l10n?.cancel ?? 'Cancel',
                   icon: Icons.close_rounded,
                   onPressed: onClearSelection,
                 ),
 
-              // ✅ menu only when NOT in selection mode
               if (!selectionMode)
                 compactIconButton(
                   tooltip: _menuTooltip(context),
@@ -977,7 +1032,7 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
             ],
           ),
         ),
-        actions: selectionMode ? actions : [SizedBox(width: sideWidth)],
+        actions: actions,
       ),
     );
   }

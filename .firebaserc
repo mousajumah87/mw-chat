@@ -1,5 +1,8 @@
 {
   "projects": {
-    "default": "mw-chat-prod"
-  }
+    "default": "mw-app-821f8",
+    "prod": "mw-app-821f8"
+  },
+  "targets": {},
+  "etags": {}
 }

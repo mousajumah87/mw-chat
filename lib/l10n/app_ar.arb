@@ -513,6 +513,150 @@
     "typographyWebTip": "نصيحة للويب: إذا لم يتغير الخط، جرّب إعادة التشغيل السريع (R) لإعادة تحميل الخط.",
     "englishSample": "مثال إنجليزي: The quick brown fox jumps over the lazy dog.",
     "arabicSample": "مثال عربي: اللغة العربية جميلة وتبدو رائعة مع الخط المناسب.",
-    "newLabel": "جديد"
+    "newLabel": "جديد",
 
+    "callLogs_title": "سجل المكالمات",
+    "callLogs_notSignedIn": "لم يتم تسجيل الدخول",
+
+    "callLogs_filter_all": "الكل",
+    "callLogs_filter_missed": "فائتة",
+    "callLogs_filter_incoming": "واردة",
+    "callLogs_filter_outgoing": "صادرة",
+
+    "callLogs_tooltip_retry": "إعادة المحاولة",
+    "callLogs_tooltip_markMissedRead": "وضع المكالمات الفائتة كمقروءة",
+    "callLogs_tooltip_clearLogs": "مسح السجل",
+
+    "callLogs_snack_markedMissedRead": "تم وضع المكالمات الفائتة كمقروءة",
+    "callLogs_snack_markedAsRead": "تم وضعها كمقروءة",
+
+    "callLogs_snack_failedWithError": "فشل: {error}",
+    "@callLogs_snack_failedWithError": {
+    "placeholders": { "error": {} }
+    },
+
+    "callLogs_snack_clearedWithCount": "تم مسح {count} من سجل مكالمات {filter}",
+    "@callLogs_snack_clearedWithCount": {
+    "placeholders": { "count": {}, "filter": {} }
+    },
+
+    "callLogs_snack_clearFailedWithError": "فشل المسح: {error}",
+    "@callLogs_snack_clearFailedWithError": {
+    "placeholders": { "error": {} }
+    },
+
+    "callLogs_confirm_clearTitle": "مسح سجل مكالمات {filter}؟",
+    "@callLogs_confirm_clearTitle": {
+    "placeholders": { "filter": {} }
+    },
+
+    "callLogs_confirm_clearAllBody": "سيؤدي هذا إلى حذف جميع سجلات المكالمات من تاريخك.",
+    "callLogs_confirm_clearFilterBody": "سيؤدي هذا إلى حذف سجلات مكالمات {filter} فقط من تاريخك.",
+    "@callLogs_confirm_clearFilterBody": {
+    "placeholders": { "filter": {} }
+    },
+
+    "callLogs_chip_errorPermission": "{title} (لا توجد صلاحية)",
+    "@callLogs_chip_errorPermission": {
+    "description": "تظهر عند رفض صلاحيات Firestore لاستعلام سجل المكالمات",
+    "placeholders": {
+      "title": { "type": "String" }
+    }
+    },
+
+
+
+    "common_cancel": "إلغاء",
+    "common_clear": "مسح",
+    "common_retry": "إعادة المحاولة",
+
+    "callLogs_error_indexRequired": "مطلوب فهرس في Firestore",
+    "callLogs_error_failedToLoad": "تعذر تحميل سجل المكالمات",
+    "callLogs_error_createIndexHint": "أنشئ الفهرس المركّب الموضح في رابط خطأ Firestore.",
+    "callLogs_loading": "جارٍ التحميل...",
+
+    "callLogs_empty_all": "لا يوجد سجل مكالمات بعد",
+    "callLogs_empty_missed": "لا توجد مكالمات فائتة",
+    "callLogs_empty_incoming": "لا توجد مكالمات واردة",
+    "callLogs_empty_outgoing": "لا توجد مكالمات صادرة",
+
+    "callLogs_unknownUser": "غير معروف",
+
+    "callLogs_result_ended": "انتهت",
+    "callLogs_result_declined": "مرفوضة",
+    "callLogs_result_canceled": "أُلغيت",
+    "callLogs_result_missed": "فائتة",
+    "callLogs_result_busy": "مشغول",
+
+    "callLogs_direction_incoming": "واردة",
+    "callLogs_direction_outgoing": "صادرة",
+
+
+    "callLogs_chip_indexNeeded": "{title} (مطلوب فهرس)",
+    "@callLogs_chip_indexNeeded": {
+    "description": "تظهر عندما يكون مطلوب فهرس في Firestore للاستعلام عن سجل المكالمات",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+    },
+
+    "callLogs_chip_error": "{title} (خطأ)",
+    "@callLogs_chip_error": {
+    "description": "تظهر عند حدوث خطأ عام أثناء تحميل سجل المكالمات",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+    },
+
+    "callLogs_chip_missedCount": "{title} • {missedLabel} ({count})",
+    "@callLogs_chip_missedCount": {
+    "description": "شريحة تعرض عدد المكالمات الفائتة في سجل المكالمات",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      },
+      "missedLabel": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+    },
+
+    "debug_insertedCallLog": "تصحيح: تم إدراج سجل مكالمة",
+    "callLogs_tooltip_voiceCall": "مكالمة صوتية",
+    "callLogs_tooltip_videoCall": "مكالمة فيديو",
+
+    "outgoingCall_failedToStart": "فشل بدء المكالمة",
+    "outgoingCall_calling": "جارٍ الاتصال…",
+    "outgoingCall_connecting": "جارٍ الاتصال…",
+    "outgoingCall_pleaseWait": "يرجى الانتظار…",
+    "outgoingCall_notSignedIn": "لم يتم تسجيل الدخول",
+    "outgoingCall_invalidPeer": "جهة الاتصال غير صالحة",
+
+    "call_status_ringing": "جارٍ الرنين…",
+    "call_status_inCall": "في مكالمة",
+    "call_status_answering": "جارٍ الرد…",
+    "call_status_declined": "تم الرفض",
+    "call_status_missed": "مكالمة فائتة",
+    "call_status_canceled": "تم الإلغاء",
+    "call_status_busy": "المستخدم مشغول",
+    "call_status_ended": "انتهت المكالمة",
+    "call_status_canceling": "جارٍ الإلغاء…",
+
+    "call_failedWithError": "فشلت المكالمة: {error}",
+    "@call_failedWithError": {
+    "placeholders": { "error": {} }
+    },
+
+    "incomingCall_voice": "مكالمة صوتية واردة",
+    "incomingCall_video": "مكالمة فيديو واردة",
+    "incomingCall_accept": "قبول",
+    "incomingCall_decline": "رفض",
+    "incomingCall_unknownCaller": "متصل غير معروف"
 }

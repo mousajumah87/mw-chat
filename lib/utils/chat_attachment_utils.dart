@@ -3,6 +3,9 @@
 // Shared attachment normalization + UI helpers for chat.
 // Keeps MessageBubble + message list consistent across iOS/Android/Web.
 
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 
 import '../l10n/app_localizations.dart';
@@ -26,6 +29,32 @@ class NormalizedAttachment {
   bool get hasUrl => (url ?? '').trim().isNotEmpty;
 
   String get typeLower => (type ?? '').trim().toLowerCase();
+}
+
+/// Represents a media item selected by the user *before sending*.
+/// Works on:
+/// - Mobile/desktop: uses [path]
+/// - Web: uses [bytes]
+@immutable
+class PendingMediaItem {
+  final String id;
+  final String type; // "image" | "video"
+  final PlatformFile file;
+
+  const PendingMediaItem({
+    required this.id,
+    required this.type,
+    required this.file,
+  });
+
+  bool get isImage => type == 'image';
+  bool get isVideo => type == 'video';
+
+  String get name => file.name;
+  Uint8List? get bytes => file.bytes;
+  String? get path => file.path;
+
+  String get ext => ChatAttachmentUtils.extFrom(file.name);
 }
 
 class ChatAttachmentUtils {
@@ -57,8 +86,7 @@ class ChatAttachmentUtils {
     final media = data['media'];
     if ((url == null || url.isEmpty) && media is Map) {
       final m = media.cast<String, dynamic>();
-      url = (m['url'] as String?)?.trim() ??
-          (m['downloadUrl'] as String?)?.trim();
+      url = (m['url'] as String?)?.trim() ?? (m['downloadUrl'] as String?)?.trim();
       type ??= (m['type'] as String?)?.trim();
       name ??= (m['name'] as String?)?.trim();
     }
@@ -73,10 +101,8 @@ class ChatAttachmentUtils {
     type = _inferTypeIfNeeded(type, name, url);
 
     final cleanUrl = (url != null && url.trim().isNotEmpty) ? url.trim() : null;
-    final cleanName =
-    (name != null && name.trim().isNotEmpty) ? name.trim() : null;
-    final cleanType =
-    (type != null && type.trim().isNotEmpty) ? type.trim() : null;
+    final cleanName = (name != null && name.trim().isNotEmpty) ? name.trim() : null;
+    final cleanType = (type != null && type.trim().isNotEmpty) ? type.trim() : null;
 
     return NormalizedAttachment(url: cleanUrl, name: cleanName, type: cleanType);
   }
@@ -104,23 +130,17 @@ class ChatAttachmentUtils {
     if (ext == 'webm' && looksVoice) return 'audio';
 
     // ✅ Expanded for real device camera outputs
-    const imageExts = {'jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif'};
-    const videoExts = {'mp4', 'mov', 'mkv', 'avi', 'm4v', 'webm', '3gp', 'qt'};
-    const audioExts = {'mp3', 'wav', 'm4a', 'aac', 'ogg', 'opus', 'webm'};
+    const imageExtsLocal = {'jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif'};
+    const videoExtsLocal = {'mp4', 'mov', 'mkv', 'avi', 'm4v', 'webm', '3gp', 'qt'};
+    const audioExtsLocal = {'mp3', 'wav', 'm4a', 'aac', 'ogg', 'opus', 'webm'};
 
-    if (imageExts.contains(ext) ||
-        u.contains('/image/') ||
-        u.contains('image/')) {
+    if (imageExtsLocal.contains(ext) || u.contains('/image/') || u.contains('image/')) {
       return 'image';
     }
-    if (videoExts.contains(ext) ||
-        u.contains('/video/') ||
-        u.contains('video/')) {
+    if (videoExtsLocal.contains(ext) || u.contains('/video/') || u.contains('video/')) {
       return 'video';
     }
-    if (audioExts.contains(ext) ||
-        u.contains('/audio/') ||
-        u.contains('audio/')) {
+    if (audioExtsLocal.contains(ext) || u.contains('/audio/') || u.contains('audio/')) {
       return 'audio';
     }
 
@@ -129,10 +149,7 @@ class ChatAttachmentUtils {
   }
 
   static bool _isVoiceAlias(String t) {
-    return t == 'voice' ||
-        t == 'voice_note' ||
-        t == 'voicenote' ||
-        t == 'voice-message';
+    return t == 'voice' || t == 'voice_note' || t == 'voicenote' || t == 'voice-message';
   }
 
   // -------------------------
@@ -142,17 +159,27 @@ class ChatAttachmentUtils {
   static bool isImage(NormalizedAttachment att) => _isImageType(att.typeLower);
   static bool isVideo(NormalizedAttachment att) => _isVideoType(att.typeLower);
   static bool isAudio(NormalizedAttachment att) => _isAudioType(att.typeLower);
+  static bool isFile(NormalizedAttachment att) {
+    final t = att.typeLower;
+    if (t.isEmpty) return false;
+    return t == 'file' || (!_isImageType(t) && !_isVideoType(t) && !_isAudioType(t));
+  }
 
   static bool _isImageType(String t) => t == 'image' || t.startsWith('image/');
   static bool _isVideoType(String t) => t == 'video' || t.startsWith('video/');
-  static bool _isAudioType(String t) =>
-      t == 'audio' || t.startsWith('audio/') || _isVoiceAlias(t);
+  static bool _isAudioType(String t) => t == 'audio' || t.startsWith('audio/') || _isVoiceAlias(t);
 
   static String extFrom(String s) {
     final clean = s.split('?').first.split('#').first;
     final dot = clean.lastIndexOf('.');
     if (dot < 0 || dot == clean.length - 1) return '';
     return clean.substring(dot + 1).toLowerCase();
+  }
+
+  static String extFromPlatformFile(PlatformFile f) {
+    final e1 = (f.extension ?? '').trim().toLowerCase();
+    if (e1.isNotEmpty) return e1;
+    return extFrom(f.name);
   }
 
   // -------------------------
@@ -232,4 +259,88 @@ class ChatAttachmentUtils {
     if (isAudio(att)) return l10n.voiceMessageLabel;
     return l10n.genericFileLabel;
   }
+
+  // ---------------------------------------------------------------------------
+  // Multi-pick helpers (for "preview before send" flow)
+  // ---------------------------------------------------------------------------
+
+  static const int defaultMaxSelection = 10;
+
+  /// Keep these sets in ONE place so picker + inference + UI stay consistent.
+  static const Set<String> imageExts = {
+    'jpg',
+    'jpeg',
+    'png',
+    'gif',
+    'webp',
+    'heic',
+    'heif',
+  };
+
+  static const Set<String> videoExts = {
+    'mp4',
+    'mov',
+    'mkv',
+    'avi',
+    'm4v',
+    'webm',
+    '3gp',
+    'qt',
+  };
+
+  /// Decide "image" | "video" from PlatformFile.
+  /// Returns null if not supported.
+  static String? mediaTypeFromPlatformFile(PlatformFile f) {
+    final e = extFromPlatformFile(f);
+    if (imageExts.contains(e)) return 'image';
+    if (videoExts.contains(e)) return 'video';
+    return null;
+  }
+
+  /// Picks multiple images/videos (up to [maxSelection]).
+  ///
+  /// - Web: `withData: true` so preview + upload can use bytes.
+  /// - Mobile/Desktop: `withData: false` to avoid huge memory usage; use paths.
+  static Future<List<PendingMediaItem>> pickMultiMedia({
+    int maxSelection = defaultMaxSelection,
+  }) async {
+    final res = await FilePicker.platform.pickFiles(
+      allowMultiple: true,
+      withData: kIsWeb, // ✅ web needs bytes
+      type: FileType.custom,
+      allowedExtensions: [
+        ...imageExts,
+        ...videoExts,
+      ].toList(),
+    );
+
+    if (res == null || res.files.isEmpty) return const [];
+
+    final out = <PendingMediaItem>[];
+    final nowBase = DateTime.now().microsecondsSinceEpoch;
+
+    for (final f in res.files) {
+      if (out.length >= maxSelection) break;
+
+      final t = mediaTypeFromPlatformFile(f);
+      if (t == null) continue;
+
+      // ✅ Web must have bytes
+      if (kIsWeb && (f.bytes == null || f.bytes!.isEmpty)) continue;
+
+      // ✅ Mobile/Desktop should have a readable path (unless you intentionally support bytes there too)
+      if (!kIsWeb && ((f.path ?? '').trim().isEmpty)) continue;
+
+      out.add(
+        PendingMediaItem(
+          id: '${nowBase}_${out.length}',
+          type: t,
+          file: f,
+        ),
+      );
+    }
+
+    return out;
+  }
+
 }

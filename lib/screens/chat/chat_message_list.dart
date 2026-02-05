@@ -79,6 +79,10 @@ class ChatMessageListState extends State<ChatMessageList> {
   final Map<String, DocumentSnapshot<Map<String, dynamic>>> _docMap = {};
   final Set<String> _pendingLocalRemovals = <String>{};
 
+  bool _suppressAnchorRestore = false;
+  bool _suppressPositionsOnce = false;
+  bool _forceAtLatest = false;
+
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _liveSub;
 
   DocumentSnapshot<Map<String, dynamic>>? _oldestDoc;
@@ -94,58 +98,34 @@ class ChatMessageListState extends State<ChatMessageList> {
   bool _jumping = false;
   VoidCallback? _positionsCb;
 
-  /// ✅ "at latest" is now based on whether newest message is VISIBLE at all.
+  /// ✅ "at latest" based on whether newest message is VISIBLE at all.
   bool _atLatest = true;
 
   bool _showNewIndicator = false;
   int _newCount = 0;
 
-  // ✅ DEBUG: trace badge lifecycle
   int _dbgSeq = 0;
 
-  // ✅ Prevent one-frame "atLatest" glitches from instantly hiding New badge
   DateTime? _newBadgeShownAt;
   static const Duration _newBadgeMinVisible = Duration(milliseconds: 350);
 
-  // ✅ track newest message id reliably
   String? _latestMessageId;
 
-  // ✅ debounced auto-scroll (avoid double jump)
   bool _pendingAutoScroll = false;
   bool _hasPositions = false;
 
-  // ✅ IMPORTANT: keep the last list used to build UI (so positions indices match)
   List<DocumentSnapshot<Map<String, dynamic>>> _lastBuiltDocs = const [];
 
-  // ✅ NEW: when user chooses "Reply" on an older message, we want to jump to latest
   bool _pendingReplyJumpToLatest = false;
 
+  // ✅ NEW: prevent repeated “auto-scroll” jitter when already pinned
+  String? _lastAutoScrolledLatestId;
+
   void _log(String msg) {
-    // keep it very cheap + only in debug
     assert(() {
       debugPrint('[ChatMessageList][${++_dbgSeq}] $msg');
       return true;
     }());
-  }
-
-  String _posSummary() {
-    final positions = _positionsListener.itemPositions.value;
-    if (positions.isEmpty) return 'pos=EMPTY';
-
-    // show a compact view: min/max visible index + whether idx0 is visible/pinned-ish
-    int minI = 1 << 30;
-    int maxI = -1;
-    ItemPosition? p0;
-    for (final p in positions) {
-      minI = math.min(minI, p.index);
-      maxI = math.max(maxI, p.index);
-      if (p.index == 0) p0 = p;
-    }
-
-    final z = p0 == null
-        ? 'idx0=NA'
-        : 'idx0=[L=${p0.itemLeadingEdge.toStringAsFixed(2)},T=${p0.itemTrailingEdge.toStringAsFixed(2)}]';
-    return 'pos=min=$minI max=$maxI $z';
   }
 
   @override
@@ -166,8 +146,8 @@ class ChatMessageListState extends State<ChatMessageList> {
     super.didUpdateWidget(oldWidget);
 
     final roomChanged = oldWidget.roomId != widget.roomId;
-    final userChanged = oldWidget.currentUserId != widget.currentUserId ||
-        oldWidget.otherUserId != widget.otherUserId;
+    final userChanged =
+        oldWidget.currentUserId != widget.currentUserId || oldWidget.otherUserId != widget.otherUserId;
     final blockedChanged = oldWidget.isBlocked != widget.isBlocked;
 
     if (!roomChanged && !userChanged && !blockedChanged) return;
@@ -222,9 +202,15 @@ class ChatMessageListState extends State<ChatMessageList> {
     _latestMessageId = null;
 
     _pendingAutoScroll = false;
+    _hasPositions = false;
     _lastBuiltDocs = const [];
 
     _pendingReplyJumpToLatest = false;
+
+    _lastAutoScrolledLatestId = null;
+    _suppressAnchorRestore = false;
+    _suppressPositionsOnce = false;
+    _forceAtLatest = false;
 
     if (mounted) setState(() {});
   }
@@ -277,10 +263,7 @@ class ChatMessageListState extends State<ChatMessageList> {
     return list;
   }
 
-  int _indexOfMessageId(
-      List<DocumentSnapshot<Map<String, dynamic>>> docs,
-      String messageId,
-      ) {
+  int _indexOfMessageId(List<DocumentSnapshot<Map<String, dynamic>>> docs, String messageId) {
     for (int i = 0; i < docs.length; i++) {
       if (docs[i].id == messageId) return i;
     }
@@ -291,7 +274,7 @@ class ChatMessageListState extends State<ChatMessageList> {
 
   bool _isLatestVisibleFromPositions() {
     final positions = _positionsListener.itemPositions.value;
-    if (positions.isEmpty) return false; // ✅ unknown, don’t assume atLatest
+    if (positions.isEmpty) return false;
 
     for (final p in positions) {
       if (p.index == 0) {
@@ -309,6 +292,8 @@ class ChatMessageListState extends State<ChatMessageList> {
       if (p.index == 0) {
         final visible = p.itemTrailingEdge > 0 && p.itemLeadingEdge < 1;
         if (!visible) return false;
+
+        // ✅ pinned to BOTTOM (important for reverse list)
         return p.itemTrailingEdge >= 0.98;
       }
     }
@@ -317,7 +302,7 @@ class ChatMessageListState extends State<ChatMessageList> {
 
   _ScrollAnchor? _captureAnchorIfNeeded() {
     if (!_itemScrollController.isAttached) return null;
-    if (_atLatest) return null;
+    if (_atLatest || _forceAtLatest) return null;
 
     final positions = _positionsListener.itemPositions.value;
     if (positions.isEmpty) return null;
@@ -344,9 +329,11 @@ class ChatMessageListState extends State<ChatMessageList> {
   void _restoreAnchorNextFrame(_ScrollAnchor? anchor) {
     if (anchor == null) return;
     if (!mounted) return;
+    if (_suppressAnchorRestore) return;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      if (_suppressAnchorRestore) return;
       if (!_itemScrollController.isAttached) return;
 
       final docs = _lastBuiltDocs;
@@ -362,6 +349,13 @@ class ChatMessageListState extends State<ChatMessageList> {
   void _scheduleAutoScrollToLatest() {
     if (_pendingAutoScroll) return;
     if (!_hasPositions) return;
+    if (!_itemScrollController.isAttached) return;
+
+    final latestId = _latestMessageId;
+    if (latestId == null) return;
+    if (_lastAutoScrolledLatestId == latestId) return;
+    if (!_isLatestPinnedFromPositions()) return;
+
     _pendingAutoScroll = true;
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -369,20 +363,17 @@ class ChatMessageListState extends State<ChatMessageList> {
       if (!mounted) return;
       if (!_itemScrollController.isAttached) return;
 
-      // ✅ Only auto-scroll when truly pinned (prevents jumping while typing)
       if (!_isLatestPinnedFromPositions()) return;
 
-      // ✅ no “landing on previous newest”
+      _lastAutoScrolledLatestId = latestId;
+
       await _scrollToLatestExact(animated: false);
     });
   }
 
-  // ✅ NEW: used when user chooses Reply while reading older messages.
-  // Always jump to latest so the input bar / reply composer is visible at the bottom.
   void _requestJumpToLatestForReply() {
     if (!mounted) return;
 
-    // Clear "New" badge immediately (reply action implies user is going to the bottom)
     if (_showNewIndicator || _newCount != 0) {
       setState(() {
         _showNewIndicator = false;
@@ -391,7 +382,6 @@ class ChatMessageListState extends State<ChatMessageList> {
       });
     }
 
-    // If controller/positions not ready yet, defer until we get positions.
     if (!_itemScrollController.isAttached || !_hasPositions) {
       _pendingReplyJumpToLatest = true;
       return;
@@ -403,10 +393,10 @@ class ChatMessageListState extends State<ChatMessageList> {
         _pendingReplyJumpToLatest = true;
         return;
       }
+
       await _scrollToLatestExact(animated: false);
 
       if (!mounted) return;
-      // Best-effort update state so indicator won't pop again right away.
       if (_atLatest == false) {
         setState(() => _atLatest = true);
       }
@@ -414,17 +404,21 @@ class ChatMessageListState extends State<ChatMessageList> {
   }
 
   // ================= POSITIONS LISTENER =================
+
   void _onPositionsChanged() {
     if (!mounted) return;
 
+    if (_suppressPositionsOnce) {
+      _suppressPositionsOnce = false;
+      return;
+    }
+
     final positions = _positionsListener.itemPositions.value;
 
-    // ✅ mark positions ready once we get any layout positions
     if (positions.isNotEmpty && !_hasPositions) {
       _hasPositions = true;
     }
 
-    // ✅ If we were waiting to jump to bottom for Reply, do it as soon as we can.
     if (_pendingReplyJumpToLatest && _hasPositions && _itemScrollController.isAttached) {
       _pendingReplyJumpToLatest = false;
       WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -436,18 +430,18 @@ class ChatMessageListState extends State<ChatMessageList> {
       });
     }
 
-    // ✅ if positions are empty, we can't reliably decide latest visibility
-    // so keep the last known _atLatest (do NOT flip it here)
-    final bool newAtLatest = positions.isEmpty ? _atLatest : _isLatestVisibleFromPositions();
+    final bool newAtLatest = _forceAtLatest
+        ? true
+        : (positions.isEmpty ? _atLatest : _isLatestVisibleFromPositions());
 
     if (newAtLatest != _atLatest) {
       setState(() => _atLatest = newAtLatest);
     }
 
-    // ✅ if newest visible, clear badge (respect grace window)
     if (newAtLatest && _showNewIndicator) {
       final shownAt = _newBadgeShownAt;
-      final tooSoon = shownAt != null && DateTime.now().difference(shownAt) < _newBadgeMinVisible;
+      final tooSoon =
+          shownAt != null && DateTime.now().difference(shownAt) < _newBadgeMinVisible;
 
       if (!tooSoon) {
         setState(() {
@@ -458,12 +452,8 @@ class ChatMessageListState extends State<ChatMessageList> {
       }
     }
 
-    // ================= load-more pagination =================
-
     if (widget.isBlocked) return;
     if (_isLoadingMore || !_hasMore) return;
-
-    // ✅ if positions empty, can't detect bottom-near threshold
     if (positions.isEmpty) return;
 
     int maxVisibleIndex = -1;
@@ -525,6 +515,56 @@ class ChatMessageListState extends State<ChatMessageList> {
     }
   }
 
+  Map<String, dynamic>? _extractCallInfo(Map<String, dynamic> data) {
+    // Most common: nested map
+    final call = data['call'];
+    if (call is Map) {
+      return call.cast<String, dynamic>();
+    }
+
+    // Some apps store call fields flat
+    bool hasAnyCallSignal = false;
+    final out = <String, dynamic>{};
+
+    void pick(String key) {
+      if (data.containsKey(key) && data[key] != null) {
+        out[key] = data[key];
+        hasAnyCallSignal = true;
+      }
+    }
+
+    // Try a wide set of keys (safe even if missing)
+    pick('messageType');     // e.g. "call"
+    pick('type');            // e.g. "call"
+    pick('eventType');       // e.g. "call"
+    pick('callType');        // "audio" / "video"
+    pick('callStatus');      // "missed" / "ended" / "declined" / "canceled"
+    pick('direction');       // "incoming" / "outgoing"
+    pick('callId');
+    pick('startedAt');
+    pick('endedAt');
+    pick('durationMs');
+    pick('durationSec');
+    pick('callerId');
+    pick('calleeId');
+
+    if (!hasAnyCallSignal) return null;
+
+    // Strong check: consider it a call only if one of these looks like a call marker
+    final mt = (out['messageType'] ?? data['messageType'] ?? '').toString().toLowerCase().trim();
+    final t  = (out['type'] ?? data['type'] ?? '').toString().toLowerCase().trim();
+    final et = (out['eventType'] ?? data['eventType'] ?? '').toString().toLowerCase().trim();
+
+    final looksCall =
+        mt == 'call' || t == 'call' || et == 'call' ||
+            out.containsKey('callStatus') ||
+            out.containsKey('callType') ||
+            out.containsKey('callId');
+
+    return looksCall ? out : null;
+  }
+
+
   // ================= LIVE LISTENER =================
 
   void _startLiveListener() {
@@ -544,9 +584,7 @@ class ChatMessageListState extends State<ChatMessageList> {
         if (myGen != _gen) return;
         if (widget.isBlocked) return;
 
-        // ✅ use the correct "visible" logic for indicator decisions
-        final bool latestVisibleNow = _hasPositions ? _atLatest : false;
-
+        final bool latestVisibleNow = _forceAtLatest ? true : (_hasPositions ? _atLatest : false);
         final anchor = latestVisibleNow ? null : _captureAnchorIfNeeded();
 
         if (snap.docs.isEmpty) {
@@ -560,6 +598,8 @@ class ChatMessageListState extends State<ChatMessageList> {
             _showNewIndicator = false;
             _newCount = 0;
             _latestMessageId = null;
+
+            _lastAutoScrolledLatestId = null;
           });
           return;
         }
@@ -593,10 +633,8 @@ class ChatMessageListState extends State<ChatMessageList> {
         final visibleDocsNow = _computeVisibleDocs();
         final newest = visibleDocsNow.isNotEmpty ? visibleDocsNow.first : null;
 
-        // ✅ always track the real newest id
         _latestMessageId = newest?.id;
 
-        // detect NEW message from changes list (added) where sender != me
         bool addedFromOther = false;
         for (final c in snap.docChanges) {
           if (c.type == DocumentChangeType.added) {
@@ -611,8 +649,7 @@ class ChatMessageListState extends State<ChatMessageList> {
 
         if (latestVisibleNow) {
           final shownAt = _newBadgeShownAt;
-          final tooSoon = shownAt != null &&
-              DateTime.now().difference(shownAt) < _newBadgeMinVisible;
+          final tooSoon = shownAt != null && DateTime.now().difference(shownAt) < _newBadgeMinVisible;
 
           if ((_showNewIndicator || _newCount != 0) && !tooSoon) {
             setState(() {
@@ -621,8 +658,6 @@ class ChatMessageListState extends State<ChatMessageList> {
               _newBadgeShownAt = null;
             });
           } else {
-            if (tooSoon && _showNewIndicator) {
-            }
             setState(() {});
           }
 
@@ -632,13 +667,11 @@ class ChatMessageListState extends State<ChatMessageList> {
           return;
         }
 
-        // not at latest => show indicator only if new came from other
         setState(() {
           if (addedFromOther) {
             _showNewIndicator = true;
             _newCount = (_newCount + 1).clamp(1, 9999);
-            _newBadgeShownAt = DateTime.now(); // ✅
-          } else {
+            _newBadgeShownAt = DateTime.now();
           }
         });
 
@@ -651,7 +684,8 @@ class ChatMessageListState extends State<ChatMessageList> {
   }
 
   // ================= ✅ EXACT SCROLL TO NEWEST =================
-
+  //
+  // IMPORTANT: reverse list => newest is index 0 and must be aligned to BOTTOM => alignment = 1.0
   Future<void> _scrollToLatestExact({required bool animated}) async {
     if (!mounted) return;
     if (!_itemScrollController.isAttached) return;
@@ -665,35 +699,93 @@ class ChatMessageListState extends State<ChatMessageList> {
       if (idx >= 0) targetIndex = idx;
     }
 
-    try {
-      _itemScrollController.jumpTo(index: targetIndex, alignment: 0.0);
-    } catch (_) {}
+    const double latestAlignment = 1.0;
 
-    if (!animated) return;
+    if (!animated) {
+      try {
+        _itemScrollController.jumpTo(index: targetIndex, alignment: latestAlignment);
+      } catch (_) {}
+      return;
+    }
 
     try {
       await _itemScrollController.scrollTo(
         index: targetIndex,
-        duration: const Duration(milliseconds: 120),
+        duration: const Duration(milliseconds: 140),
         curve: Curves.easeOutCubic,
-        alignment: 0.0,
+        alignment: latestAlignment,
       );
     } catch (_) {}
   }
 
-  // Public helper
   Future<void> scrollToLatest({bool animated = true}) async {
     await _scrollToLatestExact(animated: animated);
   }
 
   void _onTapNewIndicator() async {
     if (!mounted) return;
+
     setState(() {
       _showNewIndicator = false;
       _newCount = 0;
+      _newBadgeShownAt = null;
     });
 
-    await _scrollToLatestExact(animated: false);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      await Future<void>.delayed(const Duration(milliseconds: 16));
+      await _goToLatestStrong(animated: true);
+    });
+  }
+
+  Future<void> _goToLatestStrong({required bool animated}) async {
+    if (!mounted) return;
+
+    if (_showNewIndicator || _newCount != 0 || _atLatest == false) {
+      setState(() {
+        _showNewIndicator = false;
+        _newCount = 0;
+        _newBadgeShownAt = null;
+        _atLatest = true;
+        _forceAtLatest = true;
+      });
+    } else {
+      _forceAtLatest = true;
+    }
+
+    if (!_itemScrollController.isAttached || !_hasPositions) {
+      _pendingReplyJumpToLatest = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _forceAtLatest = false;
+      });
+      return;
+    }
+
+    _suppressAnchorRestore = true;
+    _suppressPositionsOnce = true;
+
+    try {
+      await Future<void>.delayed(const Duration(milliseconds: 16));
+      if (!mounted || !_itemScrollController.isAttached) return;
+
+      await _scrollToLatestExact(animated: false);
+
+      if (!mounted || !_itemScrollController.isAttached) return;
+
+      if (animated) {
+        await Future<void>.delayed(const Duration(milliseconds: 16));
+        if (!mounted || !_itemScrollController.isAttached) return;
+        await _scrollToLatestExact(animated: true);
+      }
+    } finally {
+      _suppressAnchorRestore = false;
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _forceAtLatest = false;
+      });
+    }
   }
 
   // ================= JUMP TO MESSAGE (reply preview) =================
@@ -825,7 +917,7 @@ class ChatMessageListState extends State<ChatMessageList> {
 
   // ================= UI =================
 
-  Widget _buildOverlayMessage(String text) {
+  Widget _buildOverlayMessage(String text, {required double extraBottom}) {
     final style = Theme.of(context).textTheme.bodyMedium?.copyWith(
       color: kTextPrimary,
       fontSize: 16,
@@ -845,7 +937,7 @@ class ChatMessageListState extends State<ChatMessageList> {
       },
       child: ListView(
         reverse: true,
-        padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + widget.bottomInset),
+        padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + extraBottom),
         children: [
           const SizedBox(height: 80),
           Center(child: Text(text, textAlign: TextAlign.center, style: style)),
@@ -854,51 +946,50 @@ class ChatMessageListState extends State<ChatMessageList> {
     );
   }
 
+  // ✅ FIX: no SafeArea here because extraBottom already includes safeBottom + keyboardInset.
   Widget _buildNewIndicator(AppLocalizations l10n, double extraBottom) {
     final label = (l10n.newLabel ?? 'New').trim().isEmpty ? 'New' : l10n.newLabel!;
     final text = _newCount > 1 ? '$label ($_newCount)' : label;
 
-    return SafeArea(
-      child: Padding(
-        padding: EdgeInsets.only(
-          right: 14,
-          bottom: 14 + extraBottom,
-        ),
-        child: Align(
-          alignment: AlignmentDirectional.bottomEnd,
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: _onTapNewIndicator,
-              borderRadius: BorderRadius.circular(999),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: kPrimaryGold.withOpacity(0.95),
-                  borderRadius: BorderRadius.circular(999),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.22),
-                      blurRadius: 14,
-                      offset: const Offset(0, 8),
+    return Padding(
+      padding: EdgeInsets.only(
+        right: 14,
+        bottom: 14 + extraBottom,
+      ),
+      child: Align(
+        alignment: AlignmentDirectional.bottomEnd,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: _onTapNewIndicator,
+            borderRadius: BorderRadius.circular(999),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: kPrimaryGold.withOpacity(0.95),
+                borderRadius: BorderRadius.circular(999),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.22),
+                    blurRadius: 14,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.arrow_downward_rounded, size: 18, color: Colors.black),
+                  const SizedBox(width: 8),
+                  Text(
+                    text,
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 14,
                     ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.arrow_downward_rounded, size: 18, color: Colors.black),
-                    const SizedBox(width: 8),
-                    Text(
-                      text,
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -911,17 +1002,34 @@ class ChatMessageListState extends State<ChatMessageList> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
 
+    // final keyboardInset = MediaQuery.of(context).viewInsets.bottom;
+    // final safeBottom = MediaQuery.of(context).padding.bottom;
+    // const composerFallback = 74.0;
+    //
+    // final bottomReserve = math.max(widget.bottomInset, composerFallback);
+    // final extraBottom = bottomReserve + safeBottom + keyboardInset + 8;
+
+
+    final safeBottom = MediaQuery.of(context).padding.bottom;
+    const composerFallback = 74.0;
+
+    final bottomReserve = math.max(widget.bottomInset, composerFallback);
+    // IMPORTANT:
+    // ChatScreen already lifts the composer overlay above the keyboard.
+    // If we also pad the list by viewInsets.bottom, we end up double-counting
+    // the keyboard height (big empty gap + "messages jump" when keyboard opens).
+    // So here we only reserve space for:
+    // - the overlay/composer height (widget.bottomInset)
+    // - safe area bottom padding
+    final extraBottom = bottomReserve + safeBottom + 8;
+
+
     if (widget.isBlocked) {
       final msg = l10n.userBlockedInfo.toString().trim().isEmpty
           ? 'You can’t view messages in this chat.'
           : l10n.userBlockedInfo;
-      return _buildOverlayMessage(msg);
+      return _buildOverlayMessage(msg, extraBottom: extraBottom);
     }
-
-    final safeBottom = MediaQuery.of(context).padding.bottom;
-    const composerFallback = 74.0;
-    final bottomReserve = math.max(widget.bottomInset, composerFallback);
-    final extraBottom = bottomReserve + safeBottom + 8;
 
     final visibleDocs = _computeVisibleDocs();
     _lastBuiltDocs = visibleDocs;
@@ -995,13 +1103,10 @@ class ChatMessageListState extends State<ChatMessageList> {
           final att = ChatAttachmentUtils.normalizeAttachment(data);
           final displayText = ChatAttachmentUtils.displayTextForMessage(data['text'], att);
 
-          final replyTo = (data['replyTo'] is Map)
-              ? (data['replyTo'] as Map).cast<String, dynamic>()
-              : null;
+          final replyTo = (data['replyTo'] is Map) ? (data['replyTo'] as Map).cast<String, dynamic>() : null;
 
-          final reactions = (data['reactions'] is Map)
-              ? (data['reactions'] as Map).cast<String, dynamic>()
-              : null;
+          final reactions =
+          (data['reactions'] is Map) ? (data['reactions'] as Map).cast<String, dynamic>() : null;
 
           final bool flash = _flashMessageId == doc.id;
           final bool isSelected = _isSelected(doc.id);
@@ -1025,6 +1130,65 @@ class ChatMessageListState extends State<ChatMessageList> {
             widget.onMessageTap?.call();
           }
 
+          final bool isDeleted =
+              (data['isDeleted'] == true) ||
+                  (data['deletedAt'] != null) ||
+                  (data['deletedForEveryone'] == true);
+
+          // ✅ Thumbnails: support multiple firestore keys (new + legacy)
+          String _pickThumb(dynamic v) {
+            final s = (v ?? '').toString().trim();
+            return s.isEmpty ? '' : s;
+          }
+
+          final String? thumbUrl = (() {
+            // Preferred / newest
+            final s = _pickThumb(data['thumbUrl']);
+            if (s.isNotEmpty) return s;
+
+            // Common legacy variants
+            final s2 = _pickThumb(data['thumb']);
+            if (s2.isNotEmpty) return s2;
+
+            // Some payloads store thumb under attachment object (if you ever did that)
+            final a = (data['attachment'] is Map) ? (data['attachment'] as Map) : null;
+            if (a != null) {
+              final sa = _pickThumb(a['thumbUrl']);
+              if (sa.isNotEmpty) return sa;
+            }
+
+            return null;
+          })();
+
+          final String? thumbnailUrl = (() {
+            final s = _pickThumb(data['thumbnailUrl']);
+            if (s.isNotEmpty) return s;
+
+            final a = (data['attachment'] is Map) ? (data['attachment'] as Map) : null;
+            if (a != null) {
+              final sa = _pickThumb(a['thumbnailUrl']);
+              if (sa.isNotEmpty) return sa;
+            }
+
+            return null;
+          })();
+
+          final String? videoThumbUrl = (() {
+            final s = _pickThumb(data['videoThumbUrl']);
+            if (s.isNotEmpty) return s;
+
+            final a = (data['attachment'] is Map) ? (data['attachment'] as Map) : null;
+            if (a != null) {
+              final sa = _pickThumb(a['videoThumbUrl']);
+              if (sa.isNotEmpty) return sa;
+            }
+
+            return null;
+          })();
+
+
+          final callInfo = _extractCallInfo(data);
+
           final bubble = ConstrainedBox(
             constraints: BoxConstraints(maxWidth: maxWidth),
             child: AnimatedContainer(
@@ -1043,15 +1207,25 @@ class ChatMessageListState extends State<ChatMessageList> {
                     : const [],
               ),
               child: MessageBubble(
+                key: ValueKey('msg_${doc.id}'),
+                messageId: doc.id,
                 text: displayText,
                 timeLabel: _formatDocTime(doc),
                 isMe: isMe,
                 isSeen: widget.otherUserId != null &&
                     widget.otherUserId!.isNotEmpty &&
                     seenBy.contains(widget.otherUserId),
+
                 fileUrl: att.url,
                 fileName: ChatAttachmentUtils.uiFileNameForAttachment(att),
                 fileType: att.type,
+                // ✅ pass all possible thumb keys (MessageBubble will resolve safely)
+                thumbUrl: thumbUrl,
+                thumbnailUrl: thumbnailUrl,
+                videoThumbUrl: videoThumbUrl,
+
+                callInfo: callInfo,
+
                 replyTo: replyTo,
                 currentUserId: widget.currentUserId,
                 reactions: reactions,
@@ -1074,16 +1248,15 @@ class ChatMessageListState extends State<ChatMessageList> {
                     fallbackType: fallbackType,
                   );
 
-                  // 1) set reply in ChatScreen
                   widget.onReply!(reply);
 
-                  // 2) IMPORTANT: jump to latest so composer/reply bar is visible at bottom
                   _requestJumpToLatestForReply();
                 },
                 onReactionTapAsync: widget.onReactionTapAsync == null
                     ? null
                     : (emoji) => widget.onReactionTapAsync!(doc.id, emoji),
                 onReplyPreviewTap: (targetId) => _jumpToMessage(targetId),
+                isDeleted: isDeleted,
               ),
             ),
           );
@@ -1110,8 +1283,6 @@ class ChatMessageListState extends State<ChatMessageList> {
       child: Stack(
         children: [
           Positioned.fill(child: body),
-
-          // ✅ Show "New" only when newest is NOT visible
           if (_showNewIndicator && !_atLatest) _buildNewIndicator(l10n, extraBottom),
         ],
       ),

@@ -43,6 +43,8 @@ class PresenceService with WidgetsBindingObserver {
       _offlineDebounce?.cancel();
       _offlineDebounce = null;
 
+      if (_disposed) return;
+
       if (user != null) {
         // Ensure privacy defaults exist (only set missing fields).
         await _ensureUserPrivacyDefaults(user.uid);
@@ -62,8 +64,7 @@ class PresenceService with WidgetsBindingObserver {
     if (_disposed) return;
 
     try {
-      final doc =
-      await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
       final data = doc.data() ?? <String, dynamic>{};
 
       final Map<String, dynamic> patch = {};
@@ -97,12 +98,12 @@ class PresenceService with WidgetsBindingObserver {
         final user = _currentUser ?? FirebaseAuth.instance.currentUser;
         if (_disposed || user == null) return;
 
-        // ✅ IMPORTANT:
-        // Do NOT update lastSeen while online. That breaks "last seen".
-        // Use lastActive (or similar) to show activity if you need it.
+        // Heartbeat: keep lastActive fresh for TTL-based UI,
+        // and also update updatedAt for screens that fallback to it.
         await FirebaseFirestore.instance.collection('users').doc(user.uid).set(
           {
             'lastActive': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
           },
           SetOptions(merge: true),
         );
@@ -130,8 +131,7 @@ class PresenceService with WidgetsBindingObserver {
     if (_disposed) return false;
 
     try {
-      final doc =
-      await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
       final data = doc.data() ?? <String, dynamic>{};
       return (data['showOnlineStatus'] as bool?) ?? true;
     } catch (_) {
@@ -156,8 +156,11 @@ class PresenceService with WidgetsBindingObserver {
         'isOnline': isOnline,
         'online': isOnline,
 
-        // Optional: keep a dedicated activity ping
+        // activity timestamp (for TTL online calc)
         'lastActive': FieldValue.serverTimestamp(),
+
+        // general fallback timestamp (some screens use updatedAt)
+        'updatedAt': FieldValue.serverTimestamp(),
       };
 
       // Only update lastSeen when OFFLINE (or forced)
@@ -218,30 +221,36 @@ class PresenceService with WidgetsBindingObserver {
 
       case AppLifecycleState.inactive:
       case AppLifecycleState.paused:
-      case AppLifecycleState.hidden:
       case AppLifecycleState.detached:
-      // ✅ Debounce offline so iOS transient inactive doesn't flip status
+      // Debounce offline so iOS transient inactive doesn't flip status
         _offlineDebounce?.cancel();
         _offlineDebounce = Timer(_offlineDebounceDelay, () {
           markOffline();
         });
+        break;
+
+    // Some Flutter versions include "hidden" (web/desktop). Ignore if unavailable.
+      default:
         break;
     }
   }
 
   Future<void> dispose() async {
     if (_disposed) return;
-    _disposed = true;
 
+    // ✅ IMPORTANT: write offline BEFORE flipping _disposed
     _offlineDebounce?.cancel();
     _offlineDebounce = null;
 
-    WidgetsBinding.instance.removeObserver(this);
     _stopHeartbeat();
 
     try {
       await _setPresence(isOnline: false, updateLastSeen: true);
     } catch (_) {}
+
+    _disposed = true;
+
+    WidgetsBinding.instance.removeObserver(this);
 
     await _authSub?.cancel();
     _authSub = null;

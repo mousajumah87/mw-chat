@@ -40,6 +40,7 @@ class MwFriendsTab extends StatefulWidget {
 class _MwFriendsTabState extends State<MwFriendsTab>
     with AutomaticKeepAliveClientMixin {
   late final String _currentUid;
+  static const int _onlineTtlSeconds = 300;
 
   Map<String, int> _unreadCache = {};
   Set<String> _blockedUserIds = {};
@@ -88,8 +89,10 @@ class _MwFriendsTabState extends State<MwFriendsTab>
   bool get _isFriendsOnly => widget.mode == MwFriendsTabMode.friendsOnly;
   bool get _isMwUsersOnly => widget.mode == MwFriendsTabMode.mwUsersOnly;
 
+  static const String _presenceEveryone = 'everyone';
   static const String _presenceFriends = 'friends';
   static const String _presenceNobody = 'nobody';
+
 
   static const String _privacyEveryone = 'everyone';
   static const String _privacyFriends = 'friends';
@@ -234,6 +237,32 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     }
   }
 
+  Timestamp? _readTs(Map<String, dynamic> m, String k) {
+    final v = m[k];
+    return v is Timestamp ? v : null;
+  }
+
+  /// ✅ Robust online decision:
+  /// - If isOnline=true but lastActive missing → still show online (new field rollout / rules)
+  /// - TTL uses lastActive if available
+  bool _computeIsOnlineForDisplay({
+    required bool canSeePresence,
+    required bool rawIsOnline,
+    required Timestamp? lastActive,
+    required int ttlSeconds,
+  }) {
+    if (!canSeePresence) return false;
+    if (!rawIsOnline) return false;
+
+    // ✅ IMPORTANT: allow online display even if lastActive isn't present yet
+    // (e.g., legacy accounts, first run after update, or rules temporarily blocking lastActive)
+    if (lastActive == null) return true;
+
+    final ageSec = DateTime.now().difference(lastActive.toDate()).inSeconds;
+    return ageSec <= ttlSeconds;
+  }
+
+
   bool _listEquals(List<String> a, List<String> b) {
     if (identical(a, b)) return true;
     if (a.length != b.length) return false;
@@ -277,7 +306,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     }
   }
 
-  void _setFriendPresenceCaches({
+  bool _setFriendPresenceCaches({
     required String uid,
     required bool isActive,
     required bool isOnlineForDisplay,
@@ -293,6 +322,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
       _markFriendsNeedRebucket();
       _markFriendsNeedResort();
     }
+    return changed;
   }
 
   int _compareFriendIdsForFriendsSection(String a, String b) {
@@ -310,8 +340,8 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     if (unreadA != unreadB) return unreadB.compareTo(unreadA);
 
     // 2) Active next
-    final bool aActive = _friendActiveCache[a] ?? true;
-    final bool bActive = _friendActiveCache[b] ?? true;
+    final bool aActive = _friendActiveCache[a] ?? false;
+    final bool bActive = _friendActiveCache[b] ?? false;
     if (aActive != bActive) return aActive ? -1 : 1;
 
     // 3) Online next
@@ -334,14 +364,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
 
     _scrollController.addListener(_onScroll);
     _friendsScrollController.addListener(_onFriendsScroll);
-
-    _friendsPeriodicTimer = Timer.periodic(const Duration(seconds: 12), (_) {
-      if (!mounted) return;
-      if (!_isFriendsOnly) return;
-      if (!_friendsLoaded) return;
-      if (_friendsIsScrolling) return;
-      _applyPendingFriendsMovesIfSafe();
-    });
 
     if (_isMwUsersOnly) {
       unawaited(_bootstrapMwUsers());
@@ -609,14 +631,40 @@ class _MwFriendsTabState extends State<MwFriendsTab>
           isActive: isActive,
         );
 
-        final bool rawIsOnline = isActive && data['isOnline'] == true;
-        final bool isOnlineForDisplay = canSeePresence ? rawIsOnline : false;
+        final bool rawIsOnline = isActive &&
+            ((data['isOnline'] == true) || (data['online'] == true));
 
-        _setFriendPresenceCaches(
+        final Timestamp? lastActive =
+            _readTs(data, 'lastActive') ??
+                _readTs(data, 'updatedAt') ??
+                _readTs(data, 'lastSeen'); // fallback only
+
+        final bool isOnlineForDisplay = _computeIsOnlineForDisplay(
+          canSeePresence: canSeePresence,
+          rawIsOnline: rawIsOnline,
+          lastActive: lastActive,
+          ttlSeconds: _onlineTtlSeconds,
+        );
+
+
+        final bool changed = _setFriendPresenceCaches(
           uid: uid,
           isActive: isActive,
           isOnlineForDisplay: isOnlineForDisplay,
         );
+
+        if (wasMissing || changed) {
+          _markFriendsNeedRebucket();
+          _markFriendsNeedResort();
+
+          if (mounted && _isFriendsOnly) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              setState(() {});
+            });
+          }
+        }
+
 
         if (wasMissing) {
           _markFriendsNeedRebucket();
@@ -1204,15 +1252,20 @@ class _MwFriendsTabState extends State<MwFriendsTab>
   // Presence privacy
   // ----------------------------
   String _readPresenceVisibility(Map<String, dynamic> data) {
+    // Legacy boolean wins: if user disabled online status → nobody
     final dynamic rawShow = data[_legacyShowOnlineStatusField];
     if (rawShow is bool && rawShow == false) return _presenceNobody;
 
     final raw = (data['presenceVisibility'] as String?)?.trim().toLowerCase();
-    if (raw == _presenceNobody) return _presenceNobody;
 
-    // default = friends
+    if (raw == _presenceNobody) return _presenceNobody;
+    if (raw == _presenceEveryone) return _presenceEveryone;
+    if (raw == _presenceFriends) return _presenceFriends;
+
+    // Default if missing/unknown
     return _presenceFriends;
   }
+
 
   bool _canSeePresence({
     required String presenceVisibility,
@@ -1223,8 +1276,13 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     if (!isActive) return false;
     if (isBlockedRelationship) return false;
     if (presenceVisibility == _presenceNobody) return false;
+
+    if (presenceVisibility == _presenceEveryone) return true;
+
+    // friends-only
     return ChatFriendshipService.isFriends(friendStatus);
   }
+
 
   // ----------------------------
   // Profile + Add friend privacy
@@ -1427,11 +1485,28 @@ class _MwFriendsTabState extends State<MwFriendsTab>
       isActive: isActive,
     );
 
-    final bool rawIsOnline = isActive && data['isOnline'] == true;
-    final bool isOnlineForDisplay = canSeePresence ? rawIsOnline : false;
+    final bool rawIsOnline = isActive &&
+        ((data['isOnline'] == true) || (data['online'] == true));
 
-    final Timestamp? lastSeen =
-    (canSeePresence && data['lastSeen'] is Timestamp) ? (data['lastSeen'] as Timestamp) : null;
+    final Timestamp? lastActive =
+        _readTs(data, 'lastActive') ??
+            _readTs(data, 'updatedAt') ??
+            _readTs(data, 'lastSeen');
+
+    final Timestamp? lastSeen = _readTs(data, 'lastSeen');
+
+    final bool computed = _computeIsOnlineForDisplay(
+      canSeePresence: canSeePresence,
+      rawIsOnline: rawIsOnline,
+      lastActive: lastActive,
+      ttlSeconds: _onlineTtlSeconds,
+    );
+
+    final bool isOnlineForDisplay =
+    (_isFriendsOnly && _friendOnlineDisplayCache.containsKey(userId))
+        ? (_friendOnlineDisplayCache[userId] ?? false)
+        : computed;
+
 
     final subtitleText = blockedMe
         ? (l10n.blockedByUserBanner ?? 'This user has blocked you.')

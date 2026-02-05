@@ -35,6 +35,11 @@ class ChatInputBar extends StatefulWidget {
   // upload progress for media (0..1), null = no upload
   final double? uploadProgress;
 
+  /// ✅ IMPORTANT:
+  /// If your parent already applies keyboard bottom inset (recommended), keep this FALSE.
+  /// If not, set TRUE to make the bar stick to the keyboard with no jump.
+  final bool handleKeyboardInset;
+
   const ChatInputBar({
     super.key,
     required this.controller,
@@ -50,13 +55,14 @@ class ChatInputBar extends StatefulWidget {
     this.focusNode,
     this.panelVisible = false,
     this.onTogglePanel,
+    this.handleKeyboardInset = false,
   });
 
   @override
   State<ChatInputBar> createState() => _ChatInputBarState();
 }
 
-class _ChatInputBarState extends State<ChatInputBar> {
+class _ChatInputBarState extends State<ChatInputBar> with TickerProviderStateMixin {
   bool _hasText = false;
 
   /// 🔴 IMPORTANT: local fallback focus node only.
@@ -97,7 +103,8 @@ class _ChatInputBarState extends State<ChatInputBar> {
     // If emoji/custom panel open, close it (snapchat behavior)
     if (widget.panelVisible) {
       widget.onTogglePanel?.call();
-      await Future<void>.delayed(const Duration(milliseconds: 60));
+      // avoid timed delays; let one frame settle
+      await Future<void>.delayed(Duration.zero);
     }
 
     // If currently recording -> stop to preview
@@ -131,7 +138,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
     // ✅ Also close emoji panel if open
     if (widget.panelVisible) {
       widget.onTogglePanel?.call();
-      await Future<void>.delayed(const Duration(milliseconds: 60));
+      await Future<void>.delayed(Duration.zero);
     }
 
     if (mounted && !_disposed) setState(() {});
@@ -253,7 +260,6 @@ class _ChatInputBarState extends State<ChatInputBar> {
     widget.onSend();
 
     // 🔴 CRITICAL: DO NOT requestFocus after send.
-    // ChatScreen controls layout insets + focus flows.
   }
 
   Future<void> _handleAttachPressed() async {
@@ -267,17 +273,17 @@ class _ChatInputBarState extends State<ChatInputBar> {
     // Close emoji panel first so it doesn't eat gestures / overlay sheet
     if (widget.panelVisible) {
       widget.onTogglePanel?.call();
-      await Future<void>.delayed(const Duration(milliseconds: 60));
+      await Future<void>.delayed(Duration.zero);
     }
 
     // Close keyboard before opening sheet (prevents flip / weird jump)
     if (_activeFocusNode.hasFocus) _activeFocusNode.unfocus();
     FocusManager.instance.primaryFocus?.unfocus();
 
-    await Future<void>.delayed(const Duration(milliseconds: 80));
+    // Let the layout settle one frame (no “timed delay” jitter)
+    await Future<void>.delayed(Duration.zero);
     if (!mounted || _disposed) return;
 
-    // ✅ IMPORTANT: await to avoid re-entrance glitches
     await widget.onAttach();
   }
 
@@ -285,44 +291,54 @@ class _ChatInputBarState extends State<ChatInputBar> {
   // UI helpers
   // ─────────────────────────────────────────────────────────────────────────────
 
-  Widget _buildGoldCircleButton({
+  Widget _circleIconButton({
     required VoidCallback? onTap,
     required IconData icon,
     double size = 44,
     double iconSize = 22,
+    Color? bg,
+    Color? fg,
+    Border? border,
   }) {
     final enabled = onTap != null && !_uiLocked;
 
-    return InkWell(
-      onTap: enabled ? onTap : null,
-      borderRadius: BorderRadius.circular(999),
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: enabled
-              ? kPrimaryGold.withOpacity(0.95)
-              : kSurfaceAltColor.withOpacity(0.55),
-          border: Border.all(
-            color: enabled
-                ? kGoldDeep.withOpacity(0.45)
-                : kBorderColor.withOpacity(0.45),
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: enabled ? onTap : null,
+          borderRadius: BorderRadius.circular(999),
+          child: Container(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: bg ??
+                  (enabled
+                      ? kPrimaryGold.withOpacity(0.95)
+                      : kSurfaceAltColor.withOpacity(0.55)),
+              border: border ??
+                  Border.all(
+                    color: enabled
+                        ? kGoldDeep.withOpacity(0.45)
+                        : kBorderColor.withOpacity(0.45),
+                  ),
+              boxShadow: [
+                if (enabled)
+                  BoxShadow(
+                    color: kGoldDeep.withOpacity(0.20),
+                    blurRadius: 14,
+                    spreadRadius: 1,
+                    offset: const Offset(0, 6),
+                  ),
+              ],
+            ),
+            child: Icon(
+              icon,
+              size: iconSize,
+              color: fg ?? (enabled ? Colors.black : Colors.white38),
+            ),
           ),
-          boxShadow: [
-            if (enabled)
-              BoxShadow(
-                color: kGoldDeep.withOpacity(0.20),
-                blurRadius: 14,
-                spreadRadius: 1,
-                offset: const Offset(0, 6),
-              ),
-          ],
-        ),
-        child: Icon(
-          icon,
-          size: iconSize,
-          color: enabled ? Colors.black : Colors.white38,
         ),
       ),
     );
@@ -330,52 +346,58 @@ class _ChatInputBarState extends State<ChatInputBar> {
 
   Widget _buildMicButton() {
     if (_uiLocked) {
-      return Container(
-        margin: const EdgeInsets.only(right: 6),
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.06),
-          shape: BoxShape.circle,
-          border: Border.all(color: kBorderColor.withOpacity(0.35)),
-        ),
-        child: const Icon(Icons.mic_rounded, color: Colors.white38),
+      return _circleIconButton(
+        onTap: null,
+        icon: Icons.mic_rounded,
+        size: 44,
+        iconSize: 22,
+        bg: Colors.white.withOpacity(0.06),
+        fg: Colors.white38,
+        border: Border.all(color: kBorderColor.withOpacity(0.35)),
       );
     }
 
     if (_vc == null) {
-      return Container(
-        margin: const EdgeInsets.only(right: 6),
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.06),
-          shape: BoxShape.circle,
-          border: Border.all(color: kBorderColor.withOpacity(0.35)),
-        ),
-        child: Icon(Icons.mic_off, color: Colors.white.withOpacity(0.55)),
+      return _circleIconButton(
+        onTap: null,
+        icon: Icons.mic_off,
+        size: 44,
+        iconSize: 22,
+        bg: Colors.white.withOpacity(0.06),
+        fg: Colors.white.withOpacity(0.55),
+        border: Border.all(color: kBorderColor.withOpacity(0.35)),
       );
     }
 
     final vc = _vc!;
     final bool isRec = vc.isRecording || vc.isPreparing;
 
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
+    return _circleIconButton(
       onTap: _toggleVoice,
-      onLongPress: null,
-      child: Container(
-        margin: const EdgeInsets.only(right: 6),
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: isRec
-              ? Colors.redAccent.withOpacity(0.22)
-              : Colors.white.withOpacity(0.06),
-          shape: BoxShape.circle,
-          border: Border.all(color: kBorderColor.withOpacity(0.35)),
-        ),
-        child: Icon(
-          isRec ? Icons.stop : Icons.mic_rounded,
-          color: Colors.white.withOpacity(0.92),
-        ),
+      icon: isRec ? Icons.stop : Icons.mic_rounded,
+      size: 44,
+      iconSize: 22,
+      bg: isRec ? Colors.redAccent.withOpacity(0.22) : Colors.white.withOpacity(0.06),
+      fg: Colors.white.withOpacity(0.92),
+      border: Border.all(color: kBorderColor.withOpacity(0.35)),
+    );
+  }
+
+  Widget _fixedIconButton({
+    required VoidCallback? onPressed,
+    required IconData icon,
+    String? tooltip,
+  }) {
+    return SizedBox(
+      width: 44,
+      height: 44,
+      child: IconButton(
+        onPressed: _uiLocked ? null : onPressed,
+        tooltip: tooltip,
+        padding: EdgeInsets.zero,
+        iconSize: 24,
+        constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+        icon: Icon(icon, color: Colors.white70),
       ),
     );
   }
@@ -383,119 +405,128 @@ class _ChatInputBarState extends State<ChatInputBar> {
   // ─────────────────────────────────────────────────────────────────────────────
   // Build
   // ─────────────────────────────────────────────────────────────────────────────
-
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    final bool isUploading = _isUploading;
 
-    // ✅ Correct, stable scaling: scale a REAL base size.
-    // Also clamp so it never looks tiny inside the field.
     const double baseFont = 16.0;
     final double scaled = MediaQuery.textScalerOf(context).scale(baseFont);
-    final double effectiveFont = scaled < 17.0 ? 17.0 : scaled;
+    final double effectiveFont = scaled < 16.0 ? 16.0 : scaled;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (isUploading)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: LinearProgressIndicator(value: widget.uploadProgress),
+        AnimatedSize(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topCenter,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_isUploading)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: LinearProgressIndicator(value: widget.uploadProgress),
+                ),
+              if (_showVoiceBar && _vc != null && widget.onVoiceSend != null)
+                VoiceRecordBar(
+                  controller: _vc!,
+                  onSend: widget.onVoiceSend!,
+                  onRecordStart: widget.onVoiceRecordStart,
+                  onRecordStop: widget.onVoiceRecordStop,
+                ),
+            ],
           ),
-        if (_showVoiceBar && _vc != null && widget.onVoiceSend != null)
-          VoiceRecordBar(
-            controller: _vc!,
-            onSend: widget.onVoiceSend!,
-            onRecordStart: widget.onVoiceRecordStart,
-            onRecordStop: widget.onVoiceRecordStop,
-          ),
+        ),
+
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
           decoration: BoxDecoration(
             color: kChatInputBarBg,
             borderRadius: BorderRadius.circular(24),
             border: Border.all(color: kChatInputBarBorder.withOpacity(0.55)),
           ),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              // ✅ LEFT must be ATTACH
-              IconButton(
-                onPressed: _uiLocked ? null : _handleAttachPressed,
-                icon: const Icon(Icons.add_circle_outline, color: Colors.white70),
+              _fixedIconButton(
+                onPressed: _handleAttachPressed,
+                icon: Icons.add_circle_outline,
                 tooltip: l10n.attachFile,
               ),
-
-              // ✅ Emoji/Keyboard toggle
-              IconButton(
+              _fixedIconButton(
                 onPressed: widget.onTogglePanel,
-                icon: Icon(
-                  widget.panelVisible
-                      ? Icons.keyboard
-                      : Icons.emoji_emotions_outlined,
-                  color: Colors.white70,
-                ),
+                icon: widget.panelVisible ? Icons.keyboard : Icons.emoji_emotions_outlined,
               ),
+              const SizedBox(width: 6),
 
               Expanded(
-                child: TextField(
-                  key: const ValueKey('chat_input_textfield'),
-                  controller: widget.controller,
-                  focusNode: _activeFocusNode,
-                  onTap: () {
-                    if (widget.panelVisible) {
-                      widget.onTogglePanel?.call();
-                    }
-                  },
-                  onChanged: widget.onTextChanged,
-                  onSubmitted: (_) => _handleSendPressed(),
-                  minLines: 1,
-                  maxLines: 4,
-                  textInputAction: TextInputAction.newline,
-                  textAlignVertical: TextAlignVertical.center,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: effectiveFont,
-                    height: 1.25,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  keyboardAppearance: Brightness.dark,
-                  decoration: InputDecoration(
-                    hintText: l10n.typeMessageHint,
-                    hintStyle: TextStyle(
-                      color: Colors.white54,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 44),
+                  child: TextField(
+                    controller: widget.controller,
+                    focusNode: _activeFocusNode,
+                    onTap: () {
+                      if (widget.panelVisible) widget.onTogglePanel?.call();
+                    },
+                    onChanged: widget.onTextChanged,
+                    onSubmitted: (_) => _handleSendPressed(),
+                    minLines: 1,
+                    maxLines: 4,
+                    textInputAction: TextInputAction.newline,
+                    textAlignVertical: TextAlignVertical.center,
+                    scrollPadding: EdgeInsets.zero,
+                    style: TextStyle(
+                      color: Colors.white,
                       fontSize: effectiveFont,
                       height: 1.25,
                       fontWeight: FontWeight.w500,
                     ),
-                    filled: true,
-                    fillColor: kChatInputFieldBg,
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 14,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(24),
-                      borderSide: BorderSide.none,
+                    decoration: InputDecoration(
+                      hintText: l10n.typeMessageHint,
+                      hintStyle: TextStyle(
+                        color: Colors.white54,
+                        fontSize: effectiveFont,
+                        height: 1.25,
+                        fontWeight: FontWeight.w500,
+                      ),
+
+                      // ✅ IMPORTANT: remove the inner “separate pill”
+                      filled: false,
+                      fillColor: Colors.transparent,
+
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      border: InputBorder.none,
                     ),
                   ),
                 ),
               ),
-              const SizedBox(width: 6),
-              if (_hasText || widget.sending || isUploading)
-                _buildGoldCircleButton(
-                  onTap: _uiLocked ? null : _handleSendPressed,
-                  icon: Icons.send,
-                  size: 44,
-                  iconSize: 20,
+
+              const SizedBox(width: 8),
+
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 140),
+                child: (_hasText || widget.sending || _isUploading)
+                    ? KeyedSubtree(
+                  key: const ValueKey('send_btn'),
+                  child: _circleIconButton(
+                    onTap: _uiLocked ? null : _handleSendPressed,
+                    icon: Icons.send,
+                    size: 44,
+                    iconSize: 20,
+                  ),
                 )
-              else
-                _buildMicButton(),
+                    : KeyedSubtree(
+                  key: const ValueKey('mic_btn'),
+                  child: _buildMicButton(),
+                ),
+              ),
             ],
           ),
         ),
       ],
     );
   }
+
 }
