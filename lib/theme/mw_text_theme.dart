@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 /// ✅ DEFAULTS (Back to the original look like your screenshot)
 const _kEnglishFont = 'Poppins';
-const _kArabicFont = 'Noto Sans Arabic';
+const _kArabicFont = 'NotoSansArabic';
 
 bool _isArabicFamily(String family) {
   final f = family.trim();

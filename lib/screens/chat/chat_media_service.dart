@@ -2,15 +2,14 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
+import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:image/image.dart' as img;
-
 import 'package:path_provider/path_provider.dart';
 
 import '../../utils/io_compat.dart';
@@ -58,6 +57,7 @@ class ChatMediaService {
     );
     if (picked == null) return null;
 
+    // Images are safe to read into memory
     final bytes = await picked.readAsBytes();
     if (bytes.isEmpty) return null;
 
@@ -73,7 +73,7 @@ class ChatMediaService {
     final picked = await _imagePicker.pickVideo(source: ImageSource.gallery);
     if (picked == null) return null;
 
-    // ✅ Web needs bytes. Mobile should rely on path (avoid loading huge video into RAM).
+    // ✅ Web needs bytes. Native should rely on path (avoid loading huge video into RAM).
     Uint8List? bytes;
     if (kIsWeb) {
       try {
@@ -82,12 +82,11 @@ class ChatMediaService {
       } catch (_) {
         bytes = null;
       }
-    } else {
-      bytes = null;
     }
 
     final path = kIsWeb ? null : picked.path;
 
+    // NOTE: On native we may not know the size here; we compute it later from the path.
     return PlatformFile(
       name: picked.name,
       size: bytes?.length ?? 0,
@@ -133,6 +132,7 @@ class ChatMediaService {
       deviceUsed: preferredCamera,
     );
 
+    // Best-effort overwrite with normalized bytes (doesn't break if fails)
     try {
       await writeFileBytes(picked.path, fixedBytes);
     } catch (_) {}
@@ -157,11 +157,9 @@ class ChatMediaService {
     );
     if (picked == null) return null;
 
-    final normalizedPath = picked.path.startsWith('file://')
-        ? picked.path.replaceFirst('file://', '')
-        : picked.path;
+    final normalizedPath = _normalizePath(picked.path);
 
-    // ✅ Do NOT read bytes on mobile (huge). Upload will use putFile(path).
+    // ✅ Do NOT read bytes on native (huge). Upload will use putFile(path).
     return PlatformFile(
       name: picked.name,
       size: 0,
@@ -170,16 +168,40 @@ class ChatMediaService {
     );
   }
 
+  /// ✅ Cross-platform picker:
+  /// - Web: bytes required
+  /// - iOS/Android/Desktop: prefer path, avoid loading huge files into RAM
   Future<PlatformFile?> pickFileFromDevice() async {
     final result = await FilePicker.platform.pickFiles(
       allowMultiple: false,
-      withData: true, // ✅ keep true (iOS/web reliability)
-      withReadStream: false,
       type: FileType.any,
+
+      // ✅ IMPORTANT:
+      // - Web: need bytes
+      // - Native: prefer path for large files (screen recordings)
+      withData: kIsWeb,
+      withReadStream: false,
     );
 
     if (result == null || result.files.isEmpty) return null;
-    return result.files.first;
+
+    final f = result.files.first;
+
+    if (!kIsWeb) {
+      final hasPath = (f.path ?? '').trim().isNotEmpty;
+      final hasBytes = f.bytes != null && f.bytes!.isNotEmpty;
+
+      // Some iOS providers can return no path; in that case bytes must exist to upload.
+      if (!hasPath && !hasBytes) {
+        debugPrint(
+          '[ChatMediaService] FilePicker returned no path/bytes for ${f.name}. '
+              'Try picking from Photos/Gallery instead.',
+        );
+        return null;
+      }
+    }
+
+    return f;
   }
 
   // =========================
@@ -208,14 +230,13 @@ class ChatMediaService {
       return ('image', mime);
     }
 
-    if (['mp4', 'mov', 'mkv', 'avi', 'm4v'].contains(ext)) {
-      // Keep mp4 content-type for wide compatibility
-      return ('video', 'video/mp4');
-    }
-
-    if (ext == 'webm') {
-      return ('video', 'video/webm');
-    }
+    // ✅ Better MIME mapping for iOS/Android playback
+    if (ext == 'mp4') return ('video', 'video/mp4');
+    if (ext == 'mov') return ('video', 'video/quicktime'); // iOS screen recordings
+    if (ext == 'm4v') return ('video', 'video/x-m4v');
+    if (ext == 'mkv') return ('video', 'video/x-matroska');
+    if (ext == 'avi') return ('video', 'video/x-msvideo');
+    if (ext == 'webm') return ('video', 'video/webm');
 
     if (['mp3', 'wav', 'm4a', 'aac', 'ogg', 'opus'].contains(ext)) {
       if (ext == 'mp3') return ('audio', 'audio/mpeg');
@@ -236,16 +257,21 @@ class ChatMediaService {
   // Video thumb generation (web + native)
   // =========================
 
+  String _normalizePath(String raw) {
+    final t = raw.trim();
+    if (t.isEmpty) return '';
+    return t.startsWith('file://') ? t.replaceFirst('file://', '') : t;
+  }
+
   Future<String?> _ensureLocalVideoPath(PlatformFile file) async {
     if (kIsWeb) return null;
 
     final rawPath = (file.path ?? '').trim();
     if (rawPath.isNotEmpty) {
-      return rawPath.startsWith('file://')
-          ? rawPath.replaceFirst('file://', '')
-          : rawPath;
+      return _normalizePath(rawPath);
     }
 
+    // Fallback: if bytes exist (rare on native), write temp file for thumbnail generation
     final bytes = file.bytes;
     if (bytes == null || bytes.isEmpty) return null;
 
@@ -284,7 +310,6 @@ class ChatMediaService {
     final localPath = await _ensureLocalVideoPath(file);
     if (localPath == null || localPath.isEmpty) return null;
 
-    // Uses conditional import wrapper (safe for web builds)
     final thumb = await nativeVideoThumbnailData(
       videoPath: localPath,
       timeMs: 0,
@@ -308,8 +333,7 @@ class ChatMediaService {
     final rawPath = (file.path ?? '').trim();
     if (rawPath.isEmpty) return null;
 
-    final normalizedPath =
-    rawPath.startsWith('file://') ? rawPath.replaceFirst('file://', '') : rawPath;
+    final normalizedPath = _normalizePath(rawPath);
 
     try {
       final diskBytes = await XFile(normalizedPath).readAsBytes();
@@ -321,11 +345,29 @@ class ChatMediaService {
     }
   }
 
-  int _effectiveFileSize(PlatformFile file) {
+  /// ✅ Accurate file size across platforms:
+  /// - prefer provided size
+  /// - else bytes length
+  /// - else stat the native file path (important for videos picked via ImagePicker)
+  Future<int> _effectiveFileSizeAsync(PlatformFile file) async {
     final s = file.size;
     if (s > 0) return s;
+
     final b = file.bytes;
-    if (b != null) return b.length;
+    if (b != null && b.isNotEmpty) return b.length;
+
+    if (!kIsWeb) {
+      final rawPath = (file.path ?? '').trim();
+      if (rawPath.isNotEmpty) {
+        final normalized = _normalizePath(rawPath);
+        try {
+          // Uses XFile; works on iOS/Android without dart:io import
+          final len = await XFile(normalized).length();
+          return len;
+        } catch (_) {}
+      }
+    }
+
     return 0;
   }
 
@@ -359,7 +401,7 @@ class ChatMediaService {
 
     String contentType = forcedContentType ?? autoContentType;
 
-    // Safety normalizations
+    // Safety normalizations (kept)
     if (msgType == 'audio' && contentType.startsWith('video/')) {
       contentType = 'audio/webm';
     }
@@ -379,11 +421,17 @@ class ChatMediaService {
       return null;
     }
 
-    // ✅ For mobile/desktop: require path OR bytes
+    // ✅ For native: require path OR bytes (path preferred)
     if (!kIsWeb && !hasBytes && !canUsePath) {
-      debugPrint('[ChatMediaService] sendFileMessage: no bytes/path for ${file.name}');
+      debugPrint('[ChatMediaService] sendFileMessage(native): no bytes/path for ${file.name}');
       return null;
     }
+
+    // Helpful one-line debug for “why didn’t it send?”
+    debugPrint(
+      '[ChatMediaService] sendFileMessage: name=${file.name} ext=$ext '
+          'type=$msgType mime=$contentType path=${file.path} bytes=${file.bytes?.length ?? 0} size=${file.size}',
+    );
 
     final safeExt = ext.isNotEmpty ? ext : 'bin';
     final base = p
@@ -414,11 +462,9 @@ class ChatMediaService {
     try {
       UploadTask uploadTask;
 
-      // ✅ Prefer putFile on non-web when we have a path (prevents huge memory usage)
+      // ✅ Prefer putFile on native when we have a path (big videos safe)
       final rawPath = (file.path ?? '').trim();
-      final normalizedPath =
-      rawPath.startsWith('file://') ? rawPath.replaceFirst('file://', '') : rawPath;
-
+      final normalizedPath = _normalizePath(rawPath);
       final canUsePathUpload = !kIsWeb && normalizedPath.isNotEmpty;
 
       if (canUsePathUpload) {
@@ -464,6 +510,10 @@ class ChatMediaService {
 
           thumbUrl = await thumbSnap.ref.getDownloadURL();
           thumbStoragePath = thumbSnap.ref.fullPath;
+        } on FirebaseException catch (e) {
+          debugPrint('[ChatMediaService] thumb upload failed (non-fatal): code=${e.code} msg=${e.message}');
+          thumbUrl = null;
+          thumbStoragePath = null;
         } catch (e) {
           debugPrint('[ChatMediaService] thumb upload failed (non-fatal): $e');
           thumbUrl = null;
@@ -471,8 +521,7 @@ class ChatMediaService {
         }
       }
 
-      final userDoc =
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
       final userData = userDoc.data();
       final profileUrl = userData?['profileUrl'];
       final avatarType = userData?['avatarType'];
@@ -486,13 +535,15 @@ class ChatMediaService {
       final cleanedThumbPath =
       (thumbStoragePath ?? '').trim().isNotEmpty ? thumbStoragePath!.trim() : null;
 
+      final fileSize = await _effectiveFileSizeAsync(file);
+
       final msgPayload = <String, dynamic>{
         'type': msgType,
         'text': '',
         'fileName': file.name,
         'fileUrl': downloadUrl,
         'storagePath': storagePath,
-        'fileSize': _effectiveFileSize(file),
+        'fileSize': fileSize,
         'mimeType': contentType,
         'senderId': user.uid,
         'senderEmail': user.email,
@@ -508,8 +559,7 @@ class ChatMediaService {
           'thumbnailUrl': cleanedThumbUrl,
           'videoThumbUrl': cleanedThumbUrl,
         },
-        if (msgType == 'video' && cleanedThumbPath != null)
-          'thumbStoragePath': cleanedThumbPath,
+        if (msgType == 'video' && cleanedThumbPath != null) 'thumbStoragePath': cleanedThumbPath,
       };
 
       if (extraMessageFields != null && extraMessageFields.isNotEmpty) {
@@ -539,6 +589,14 @@ class ChatMediaService {
 
       // Return the (already-finished) task for compatibility with your existing workflow.
       return uploadTask;
+    } on FirebaseException catch (e, st) {
+      debugPrint(
+        '[ChatMediaService] Storage/Firestore failed: code=${e.code} message=${e.message}\n$st',
+      );
+      try {
+        await sub?.cancel();
+      } catch (_) {}
+      return null;
     } catch (e, st) {
       debugPrint('[ChatMediaService] sendFileMessage error: $e\n$st');
       try {

@@ -1,20 +1,24 @@
 // lib/widgets/ui/mw_language_button.dart
 import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../utils/locale_provider.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/locale_provider.dart';
 
 /// MW Chat Language Toggle (EN/AR)
 /// - LTR locked so the control itself NEVER flips
 /// - Responsive: full mode when enough width, compact mode when tight
-/// - Cross-platform: consistent look on iOS/Android/Web (no green Cupertino switch)
+/// - Cross-platform: consistent look on iOS/Android/Web
 /// - Visually equal label sizing EN/AR (Arabic font often renders larger)
-class MwLanguageButton extends StatelessWidget {
+///
+/// IMPORTANT:
+/// This widget assumes LocaleProvider.setLocale(...) persists BOTH:
+///  - local prefs (so it survives logout/login even if Firestore denied)
+///  - Firestore best-effort (optional)
+class MwLanguageButton extends StatefulWidget {
   final VoidCallback? onChanged;
-
-  /// Optional: force compact mode (useful in very tight spots)
   final bool forceCompact;
 
   const MwLanguageButton({
@@ -24,24 +28,57 @@ class MwLanguageButton extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    final locale = context.watch<LocaleProvider>().locale;
-    final isArabic = (locale.languageCode ?? 'en').toLowerCase() == 'ar';
+  State<MwLanguageButton> createState() => _MwLanguageButtonState();
+}
 
-    void setLang(String code) {
-      context.read<LocaleProvider>().setLocale(Locale(code));
-      onChanged?.call();
+class _MwLanguageButtonState extends State<MwLanguageButton> {
+  bool _saving = false;
+
+  Future<void> _setLang(String code) async {
+    if (_saving) return;
+
+    final localeProvider = context.read<LocaleProvider>();
+    final current = localeProvider.locale.languageCode.toLowerCase().trim();
+
+    final next = code.toLowerCase().trim();
+    if (next != 'en' && next != 'ar') return;
+    if (current == next) {
+      // Still close menu if caller wants.
+      widget.onChanged?.call();
+      return;
     }
 
+    setState(() => _saving = true);
+
+    try {
+      // ✅ Wait for persistence (prefs + any server best-effort) before closing menu.
+      await localeProvider.setLocale(Locale(next));
+    } catch (e) {
+      // Do not crash UI if persistence failed (permission-denied etc.).
+      // LocaleProvider should still keep in-memory locale consistent.
+      debugPrint('⚠️ MwLanguageButton setLocale failed: $e');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+      widget.onChanged?.call();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final locale = context.watch<LocaleProvider>().locale;
+    final isArabic = locale.languageCode.toLowerCase() == 'ar';
+
     return Directionality(
-      textDirection: TextDirection.ltr, // 🔒 keep stable
+      textDirection: TextDirection.ltr,
       child: LayoutBuilder(
         builder: (context, c) {
-          // Below this, switch to compact mode to avoid overflow on Web + small screens
-          final bool compact = forceCompact || c.maxWidth < 260;
+          final bool compact = widget.forceCompact || c.maxWidth < 260;
 
           return Semantics(
             label: 'Language switch',
+            value: isArabic ? 'Arabic' : 'English',
+            button: true,
+            enabled: !_saving,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(999),
               child: BackdropFilter(
@@ -60,16 +97,9 @@ class MwLanguageButton extends StatelessWidget {
                       color: kBorderColor.withOpacity(0.32),
                       width: 1,
                     ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: kGoldDeep.withOpacity(0.14),
-                        blurRadius: 18,
-                        offset: const Offset(0, 10),
-                      ),
-                    ],
                   ),
-                  child: IconTheme(
-                    data: const IconThemeData(size: 18),
+                  child: IgnorePointer(
+                    ignoring: _saving,
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -77,29 +107,50 @@ class MwLanguageButton extends StatelessWidget {
                           _LangPill(
                             text: 'English',
                             active: !isArabic,
-                            onTap: () => setLang('en'),
+                            onTap: () => _setLang('en'),
                           ),
                           const SizedBox(width: 10),
                         ] else ...[
                           _MiniLangChip(
                             active: !isArabic,
                             label: 'EN',
-                            onTap: () => setLang('en'),
+                            onTap: () => _setLang('en'),
                           ),
                           const SizedBox(width: 8),
                         ],
 
-                        // ✅ Material Switch (NOT adaptive) => always gold (no iOS green)
+                        // Switch stays interactive but disabled while saving.
                         Transform.translate(
                           offset: const Offset(0, -0.5),
-                          child: Switch(
-                            value: isArabic,
-                            onChanged: (v) => setLang(v ? 'ar' : 'en'),
-                            activeColor: kPrimaryGold,
-                            activeTrackColor: kPrimaryGold.withOpacity(0.55),
-                            inactiveThumbColor: Colors.white.withOpacity(0.78),
-                            inactiveTrackColor: Colors.white.withOpacity(0.20),
-                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              Switch(
+                                value: isArabic,
+                                onChanged: _saving
+                                    ? null
+                                    : (v) => _setLang(v ? 'ar' : 'en'),
+                                activeColor: kPrimaryGold,
+                                activeTrackColor: kPrimaryGold.withOpacity(0.55),
+                                inactiveThumbColor:
+                                Colors.white.withOpacity(0.78),
+                                inactiveTrackColor:
+                                Colors.white.withOpacity(0.20),
+                                materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              if (_saving)
+                                SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      kPrimaryGold.withOpacity(0.9),
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
 
@@ -108,14 +159,14 @@ class MwLanguageButton extends StatelessWidget {
                           _LangPill(
                             text: 'العربية',
                             active: isArabic,
-                            onTap: () => setLang('ar'),
+                            onTap: () => _setLang('ar'),
                           ),
                         ] else ...[
                           const SizedBox(width: 8),
                           _MiniLangChip(
                             active: isArabic,
                             label: 'AR',
-                            onTap: () => setLang('ar'),
+                            onTap: () => _setLang('ar'),
                           ),
                         ],
                       ],

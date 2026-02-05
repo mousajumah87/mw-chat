@@ -64,7 +64,7 @@ class _TypographySettingsScreenState extends State<TypographySettingsScreen> {
   // ------------------------------ constants
 
   static const String _kDefaultLatin = 'Poppins';
-  static const String _kDefaultArabic = 'Noto Sans Arabic';
+  static const String _kDefaultArabic = 'NotoSansArabic';
 
   static const Set<String> _arabicFonts = <String>{
     'Noto Sans Arabic',

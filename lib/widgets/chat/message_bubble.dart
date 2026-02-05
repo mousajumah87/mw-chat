@@ -1909,7 +1909,6 @@ class _VideoThumbBackground extends StatelessWidget {
     );
   }
 }
-
 class _FullScreenVideoPage extends StatefulWidget {
   final String videoUrl;
 
@@ -1921,8 +1920,15 @@ class _FullScreenVideoPage extends StatefulWidget {
 
 class _FullScreenVideoPageState extends State<_FullScreenVideoPage> {
   VideoPlayerController? _controller;
+
   bool _initialized = false;
   bool _error = false;
+
+  bool _controlsVisible = true;
+  Timer? _hideTimer;
+
+  Duration _pos = Duration.zero;
+  Duration _dur = Duration.zero;
 
   @override
   void initState() {
@@ -1937,25 +1943,167 @@ class _FullScreenVideoPageState extends State<_FullScreenVideoPage> {
     final c = VideoPlayerController.networkUrl(uri);
     _controller = c;
 
+    c.addListener(_onVideoTick);
+
     c.initialize().then((_) {
       if (!mounted) return;
-      setState(() => _initialized = true);
+      setState(() {
+        _initialized = true;
+        _dur = c.value.duration;
+      });
+
+      // Autoplay (optional)
       c.play();
+
+      _showControlsAndArm();
     }).catchError((_) {
       if (!mounted) return;
       setState(() => _error = true);
     });
   }
 
+  void _onVideoTick() {
+    final c = _controller;
+    if (!mounted || c == null) return;
+
+    final v = c.value;
+    if (!v.isInitialized) return;
+
+    final nextPos = v.position;
+    final nextDur = v.duration;
+
+    if (nextPos == _pos && nextDur == _dur) return;
+
+    setState(() {
+      _pos = nextPos;
+      _dur = nextDur;
+    });
+
+    // If video ended, show controls (nice UX)
+    if (nextDur > Duration.zero && nextPos >= nextDur) {
+      _cancelAutoHide();
+      if (!_controlsVisible && mounted) {
+        setState(() => _controlsVisible = true);
+      }
+    }
+  }
+
+  void _cancelAutoHide() {
+    _hideTimer?.cancel();
+    _hideTimer = null;
+  }
+
+  void _armAutoHide({Duration delay = const Duration(seconds: 3)}) {
+    _cancelAutoHide();
+
+    final c = _controller;
+    if (c == null || !c.value.isInitialized) return;
+
+    // Only auto-hide when playing
+    if (!c.value.isPlaying) return;
+
+    _hideTimer = Timer(delay, () {
+      if (!mounted) return;
+      setState(() => _controlsVisible = false);
+    });
+  }
+
+  void _showControlsAndArm() {
+    if (!mounted) return;
+    setState(() => _controlsVisible = true);
+    _armAutoHide();
+  }
+
+  void _toggleControlsFromTap() {
+    final c = _controller;
+    if (c == null || !c.value.isInitialized) return;
+
+    if (_controlsVisible) {
+      _cancelAutoHide();
+      setState(() => _controlsVisible = false);
+    } else {
+      _showControlsAndArm();
+    }
+  }
+
+  String _fmt(Duration d) {
+    final totalSeconds = d.inSeconds;
+    final m = (totalSeconds ~/ 60).toString();
+    final s = (totalSeconds % 60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+
+  Future<void> _togglePlayPause() async {
+    final c = _controller;
+    if (c == null || !c.value.isInitialized) return;
+
+    if (c.value.isPlaying) {
+      await c.pause();
+      _cancelAutoHide(); // keep visible when paused
+      if (mounted) setState(() => _controlsVisible = true);
+    } else {
+      await c.play();
+      if (mounted) setState(() => _controlsVisible = true);
+      _armAutoHide();
+    }
+  }
+
+  Future<void> _stop() async {
+    final c = _controller;
+    if (c == null || !c.value.isInitialized) return;
+
+    await c.pause();
+    await c.seekTo(Duration.zero);
+
+    _cancelAutoHide();
+    if (!mounted) return;
+    setState(() {
+      _pos = Duration.zero;
+      _controlsVisible = true;
+    });
+  }
+
+  Future<void> _seekToMs(int ms) async {
+    final c = _controller;
+    if (c == null || !c.value.isInitialized) return;
+
+    final total = _dur;
+    if (total == Duration.zero) return;
+
+    final target = Duration(milliseconds: ms);
+    final clamped =
+    target < Duration.zero ? Duration.zero : (target > total ? total : target);
+
+    await c.seekTo(clamped);
+
+    if (!mounted) return;
+    setState(() => _pos = clamped);
+
+    _armAutoHide();
+  }
+
   @override
   void dispose() {
-    _controller?.dispose();
+    _cancelAutoHide();
+    final c = _controller;
+    if (c != null) {
+      c.removeListener(_onVideoTick);
+      c.dispose();
+    }
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final c = _controller;
+
+    final canShowPlayer = !_error && c != null && _initialized;
+
+    final totalMs = _dur.inMilliseconds;
+    final posMs = _pos.inMilliseconds.clamp(0, totalMs > 0 ? totalMs : 0);
+
+    final sliderMax = (totalMs > 0) ? totalMs.toDouble() : 1.0;
+    final sliderVal = (totalMs > 0) ? posMs.toDouble() : 0.0;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -1970,11 +2118,195 @@ class _FullScreenVideoPageState extends State<_FullScreenVideoPage> {
             ? CircularProgressIndicator(
           color: Theme.of(context).colorScheme.primary,
         )
-            : AspectRatio(
-          aspectRatio: c.value.aspectRatio,
-          child: VideoPlayer(c),
+            : Stack(
+          alignment: Alignment.center,
+          children: [
+            // ✅ VIDEO LAYER (tap-to-toggle sits here, behind controls)
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _toggleControlsFromTap,
+                child: Center(
+                  child: AspectRatio(
+                    aspectRatio:
+                    c.value.aspectRatio == 0 ? (16 / 9) : c.value.aspectRatio,
+                    child: VideoPlayer(c),
+                  ),
+                ),
+              ),
+            ),
+
+            // ✅ CONTROLS OVERLAY (above video; captures interaction)
+            if (canShowPlayer)
+              AnimatedOpacity(
+                opacity: _controlsVisible ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 180),
+                child: IgnorePointer(
+                  ignoring: !_controlsVisible,
+                  child: Stack(
+                    children: [
+                      // Soft gradient for readability
+                      Positioned.fill(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.black.withOpacity(0.25),
+                                Colors.transparent,
+                                Colors.black.withOpacity(0.55),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      // ✅ Big center play/pause
+                      Center(
+                        child: InkWell(
+                          onTap: () async {
+                            await _togglePlayPause();
+                            // Keep controls visible on interaction, then re-arm
+                            if (mounted) setState(() => _controlsVisible = true);
+                            _armAutoHide();
+                          },
+                          borderRadius: BorderRadius.circular(999),
+                          child: Container(
+                            width: 72,
+                            height: 72,
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.45),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: Colors.white.withOpacity(0.18),
+                              ),
+                            ),
+                            child: Icon(
+                              c.value.isPlaying
+                                  ? Icons.pause_rounded
+                                  : Icons.play_arrow_rounded,
+                              color: Colors.white,
+                              size: 44,
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      // ✅ Bottom toolbar: slider + stop + timer + small play/pause
+                      Positioned(
+                        left: 14,
+                        right: 14,
+                        bottom: MediaQuery.of(context).padding.bottom + 10,
+                        child: SafeArea(
+                          top: false,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SliderTheme(
+                                data: SliderTheme.of(context).copyWith(
+                                  trackHeight: 3,
+                                  thumbShape: const RoundSliderThumbShape(
+                                    enabledThumbRadius: 7,
+                                  ),
+                                ),
+                                child: Slider(
+                                  min: 0,
+                                  max: sliderMax,
+                                  value: sliderVal.clamp(0.0, sliderMax),
+                                  onChangeStart: (_) {
+                                    // ✅ Don’t hide while user drags
+                                    _cancelAutoHide();
+                                    if (mounted) {
+                                      setState(() => _controlsVisible = true);
+                                    }
+                                  },
+                                  onChanged: totalMs > 0
+                                      ? (v) => _seekToMs(v.round())
+                                      : null,
+                                  onChangeEnd: (_) {
+                                    _armAutoHide();
+                                  },
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Row(
+                                children: [
+                                  // Stop
+                                  InkWell(
+                                    onTap: () async {
+                                      await _stop();
+                                    },
+                                    borderRadius: BorderRadius.circular(10),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 6,
+                                      ),
+                                      child: Row(
+                                        children: const [
+                                          Icon(Icons.stop_rounded,
+                                              color: Colors.white, size: 20),
+                                          SizedBox(width: 6),
+                                          Text(
+                                            'Stop',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+
+                                  const Spacer(),
+
+                                  // Timer
+                                  Text(
+                                    '${_fmt(_pos)} / ${_dur == Duration.zero ? '--:--' : _fmt(_dur)}',
+                                    style: TextStyle(
+                                      color: Colors.white.withOpacity(0.92),
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+
+                                  const Spacer(),
+
+                                  // small play/pause
+                                  InkWell(
+                                    onTap: () async {
+                                      await _togglePlayPause();
+                                    },
+                                    borderRadius: BorderRadius.circular(10),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 6,
+                                      ),
+                                      child: Icon(
+                                        c.value.isPlaying
+                                            ? Icons.pause_rounded
+                                            : Icons.play_arrow_rounded,
+                                        color: Colors.white,
+                                        size: 22,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
   }
 }
+

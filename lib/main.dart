@@ -23,7 +23,6 @@ import 'l10n/app_localizations.dart';
 import 'screens/auth/auth_screen.dart';
 import 'screens/home/home_screen.dart';
 import 'theme/app_theme.dart';
-import 'theme/mw_text_theme.dart';
 import 'utils/current_chat_tracker.dart';
 import 'utils/locale_provider.dart';
 import 'utils/presence_service.dart';
@@ -258,7 +257,8 @@ String? _lastStoredVoipToken;
 String? _lastStoredVoipUid;
 bool _voipBridgeReady = false;
 
-bool get _isIosDevice => !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+bool get _isIosDevice =>
+    !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
 Future<void> _storeVoipTokenForUserIfChanged({
   required String uid,
@@ -384,7 +384,8 @@ Future<void> _initPushNotifications() async {
     if (_isCallPush(message)) {
       final callId = _extractCallId(message);
       debugPrint(
-          '📞 FOREGROUND CALL PUSH callId=$callId type=${_extractCallType(message)}');
+        '📞 FOREGROUND CALL PUSH callId=$callId type=${_extractCallType(message)}',
+      );
       if (callId.isNotEmpty) {
         MwCallPushUi.handleCallPushInForeground(message.data);
       }
@@ -417,17 +418,19 @@ Future<void> _initPushNotifications() async {
     _showForegroundBanner(title: kMwOnlyPushTitle);
   });
 
-  _onOpenSub = FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-    debugPrint('🔔 OPENED FROM NOTIFICATION');
+  _onOpenSub =
+      FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+        debugPrint('🔔 OPENED FROM NOTIFICATION');
 
-    if (_isCallPush(message)) {
-      final callId = _extractCallId(message);
-      debugPrint(
-          '📞 OPENED CALL PUSH callId=$callId type=${_extractCallType(message)}');
-      MwCallPushUi.handleCallPushOnOpen(message.data);
-      return;
-    }
-  });
+        if (_isCallPush(message)) {
+          final callId = _extractCallId(message);
+          debugPrint(
+            '📞 OPENED CALL PUSH callId=$callId type=${_extractCallType(message)}',
+          );
+          MwCallPushUi.handleCallPushOnOpen(message.data);
+          return;
+        }
+      });
 
   try {
     final initial = await FirebaseMessaging.instance.getInitialMessage();
@@ -436,7 +439,8 @@ Future<void> _initPushNotifications() async {
       if (_isCallPush(initial)) {
         final callId = _extractCallId(initial);
         debugPrint(
-            '📞 TERMINATED CALL PUSH callId=$callId type=${_extractCallType(initial)}');
+          '📞 TERMINATED CALL PUSH callId=$callId type=${_extractCallType(initial)}',
+        );
         MwCallPushUi.handleCallPushOnOpen(initial.data);
       }
     }
@@ -446,9 +450,7 @@ Future<void> _initPushNotifications() async {
 }
 
 void _kickPresenceOnlineSoon() {
-  // Ensures presence goes online even if lifecycle "resumed" doesn't fire yet.
   WidgetsBinding.instance.addPostFrameCallback((_) {
-    // ignore: unawaited_futures
     PresenceService.instance.markOnline();
   });
 }
@@ -467,10 +469,26 @@ Future<void> main() async {
     try {
       await FirebaseAppCheck.instance.activate(
         androidProvider: AndroidProvider.playIntegrity,
-        appleProvider: (kDebugMode || kProfileMode)
-            ? AppleProvider.debug
-            : AppleProvider.appAttest,
+        appleProvider:
+        (kDebugMode || kProfileMode) ? AppleProvider.debug : AppleProvider.appAttest,
       );
+
+      // Optional debug
+      try {
+        final app = Firebase.app();
+        debugPrint('🔥 Firebase projectId=${app.options.projectId}');
+      } catch (e) {
+        debugPrint('🔥 Firebase projectId read failed: $e');
+      }
+
+      try {
+        final t = await FirebaseAppCheck.instance.getToken(true);
+        debugPrint('🛡️ AppCheck token len=${t?.length ?? 0}');
+      } on FirebaseException catch (e) {
+        debugPrint('🛡️ AppCheck getToken failed: code=${e.code} msg=${e.message}');
+      } catch (e) {
+        debugPrint('🛡️ AppCheck getToken failed: $e');
+      }
     } catch (e) {
       debugPrint('⚠️ App Check init skipped: $e');
     }
@@ -483,14 +501,13 @@ Future<void> main() async {
   }
 
   // ✅ Presence FIRST
-  // PresenceService.instance.init();
   _kickPresenceOnlineSoon();
 
   // ✅ Token sync listens to auth and will also mark online
   _setupAuthDrivenTokenSync();
   PresenceService.instance.init();
 
-  // ✅ Push init last (auth-driven token sync will handle storing)
+  // ✅ Push init last
   await _initPushNotifications();
 
   runApp(
@@ -504,9 +521,16 @@ Future<void> main() async {
           },
         ),
         ChangeNotifierProvider<LocaleProvider>(
-          create: (ctx) => LocaleProvider(
-            typographyProvider: ctx.read<TypographyProvider>(),
-          ),
+          create: (ctx) {
+            final lp = LocaleProvider(
+              typographyProvider: ctx.read<TypographyProvider>(),
+            );
+
+            // ✅ This is the missing piece: loads global locale + listens to auth changes
+            unawaited(lp.start());
+
+            return lp;
+          },
         ),
         ChangeNotifierProvider<CurrentChatTracker>.value(
           value: currentChatTracker,
@@ -517,57 +541,65 @@ Future<void> main() async {
   );
 }
 
-class MyApp extends StatelessWidget {
+/// Root app that:
+/// - uses LocaleProvider.locale for MaterialApp
+/// - listens to auth changes once and applies per-user locale after login
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
   @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+
+  @override
   Widget build(BuildContext context) {
-    final localeProvider = context.watch<LocaleProvider>();
-    final locale = localeProvider.locale;
-    final bool isArabic = locale.languageCode == 'ar';
-
-    final typo = context.watch<TypographyProvider>();
-    final rawFamily = (typo.fontFamily ?? '').trim();
-    final selected = rawFamily.isNotEmpty ? rawFamily : null;
-
-    final resolvedFamily = resolveMwFontFamily(
-      isArabic: isArabic,
-      override: selected,
-    );
-
     return IncomingCallListener(
-      child: MaterialApp(
-        navigatorKey: rootNavigatorKey,
-        scaffoldMessengerKey: rootScaffoldMessengerKey,
-        debugShowCheckedModeBanner: false,
-        theme: buildAppTheme(
-          isArabic: isArabic,
-          fontScale: 1.0,
-          fontFamily: resolvedFamily,
-        ),
-        locale: localeProvider.locale,
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
-        supportedLocales: AppLocalizations.supportedLocales,
-        onGenerateTitle: (ctx) =>
-        AppLocalizations.of(ctx)?.mainTitle ?? 'MW Chat',
-        builder: (context, child) {
-          if (child == null) return const SizedBox.shrink();
+      child: Builder(
+        builder: (context) {
+          final localeProvider = context.watch<LocaleProvider>();
+          final typo = context.watch<TypographyProvider>();
 
-          final mq = MediaQuery.of(context);
-          final scaledChild = MediaQuery(
-            data: mq.copyWith(
-              textScaler: TextScaler.linear(typo.fontScale),
-            ),
-            child: child,
-          );
+          final locale = localeProvider.locale;
+          final isArabic = locale.languageCode.toLowerCase() == 'ar';
 
-          return MwSwipeBack(
+          final resolvedFamily = typo.fontFamily.trim().isNotEmpty
+              ? typo.fontFamily.trim()
+              : (isArabic ? 'NotoSansArabic' : 'Poppins');
+
+          return MaterialApp(
             navigatorKey: rootNavigatorKey,
-            enabled: true,
-            child: scaledChild,
+            scaffoldMessengerKey: rootScaffoldMessengerKey,
+            debugShowCheckedModeBanner: false,
+            theme: buildAppTheme(
+              isArabic: isArabic,
+              fontScale: typo.fontScale,
+              fontFamily: resolvedFamily,
+            ),
+            locale: locale,
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            onGenerateTitle: (ctx) =>
+            AppLocalizations.of(ctx)?.mainTitle ?? 'MW Chat',
+            builder: (context, child) {
+              if (child == null) return const SizedBox.shrink();
+
+              final mq = MediaQuery.of(context);
+              final scaledChild = MediaQuery(
+                data: mq.copyWith(textScaler: TextScaler.linear(typo.fontScale)),
+                child: child,
+              );
+
+              return MwSwipeBack(
+                navigatorKey: rootNavigatorKey,
+                enabled: true,
+                child: scaledChild,
+              );
+            },
+            home: const AuthGate(),
           );
         },
-        home: const AuthGate(),
       ),
     );
   }
