@@ -27,6 +27,8 @@ import 'utils/current_chat_tracker.dart';
 import 'utils/locale_provider.dart';
 import 'utils/presence_service.dart';
 import 'utils/typography_provider.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
 
 /// ✅ All push UI must show ONLY this title (no body, no sender).
 const String kMwOnlyPushTitle = 'MW';
@@ -175,6 +177,7 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   debugPrint('🔔 BACKGROUND MESSAGE: ${message.messageId}');
   debugPrint('🔔 DATA: ${message.data}');
 
+
   if (!_isCallPush(message)) return;
 
   final callId = _extractCallId(message);
@@ -279,6 +282,62 @@ Future<void> _storeVoipTokenForUserIfChanged({
 
   debugPrint('✅ Stored VoIP token for user $uid (len=${token.length})');
 }
+
+
+final fln = FlutterLocalNotificationsPlugin();
+
+Future<void> setupMwChannels() async {
+  const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+  const initSettings = InitializationSettings(android: androidInit);
+  await fln.initialize(
+    initSettings,
+    onDidReceiveNotificationResponse: (resp) {
+      // handle taps if needed
+    },
+  );
+
+  final androidPlugin =
+  fln.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+  if (androidPlugin == null) return;
+
+  // Calls
+  const calls = AndroidNotificationChannel(
+    'mw_calls_v1',
+    'MW Calls',
+    description: 'Incoming calls',
+    importance: Importance.max,
+    playSound: true,
+    sound: RawResourceAndroidNotificationSound('mw_ring'),
+    enableVibration: true,
+  );
+
+  // Chat
+  const chat = AndroidNotificationChannel(
+    'mw_chat_v1',
+    'MW Chat',
+    description: 'Chat messages',
+    importance: Importance.high,
+    playSound: true,
+    sound: RawResourceAndroidNotificationSound('mw_pop'),
+    enableVibration: true,
+  );
+
+  // Achievements
+  const achievements = AndroidNotificationChannel(
+    'mw_achievements_v1',
+    'MW Achievements',
+    description: 'Achievements and rewards',
+    importance: Importance.defaultImportance,
+    playSound: true,
+    sound: RawResourceAndroidNotificationSound('mw_success'),
+    enableVibration: true,
+  );
+
+  await androidPlugin.createNotificationChannel(calls);
+  await androidPlugin.createNotificationChannel(chat);
+  await androidPlugin.createNotificationChannel(achievements);
+}
+
 
 void _initVoipBridgeOnce() {
   if (!_isIosDevice) return;

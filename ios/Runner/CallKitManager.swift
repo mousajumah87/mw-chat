@@ -41,20 +41,21 @@ final class CallKitManager: NSObject, CXProviderDelegate {
     UserDefaults.standard.synchronize()
   }
 
-  private override init() {
-    let config = CXProviderConfiguration(localizedName: "MW")
-    config.supportsVideo = true
-    config.maximumCallsPerCallGroup = 1
-    config.supportedHandleTypes = [.generic]
-    config.includesCallsInRecents = false
+private override init() {
+  let config = CXProviderConfiguration(localizedName: "MW")
+  config.supportsVideo = true
+  config.maximumCallsPerCallGroup = 1
+  config.supportedHandleTypes = [.generic]
+  config.includesCallsInRecents = false
 
-    // Optional: if you have an icon
-    // config.iconTemplateImageData = UIImage(named: "CallKitIcon")?.pngData()
+  // ✅ Looping ringtone for CallKit
+  config.ringtoneSound = "mw_ring.caf"
 
-    self.provider = CXProvider(configuration: config)
-    super.init()
-    self.provider.setDelegate(self, queue: nil)
-  }
+  self.provider = CXProvider(configuration: config)
+  super.init()
+  self.provider.setDelegate(self, queue: nil)
+}
+
 
   func setEventSink(_ sink: @escaping ([String: Any]) -> Void) {
     self.eventSink = sink

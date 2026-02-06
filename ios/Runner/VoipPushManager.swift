@@ -142,6 +142,11 @@ final class VoipPushManager: NSObject, PKPushRegistryDelegate {
       completion()
     }
 
+    // ✅ Safety timeout: never block PushKit completion (CallKit must be fast)
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+      finishOnce()
+    }
+
     let raw = payload.dictionaryPayload
     var dict: [String: Any] = [:]
     for (k, v) in raw {
@@ -152,6 +157,17 @@ final class VoipPushManager: NSObject, PKPushRegistryDelegate {
     let keys = Array(dict.keys).sorted()
     print("[VoIP] didReceiveIncomingPush keys=\(keys)")
 
+    // ✅ Ensure this push is really a call
+    let isCall =
+      (dict["type"] as? String)?.lowercased() == "call" ||
+      ((dict["callId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
+
+    if !isCall {
+      print("[VoIP] not a call payload; skipping CallKit")
+      finishOnce()
+      return
+    }
+
     // Optional: notify Flutter (debug only; safe if channel not ready)
     channel?.invokeMethod("voipPushReceived", arguments: [
       "keys": keys,
@@ -159,7 +175,7 @@ final class VoipPushManager: NSObject, PKPushRegistryDelegate {
       "hasCallerId": dict["callerId"] != nil
     ])
 
-    // ✅ Report to CallKit ASAP (must be fast)
+    // ✅ Report to CallKit ASAP (call exactly once)
     CallKitManager.shared.reportIncomingCall(payload: dict) {
       finishOnce()
     }

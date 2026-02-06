@@ -9,25 +9,25 @@ import '../main.dart' show rootNavigatorKey, setHandlingCallKitAnswer;
 import 'call_screen.dart';
 
 class MwCallPushUi {
-  static final FlutterLocalNotificationsPlugin _ln =
-  FlutterLocalNotificationsPlugin();
+  static final FlutterLocalNotificationsPlugin _ln = FlutterLocalNotificationsPlugin();
 
-  static const String _callChannelId = 'mw_calls';
-  static const String _callChannelName = 'Calls';
+  // ✅ Use versioned channel so sound can be changed safely
+  static const String _callChannelId = 'mw_calls_v1';
+  static const String _callChannelName = 'MW Calls';
 
   static bool _inited = false;
 
-  static bool get _isAndroid =>
-      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
-  static bool get _isIOS =>
-      !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+  static bool get _isAndroid => !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+  static bool get _isIOS => !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
-  // ✅ Prevent double navigation races (FCM + CallKit, or multiple events)
   static String? _openingCallId;
 
-  /// ✅ This fixes your error:
-  /// Some code calls MwCallPushUi.setHandlingCallKitAnswer(...)
   static void setHandlingCallKitAnswer(bool v) => setHandlingCallKitAnswer(v);
+
+  static int _stableNotifIdFromCallId(String callId) {
+    // stable + positive int
+    return (callId.hashCode & 0x7fffffff);
+  }
 
   static Future<void> ensureInit() async {
     if (_inited) return;
@@ -47,6 +47,7 @@ class MwCallPushUi {
     );
 
     if (_isAndroid) {
+      // ✅ Channel sound is what matters on Android 8+
       const channel = AndroidNotificationChannel(
         _callChannelId,
         _callChannelName,
@@ -54,50 +55,73 @@ class MwCallPushUi {
         importance: Importance.max,
         playSound: true,
         enableVibration: true,
+        sound: RawResourceAndroidNotificationSound('mw_ring'), // res/raw/mw_ring.mp3
       );
 
-      await _ln
-          .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>()
-          ?.createNotificationChannel(channel);
+      final androidPlugin =
+      _ln.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+
+      await androidPlugin?.createNotificationChannel(channel);
     }
   }
 
-  static Future<void> showIncomingCallNotificationFromBg(
-      Map<String, dynamic> data) async {
+  static Future<void> showIncomingCallNotificationFromBg(Map<String, dynamic> data) async {
     await ensureInit();
 
     final callId = (data['callId'] ?? '').toString().trim();
     if (callId.isEmpty) return;
 
+    final callerName = (data['callerName'] ?? 'MW').toString().trim();
+    final callType = (data['callType'] ?? 'audio').toString().trim().toLowerCase();
+
     if (_isAndroid) {
-      final details = NotificationDetails(
-        android: AndroidNotificationDetails(
-          _callChannelId,
-          _callChannelName,
-          channelDescription: 'Incoming calls',
-          importance: Importance.max,
-          priority: Priority.high,
-          category: AndroidNotificationCategory.call,
-          fullScreenIntent: true,
-          ticker: 'MW',
-          icon: '@mipmap/ic_launcher',
-        ),
+      final androidDetails = AndroidNotificationDetails(
+        _callChannelId,
+        _callChannelName,
+        channelDescription: 'Incoming calls',
+        importance: Importance.max,
+        priority: Priority.max,
+        category: AndroidNotificationCategory.call,
+
+        // ✅ make it behave like an incoming call
+        fullScreenIntent: true,
+        ongoing: true,
+        autoCancel: false,
+        visibility: NotificationVisibility.public,
+
+        icon: '@mipmap/ic_launcher',
+        ticker: 'MW',
+        // sound comes from the channel
       );
 
-      await _ln.show(callId.hashCode, 'MW', '', details, payload: callId);
+      final details = NotificationDetails(android: androidDetails);
+
+      final title = callerName.isEmpty ? 'MW' : callerName;
+      final body = callType == 'video' ? 'Incoming video call' : 'Incoming call';
+
+      await _ln.show(
+        _stableNotifIdFromCallId(callId),
+        title,
+        body,
+        details,
+        payload: callId,
+      );
       return;
     }
 
+    // iOS: normally VoIP->CallKit handles ringing UI.
+    // Keep a light fallback notification (optional).
     if (_isIOS) {
       await _ln.show(
-        callId.hashCode,
+        _stableNotifIdFromCallId(callId),
         'MW',
-        '',
+        'Incoming call',
         const NotificationDetails(
           iOS: DarwinNotificationDetails(
             presentAlert: true,
             presentSound: true,
+            // If you add mw_ring.caf to iOS bundle, you can do:
+            // sound: 'mw_ring.caf',
           ),
         ),
         payload: callId,
@@ -114,14 +138,13 @@ class MwCallPushUi {
   }
 
   static void _openCallUiIfPossible(Map<String, dynamic> data) {
-    // Keep your existing behavior:
-    // IncomingCallListener watches Firestore and shows the sheet.
-    // So we intentionally do nothing here.
+    // You said you intentionally rely on Firestore listener (IncomingCallListener)
+    // so we keep this as no-op.
     final _ = rootNavigatorKey.currentState;
   }
 
   // --------------------------------------------------------------------------
-  // ✅ CallKit integration (Answer / End)
+  // CallKit integration (Answer / End)
   // --------------------------------------------------------------------------
 
   static Future<void> handleCallKitAnswer(String callId) async {
@@ -137,8 +160,7 @@ class MwCallPushUi {
       final me = FirebaseAuth.instance.currentUser?.uid ?? '';
       if (me.isEmpty) return;
 
-      final snap =
-      await FirebaseFirestore.instance.collection('calls').doc(callId).get();
+      final snap = await FirebaseFirestore.instance.collection('calls').doc(callId).get();
       final data = snap.data();
       if (data == null) return;
 

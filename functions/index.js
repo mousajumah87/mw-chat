@@ -143,10 +143,7 @@ function tokensToRemoveFromSendResult(tokens, sendResponse) {
         const err = r && r.error ? r.error : null;
         const code = err && err.code ? String(err.code) : "";
 
-        if (
-            code.includes("messaging/invalid-registration-token") ||
-            code.includes("messaging/registration-token-not-registered")
-        ) {
+        if (code.includes("messaging/invalid-registration-token") || code.includes("messaging/registration-token-not-registered")) {
             bad.push(tokens[i]);
         }
     }
@@ -418,7 +415,6 @@ exports.onPrivateMessageCreate = functions
             }
 
             // 4) Send
-            // apns-collapse-id must be <= 64 bytes. roomId is long, so we hash it.
             const roomKey = shortStableKey("mw_room", roomId);
             const tokenBatches = chunk(tokens, 500);
 
@@ -444,9 +440,9 @@ exports.onPrivateMessageCreate = functions
                         collapseKey: roomKey,
                         notification: {
                             tag: roomKey,
-                            channelId: "mw_chat",
+                            // ✅ chat channel uses mw_pop sound on device side
+                            channelId: "mw_chat_v1",
                             title: senderName,
-                            // ✅ hide message content here too
                             body: notifBody,
                         },
                     },
@@ -459,8 +455,9 @@ exports.onPrivateMessageCreate = functions
                         },
                         payload: {
                             aps: {
-                                alert: { title: senderName, body: notifBody }, // ✅ hide content
-                                sound: "default",
+                                alert: { title: senderName, body: notifBody },
+                                // ✅ iOS message sound (file must exist in app bundle)
+                                sound: "mw_pop.caf",
                                 "thread-id": roomKey,
                             },
                         },
@@ -557,13 +554,14 @@ exports.onCallCreate = functions
                 callKey: String(callKey),
             };
 
+            // ✅ VoIP push: CallKit handles real ringing on iOS (ringtoneSound = mw_ring.caf)
             const voipRes = await sendVoipApnsPushBestEffort({
                 voipToken,
                 payload: voipPayload,
                 callId,
             });
 
-            // FCM fallback
+            // ✅ FCM fallback (Android uses its own mw_calls_v1 channel with mw_ring.mp3)
             if (fcmTokens.length) {
                 const title = "MW";
                 const body = "Incoming call";
@@ -584,17 +582,20 @@ exports.onCallCreate = functions
                             callType: String(callType),
                             callKey: String(callKey),
                         },
+
                         android: {
                             priority: "high",
                             ttl: 35 * 1000,
                             collapseKey: callKey,
                             notification: {
                                 tag: callKey,
-                                channelId: "mw_calls",
+                                // ✅ versioned calls channel
+                                channelId: "mw_calls_v1",
                                 title,
                                 body,
                             },
                         },
+
                         apns: {
                             headers: {
                                 "apns-push-type": "alert",
@@ -604,7 +605,8 @@ exports.onCallCreate = functions
                             payload: {
                                 aps: {
                                     alert: { title, body },
-                                    sound: "default",
+                                    // ✅ fallback iOS alert sound (if user doesn't get VoIP)
+                                    //sound: "mw_ring.caf",
                                     "thread-id": callKey,
                                     "interruption-level": "time-sensitive",
                                 },
@@ -666,8 +668,7 @@ exports.onCallCreate = functions
 // ----------------------------------------------
 exports.purgeChatRoom = functions.region("us-central1").https.onCall(async (data, context) => {
     try {
-        const uid =
-            context && context.auth && typeof context.auth.uid === "string" && context.auth.uid.length ? context.auth.uid : null;
+        const uid = context && context.auth && typeof context.auth.uid === "string" && context.auth.uid.length ? context.auth.uid : null;
 
         if (!uid) throw new functions.https.HttpsError("unauthenticated", "You must be signed in.");
 
