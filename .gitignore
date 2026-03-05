@@ -39,3 +39,7 @@ ios/Runner.xcworkspace/xcuserdata/
 *.xcuserstate
 ci_scripts_backup_*/
 ci_scripts_backup_*/
+
+# macOS junk
+.DS_Store
+**/.DS_Store

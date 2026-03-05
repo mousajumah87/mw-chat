@@ -40,6 +40,55 @@ class LocaleProvider extends ChangeNotifier {
   StreamSubscription<User?>? _authSub;
   bool _starting = false;
 
+  // ----------------------------
+  // Firestore read/write backoff
+  // ----------------------------
+  DateTime? _fsNextReadAllowedAt;
+  DateTime? _fsNextWriteAllowedAt;
+
+  // Start with small delay, increase up to max when failures happen.
+  Duration _fsReadBackoff = const Duration(seconds: 2);
+  Duration _fsWriteBackoff = const Duration(seconds: 2);
+
+  static const Duration _fsBackoffMax = Duration(minutes: 2);
+
+  bool _canAttemptFsReadNow() {
+    final t = _fsNextReadAllowedAt;
+    if (t == null) return true;
+    return DateTime.now().isAfter(t);
+  }
+
+  bool _canAttemptFsWriteNow() {
+    final t = _fsNextWriteAllowedAt;
+    if (t == null) return true;
+    return DateTime.now().isAfter(t);
+  }
+
+  void _onFsReadSuccess() {
+    _fsReadBackoff = const Duration(seconds: 2);
+    _fsNextReadAllowedAt = null;
+  }
+
+  void _onFsWriteSuccess() {
+    _fsWriteBackoff = const Duration(seconds: 2);
+    _fsNextWriteAllowedAt = null;
+  }
+
+  void _onFsReadFailure(Object e) {
+    // exponential-ish
+    final next = _fsReadBackoff * 2;
+    _fsReadBackoff = next > _fsBackoffMax ? _fsBackoffMax : next;
+    _fsNextReadAllowedAt = DateTime.now().add(_fsReadBackoff);
+    debugPrint('LocaleProvider FS read backoff=${_fsReadBackoff.inSeconds}s err=$e');
+  }
+
+  void _onFsWriteFailure(Object e) {
+    final next = _fsWriteBackoff * 2;
+    _fsWriteBackoff = next > _fsBackoffMax ? _fsBackoffMax : next;
+    _fsNextWriteAllowedAt = DateTime.now().add(_fsWriteBackoff);
+    debugPrint('LocaleProvider FS write backoff=${_fsWriteBackoff.inSeconds}s err=$e');
+  }
+
   /// Call once (in main.dart Provider create): loads global + starts auth listener.
   Future<void> start() async {
     if (_starting) return;
@@ -49,9 +98,8 @@ class LocaleProvider extends ChangeNotifier {
     await _loadGlobalIfNeeded();
 
     // 2) Listen auth changes and apply user locale when logged in
-    _authSub?.cancel();
+    await _authSub?.cancel();
     _authSub = FirebaseAuth.instance.authStateChanges().listen((user) {
-      // Fire-and-forget, provider will update locale + notifyListeners
       unawaited(_onAuthChanged(user));
     });
 
@@ -77,7 +125,7 @@ class LocaleProvider extends ChangeNotifier {
     _locale = Locale(code);
     notifyListeners();
 
-    // ✅ Always store global so login screen matches device last selection
+    // ✅ Always store global so login screen matches last selection
     await _writePrefs(_kPrefGlobalLocaleCode, code);
 
     // ✅ Store per-user if available
@@ -91,7 +139,7 @@ class LocaleProvider extends ChangeNotifier {
       await _typographyProvider?.setLocale(_locale);
     } catch (_) {}
 
-    // ✅ Best-effort Firestore
+    // ✅ Best-effort Firestore (throttled/backoff)
     unawaited(_tryPersistToFirestore(uid: uid, code: code));
   }
 
@@ -131,8 +179,8 @@ class LocaleProvider extends ChangeNotifier {
     final uid = user.uid;
     _activeUid = uid;
 
-    // 1) Firestore (authoritative) if allowed
-    final fsCode = await _tryReadLocaleFromFirestore(uid);
+    // 1) Firestore (authoritative) if reachable — BUT never hard-block
+    final fsCode = await _tryReadLocaleFromFirestoreBestEffort(uid);
     if (_applyIfValid(fsCode)) {
       final applied = _locale.languageCode.toLowerCase();
 
@@ -189,21 +237,35 @@ class LocaleProvider extends ChangeNotifier {
     } catch (_) {}
   }
 
-  Future<String?> _tryReadLocaleFromFirestore(String uid) async {
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .get(const GetOptions(source: Source.server));
+  /// Best-effort read:
+  /// - First tries server (fresh) but only if not in backoff
+  /// - Falls back to cache/default without throwing
+  Future<String?> _tryReadLocaleFromFirestoreBestEffort(String uid) async {
+    if (!_canAttemptFsReadNow()) return null;
 
+    final ref = FirebaseFirestore.instance.collection('users').doc(uid);
+
+    // Try server
+    try {
+      final doc = await ref.get(const GetOptions(source: Source.server));
+      final data = doc.data();
+      final v = data?[_kUserFieldLocale];
+      _onFsReadSuccess();
+      return v is String ? v : null;
+    } on FirebaseException catch (e) {
+      // Common in your logs: unavailable, permission, etc.
+      _onFsReadFailure('${e.code} ${e.message}');
+    } catch (e) {
+      _onFsReadFailure(e);
+    }
+
+    // Fallback: cache/default source
+    try {
+      final doc = await ref.get(); // may hit cache if offline
       final data = doc.data();
       final v = data?[_kUserFieldLocale];
       return v is String ? v : null;
-    } on FirebaseException catch (e) {
-      debugPrint('LocaleProvider FS read blocked: ${e.code} ${e.message}');
-      return null;
-    } catch (e) {
-      debugPrint('LocaleProvider FS read blocked: $e');
+    } catch (_) {
       return null;
     }
   }
@@ -220,6 +282,9 @@ class LocaleProvider extends ChangeNotifier {
     final c = code.toLowerCase().trim();
     if (!_supported.contains(c)) return;
 
+    // Throttle writes if Firestore is failing
+    if (!_canAttemptFsWriteNow()) return;
+
     try {
       await FirebaseFirestore.instance.collection('users').doc(u).set(
         {
@@ -228,10 +293,11 @@ class LocaleProvider extends ChangeNotifier {
         },
         SetOptions(merge: true),
       );
+      _onFsWriteSuccess();
     } on FirebaseException catch (e) {
-      debugPrint('LocaleProvider FS write blocked: ${e.code} ${e.message}');
+      _onFsWriteFailure('${e.code} ${e.message}');
     } catch (e) {
-      debugPrint('LocaleProvider FS write blocked: $e');
+      _onFsWriteFailure(e);
     }
   }
 }

@@ -1,5 +1,6 @@
 // lib/screens/chat/chat_screen.dart
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:file_picker/file_picker.dart';
@@ -497,9 +498,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     setState(() => _replyingTo = null);
   }
 
-  // ------------------------------------------------------------
-  // ✅ Composer height measure (for listBottomInset)
-  // ------------------------------------------------------------
+// ------------------------------------------------------------
+// ✅ Composer height measure (for listBottomInset)
+// ------------------------------------------------------------
+  static const double _composerMinHeight = 74.0;
+
   void _measureComposerHeight() {
     if (_measureScheduled) return;
     _measureScheduled = true;
@@ -511,13 +514,18 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       final ctx = _composerAreaKey.currentContext;
       if (ctx == null) return;
 
-      final box = ctx.findRenderObject();
-      if (box is RenderBox && box.hasSize) {
-        final h = box.size.height;
-        if (h > 0 && (h - _composerAreaHeight).abs() > 1) {
-          if (!mounted || _disposed) return;
-          setState(() => _composerAreaHeight = h);
-        }
+      final ro = ctx.findRenderObject();
+      if (ro is! RenderBox || !ro.hasSize) return;
+
+      final raw = ro.size.height;
+      final h = raw.isFinite ? raw : 0.0;
+
+      // ✅ always keep a sane minimum to avoid under-reserving space
+      final next = math.max(_composerMinHeight, h);
+
+      if ((next - _composerAreaHeight).abs() > 1.0) {
+        if (!mounted || _disposed) return;
+        setState(() => _composerAreaHeight = next);
       }
     });
   }
@@ -2559,31 +2567,31 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               final showIndicator = !_isAnyBlock && (_isOtherTyping || _isOtherRecording);
               final showPanel = _panelVisible && !keyboardOpen;
 
-              // ✅ FIX: reserve keyboardInset too (because bottomOverlay grows by keyboardInset)
+              // Safe bottom ONLY when keyboard is closed.
+              // When keyboard is open, it already defines the occluded area.
               final safeBottom = mq.padding.bottom;
-
-              // ✅ When keyboard is open, DO NOT also add safeBottom,
-              // because the keyboard already defines the bottom occlusion.
               final effectiveSafeBottom = keyboardOpen ? 0.0 : safeBottom;
 
+              // ✅ IMPORTANT: in manual mode we MUST include keyboardInset in listBottomInset,
+              // otherwise messages will sit behind the keyboard + input bar.
               final double listBottomInset =
                   _composerAreaHeight +
-                      (showPanel ? _panelHeight : 0) +
-                      (showIndicator ? 72 : 0) +
+                      (showPanel ? _panelHeight : 0.0) +
+                      (showIndicator ? 72.0 : 0.0) +
                       keyboardInset +
                       effectiveSafeBottom +
-                      8;
+                      8.0;
 
               final bottomOverlay = Material(
                 color: Colors.transparent,
                 child: AnimatedPadding(
                   duration: const Duration(milliseconds: 140),
                   curve: Curves.easeOut,
-                  // ✅ Move overlay up by keyboard height when open
+                  // ✅ lift the whole overlay above the keyboard
                   padding: EdgeInsets.only(bottom: keyboardInset),
                   child: Padding(
-                    // ✅ Only apply safe-area bottom when keyboard is CLOSED
-                    padding: EdgeInsets.only(bottom: keyboardOpen ? 0.0 : mq.padding.bottom),
+                    // ✅ apply safe bottom only when keyboard is closed
+                    padding: EdgeInsets.only(bottom: keyboardOpen ? 0.0 : safeBottom),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -2615,7 +2623,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                             child: _buildCustomPanel(context),
                           ),
 
-                        // ✅ measure ONLY composerWidget (reply + input)
                         KeyedSubtree(
                           key: _composerAreaKey,
                           child: composerWidget,
@@ -2634,7 +2641,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       Expanded(
                         child: NotificationListener<ScrollNotification>(
                           onNotification: (n) {
-                            // ✅ Optional but very helpful: hide keyboard when user starts scrolling the chat
                             if (n is ScrollStartNotification || n is UserScrollNotification) {
                               if (MediaQuery.of(context).viewInsets.bottom > 0 || _panelVisible) {
                                 _dismissKeyboardAndPanel();
@@ -2652,13 +2658,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                             currentUserId: _currentUserId,
                             otherUserId: otherUserId,
                             isBlocked: _isAnyBlock,
-                            bottomInset: listBottomInset,
+                            bottomInset: listBottomInset, // ✅ includes keyboardInset
                             onReply: _setReplyTo,
                             onReactionTapAsync: _onReactionTapAsync,
                             selectedMessageId: _selectedMessageId,
                             selectedMessageIds: _selectedMessageIds,
                             onMessageTap: () {
-                              // ✅ FIX: tapping on chat dismisses keyboard (was missing before)
                               _dismissKeyboardAndPanel();
                               _hideReactionOverlay();
                               if (_hasSelection) _clearSelection();

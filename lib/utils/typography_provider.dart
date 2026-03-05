@@ -163,6 +163,17 @@ class TypographyProvider extends ChangeNotifier {
             unawaited(_persistToPrefs());
           },
           onError: (e, st) {
+            // ✅ Expected during sign-out: Firestore streams lose auth and throw permission-denied.
+            final user = FirebaseAuth.instance.currentUser;
+            if (user == null) return;
+
+            if (e is FirebaseException && e.code == 'permission-denied') {
+              // If this happens while signed-in, it’s a real issue; otherwise ignore.
+              debugPrint('TypographyProvider stream permission-denied (signed-in).');
+              debugPrint('$e');
+              return;
+            }
+
             debugPrint('TypographyProvider user doc stream error: $e');
             debugPrint('$st');
 

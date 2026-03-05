@@ -33,6 +33,37 @@
     "resetEmailIfExists": "If this email exists, you will receive a reset link.",
     "tooManyRequests": "Too many attempts. Please try again later.",
 
+    "changePassword": "Change password",
+    "changePasswordSubtitle": "Update your password securely.",
+    "sendResetEmail": "Send reset email",
+    "sendResetEmailSubtitle": "Forgot it? We will email you a reset link.",
+
+    "changePasswordDialogTitle": "Change password",
+    "currentPassword": "Current password",
+    "newPassword": "New password",
+    "confirmNewPassword": "Confirm new password",
+    "updatePassword": "Update",
+    "cancel": "Cancel",
+    "close": "Close",
+
+    "passwordUpdatedSuccess": "Password updated successfully.",
+    "notSignedIn": "You are not signed in.",
+    "noPasswordProvider": "This account doesn’t use a password. Use reset email instead.",
+    "noEmailFound": "No email found for this account.",
+
+    "resetEmailSent": "Password reset email sent. Check your inbox.",
+    "tooManyRequests": "Too many attempts. Please try again later.",
+
+    "currentPasswordIncorrect": "Current password is incorrect.",
+    "weakPassword": "New password is too weak.",
+    "requiresRecentLogin": "Please re-login and try again.",
+    "passwordsDoNotMatch": "Passwords do not match.",
+    "passwordMinLength": "Use at least 8 characters",
+    "passwordMustDiffer": "New password must be different from current",
+    "requiredField": "Required",
+    "genericError": "Something went wrong. Please try again.",
+    "resetPasswordHelperText": "We’ll send a reset link to your email.",
+
     "settingUpProfile": "Setting up your profile...",
     "accountNotActive": "Your account is not active yet.",
     "waitForActivation": "Please wait until your account is activated by the admin.",
@@ -664,5 +695,145 @@
     "incomingCall_video": "Incoming video call",
     "incomingCall_accept": "Accept",
     "incomingCall_decline": "Decline",
-    "incomingCall_unknownCaller": "Unknown caller"
+    "incomingCall_unknownCaller": "Unknown caller",
+
+    "phoneNumberLabel": "Phone Number",
+    "phoneNumberHint": "Enter your phone number",
+    "invalidPhoneNumber": "Invalid phone number",
+    "sendCode": "Send Code",
+    "resendCode": "Resend Code",
+    "verifyCode": "Verify Code",
+    "otpCodeLabel": "Verification Code",
+    "otpCodeHint": "Enter the verification code",
+    "invalidOtp": "Invalid verification code",
+    "sendOtpToContinue": "Send a verification code to continue",
+    "enterOtpToContinue": "Enter the verification code to continue",
+    "passwordsDoNotMatch": "Passwords do not match",
+    "emailLinkedSuccess": "Email linked successfully",
+    "addEmailTitle": "Add your email",
+    "addEmailSubtitle": "Secure your account by linking an email address",
+
+    "confirmPassword": "Confirm Password",
+    "linkEmailButton": "Link Email",
+    "skipForNow": "Skip for now",
+
+    "emailAlreadyInUseLinking": "This email is already in use by another account",
+    "credentialAlreadyInUse": "This credential is already associated with another account",
+    "providerAlreadyLinked": "This sign-in method is already linked to your account",
+    "countryCodeLabel": "Country Code",
+    "phoneNumberHintDigits": "Enter phone number (digits only)",
+    "phoneNumber": "Phone Number",
+    "profileDetailsHint": "Add your details to complete your profile.",
+     "completeYourProfile": "Complete your profile",
+    "profileUpdated": "Profile updated",
+    "authError": "Something went wrong. Please try again.",
+    "remove": "Remove",
+    "firstName": "First name",
+    "lastName": "Last name",
+    "requiredField": "This field is required",
+    "selectBirthday": "Select your birthday",
+    "male": "Male",
+    "female": "Female",
+    "preferNotToSay": "Prefer not to say",
+    "save": "Save",
+    "webProfileCompletionNote": "Web note: this screen forces profile completion so names never stay empty.",
+    "minLengthError": "Must be at least {min} characters.",
+    "@minLengthError": {
+    "placeholders": {
+      "min": { "type": "int" }
+    }
+    },
+
+    "maxLengthError": "Must be {max} characters or less.",
+    "@maxLengthError": {
+    "placeholders": {
+      "max": { "type": "int" }
+    }
+    },
+
+    "invalidNameCharacters": "Only letters are allowed. You can use spaces, - and '.",
+    "invalidNameFormat": "Please enter a valid name (no extra spaces or symbols).",
+    "emailOrPhoneLabel": "Email or Phone",
+    "emailOrPhoneHintPhone": "Enter your phone number",
+    "emailOrPhoneHintEmail": "Enter your email address",
+    "emailOrPhone": "Email or Phone",
+    "checkYourEmailToVerify": "Check your email to verify your account.",
+
+    "addPhoneTitle": "Add your phone number",
+    "addPhoneSubtitle": "Link your phone number to secure your account.",
+
+    "phoneLinkedSuccess": "Phone number linked successfully.",
+
+    "searchCountryHint": "Search country",
+    "phoneHintExample": "Enter phone number",
+    "emailHintExample": "Enter email address",
+
+    "phoneAlreadyRegisteredPleaseLogin": "This phone number is already registered. Please log in.",
+    "emailAlreadyRegisteredPleaseLogin": "This email is already registered. Please log in.",
+
+    "emailNotVerifiedYet": "Your email is not verified yet.",
+    "verifyEmailToActivate": "Verify your email to activate your account.",
+
+    "verifyYourEmailTitle": "Verify your email",
+
+    "verifyEmailPanelBodyNoEmail": "We’ve sent you a verification email. Please check your inbox.",
+
+    "verifyEmailPanelBodyWithEmail": "We’ve sent a verification email to {email}. Please check your inbox.",
+    "@verifyEmailPanelBodyWithEmail": {
+    "placeholders": {
+    "email": {
+    "type": "String"
+    }
+    }
+    },
+
+    "iVerifiedMyEmail": "I verified my email",
+    "iVerified": "I verified",
+
+    "resend": "Resend",
+
+    "recaptchaRejected": "reCAPTCHA verification was rejected. Please try again.",
+
+    "fixChecklistTitle": "Try the following:",
+    "fixChecklistAuthorizedDomains": "Make sure your domain is authorized in Firebase.",
+    "fixChecklistDisableAdBlockers": "Disable ad blockers or privacy extensions.",
+    "fixChecklistAllowCookies": "Allow third-party cookies.",
+    "fixChecklistTryIncognito": "Try using Incognito / Private mode.",
+    "fixChecklistAvoidRetries": "Avoid repeated attempts in a short time.",
+
+    "devTipTestPhoneNumbers": "Developer tip: Use Firebase test phone numbers to avoid rate limits.",
+
+    "recaptchaFailedRefresh": "reCAPTCHA failed. Please refresh the page and try again.",
+
+    "otpRateLimited15Min": "Too many attempts. Please try again in 15 minutes.",
+    "otpTimedOutRefresh": "Verification timed out. Please refresh and try again.",
+
+    "unauthorizedDomainFix": "This domain is not authorized. Please check Firebase settings.",
+
+    "confirmationNotReadyResend": "Confirmation is not ready yet. Please resend the code.",
+    "sessionExpiredResend": "Session expired. Please resend the code.",
+    "timedOutTryAgain": "Request timed out. Please try again.",
+
+    "cooldownLabel": "You can resend in {seconds}s",
+    "@cooldownLabel": {
+    "placeholders": {
+    "seconds": {
+    "type": "int"
+    }
+    }
+    },
+    "linkPhoneTitle": "Link phone number",
+    "phoneNumber": "Phone number",
+    "phoneNumberHint": "Enter your phone number",
+    "requestCode": "Request code",
+    "smsCode": "SMS code",
+    "smsCodeHint": "Enter the SMS code",
+    "confirm": "Confirm",
+    "selectCountry": "Select country",
+    "invalidPhoneNumber": "Invalid phone number",
+    "enterSmsCode": "Please enter the SMS code",
+    "requestCodeFirst": "Please request a verification code first",
+    "somethingWentWrong": "Something went wrong. Please try again.",
+     "linkPhoneSubtitle": "Add a phone number to secure your account and enable phone login."
+
 }

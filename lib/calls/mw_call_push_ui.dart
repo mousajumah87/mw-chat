@@ -9,7 +9,8 @@ import '../main.dart' show rootNavigatorKey, setHandlingCallKitAnswer;
 import 'call_screen.dart';
 
 class MwCallPushUi {
-  static final FlutterLocalNotificationsPlugin _ln = FlutterLocalNotificationsPlugin();
+  static final FlutterLocalNotificationsPlugin _ln =
+  FlutterLocalNotificationsPlugin();
 
   // ✅ Use versioned channel so sound can be changed safely
   static const String _callChannelId = 'mw_calls_v1';
@@ -17,12 +18,12 @@ class MwCallPushUi {
 
   static bool _inited = false;
 
-  static bool get _isAndroid => !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
-  static bool get _isIOS => !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+  static bool get _isAndroid =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+  static bool get _isIOS =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
   static String? _openingCallId;
-
-  static void setHandlingCallKitAnswer(bool v) => setHandlingCallKitAnswer(v);
 
   static int _stableNotifIdFromCallId(String callId) {
     // stable + positive int
@@ -36,8 +37,12 @@ class MwCallPushUi {
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
     const iosInit = DarwinInitializationSettings();
 
+    const initSettings =
+    InitializationSettings(android: androidInit, iOS: iosInit);
+
+    // ✅ v20+: initialize() requires named parameter "settings:"
     await _ln.initialize(
-      const InitializationSettings(android: androidInit, iOS: iosInit),
+      settings: initSettings,
       onDidReceiveNotificationResponse: (resp) {
         final payload = (resp.payload ?? '').trim();
         if (payload.isNotEmpty) {
@@ -55,24 +60,27 @@ class MwCallPushUi {
         importance: Importance.max,
         playSound: true,
         enableVibration: true,
-        sound: RawResourceAndroidNotificationSound('mw_ring'), // res/raw/mw_ring.mp3
+        sound: RawResourceAndroidNotificationSound(
+            'mw_ring'), // android/app/src/main/res/raw/mw_ring.mp3
       );
 
-      final androidPlugin =
-      _ln.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      final androidPlugin = _ln.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
 
       await androidPlugin?.createNotificationChannel(channel);
     }
   }
 
-  static Future<void> showIncomingCallNotificationFromBg(Map<String, dynamic> data) async {
+  static Future<void> showIncomingCallNotificationFromBg(
+      Map<String, dynamic> data) async {
     await ensureInit();
 
     final callId = (data['callId'] ?? '').toString().trim();
     if (callId.isEmpty) return;
 
     final callerName = (data['callerName'] ?? 'MW').toString().trim();
-    final callType = (data['callType'] ?? 'audio').toString().trim().toLowerCase();
+    final callType =
+    (data['callType'] ?? 'audio').toString().trim().toLowerCase();
 
     if (_isAndroid) {
       final androidDetails = AndroidNotificationDetails(
@@ -83,7 +91,7 @@ class MwCallPushUi {
         priority: Priority.max,
         category: AndroidNotificationCategory.call,
 
-        // ✅ make it behave like an incoming call
+        // ✅ behave like an incoming call
         fullScreenIntent: true,
         ongoing: true,
         autoCancel: false,
@@ -100,27 +108,26 @@ class MwCallPushUi {
       final body = callType == 'video' ? 'Incoming video call' : 'Incoming call';
 
       await _ln.show(
-        _stableNotifIdFromCallId(callId),
-        title,
-        body,
-        details,
+        id: _stableNotifIdFromCallId(callId),
+        title: title,
+        body: body,
+        notificationDetails: details,
         payload: callId,
       );
       return;
     }
 
-    // iOS: normally VoIP->CallKit handles ringing UI.
+    // iOS: normally VoIP -> CallKit handles ringing UI.
     // Keep a light fallback notification (optional).
     if (_isIOS) {
       await _ln.show(
-        _stableNotifIdFromCallId(callId),
-        'MW',
-        'Incoming call',
-        const NotificationDetails(
+        id: _stableNotifIdFromCallId(callId),
+        title: 'MW',
+        body: 'Incoming call',
+        notificationDetails: const NotificationDetails(
           iOS: DarwinNotificationDetails(
             presentAlert: true,
             presentSound: true,
-            // If you add mw_ring.caf to iOS bundle, you can do:
             // sound: 'mw_ring.caf',
           ),
         ),
@@ -138,8 +145,8 @@ class MwCallPushUi {
   }
 
   static void _openCallUiIfPossible(Map<String, dynamic> data) {
-    // You said you intentionally rely on Firestore listener (IncomingCallListener)
-    // so we keep this as no-op.
+    // You intentionally rely on Firestore listener (IncomingCallListener),
+    // so keep this as no-op.
     final _ = rootNavigatorKey.currentState;
   }
 
@@ -160,7 +167,8 @@ class MwCallPushUi {
       final me = FirebaseAuth.instance.currentUser?.uid ?? '';
       if (me.isEmpty) return;
 
-      final snap = await FirebaseFirestore.instance.collection('calls').doc(callId).get();
+      final snap =
+      await FirebaseFirestore.instance.collection('calls').doc(callId).get();
       final data = snap.data();
       if (data == null) return;
 

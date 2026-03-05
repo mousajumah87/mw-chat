@@ -23,6 +23,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/services.dart';
+import 'package:mw/screens/profile/widgets/profile_change_password_section.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../l10n/app_localizations.dart';
@@ -850,6 +851,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                                 const SizedBox(height: 14),
 
                                 _buildEmailTile(l10n, theme),
+                                const SizedBox(height: 12),
+
+                                const ProfileChangePasswordSection(),
                                 const SizedBox(height: 18),
 
                                 ProfileBirthdaySection(

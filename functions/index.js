@@ -668,7 +668,8 @@ exports.onCallCreate = functions
 // ----------------------------------------------
 exports.purgeChatRoom = functions.region("us-central1").https.onCall(async (data, context) => {
     try {
-        const uid = context && context.auth && typeof context.auth.uid === "string" && context.auth.uid.length ? context.auth.uid : null;
+        const uid =
+            context && context.auth && typeof context.auth.uid === "string" && context.auth.uid.length ? context.auth.uid : null;
 
         if (!uid) throw new functions.https.HttpsError("unauthenticated", "You must be signed in.");
 
@@ -717,6 +718,66 @@ exports.purgeChatRoom = functions.region("us-central1").https.onCall(async (data
         return { ok: true, deleted, skipped };
     } catch (e) {
         console.error("purgeChatRoom failed:", e);
+        if (e && e.code && e.message) throw e;
+        throw new functions.https.HttpsError("internal", e && e.message ? e.message : "Failed");
+    }
+});
+
+// ----------------------------------------------
+// ✅ NEW Callable: checkIdentifierAvailable (WhatsApp-style registration guard)
+// - Phone must be E.164 like +14258664221
+// - Email is lowercased
+// Returns: { available: boolean, reason?: string, uid?: string|null }
+// ----------------------------------------------
+exports.checkIdentifierAvailable = functions.region("us-central1").https.onCall(async (data, context) => {
+    try {
+        const type = data && typeof data.type === "string" ? data.type.trim().toLowerCase() : "";
+        const value = data && typeof data.value === "string" ? data.value.trim() : "";
+
+        if (!type || !value) {
+            throw new functions.https.HttpsError("invalid-argument", "Missing type/value.");
+        }
+
+        if (type !== "phone" && type !== "email") {
+            throw new functions.https.HttpsError("invalid-argument", "type must be 'phone' or 'email'.");
+        }
+
+        // Optional small validation to avoid useless admin calls
+        if (type === "phone") {
+            // Expect + followed by digits (basic E.164 guard)
+            if (!value.startsWith("+") || value.length < 8) {
+                throw new functions.https.HttpsError("invalid-argument", "Phone must be in E.164 format, e.g. +14258664221");
+            }
+        }
+
+        const auth = admin.auth();
+
+        if (type === "phone") {
+            try {
+                const u = await auth.getUserByPhoneNumber(value);
+                return { available: false, reason: "phone_in_use", uid: u && u.uid ? String(u.uid) : null };
+            } catch (e) {
+                // user-not-found => available
+                const code = e && e.code ? String(e.code) : "";
+                if (code.includes("auth/user-not-found")) return { available: true };
+                console.log("[checkIdentifierAvailable] phone lookup error:", code, e && e.message ? e.message : String(e));
+                throw new functions.https.HttpsError("internal", "Failed to check phone availability.");
+            }
+        }
+
+        // email
+        const email = value.toLowerCase();
+        try {
+            const u = await auth.getUserByEmail(email);
+            return { available: false, reason: "email_in_use", uid: u && u.uid ? String(u.uid) : null };
+        } catch (e) {
+            const code = e && e.code ? String(e.code) : "";
+            if (code.includes("auth/user-not-found")) return { available: true };
+            console.log("[checkIdentifierAvailable] email lookup error:", code, e && e.message ? e.message : String(e));
+            throw new functions.https.HttpsError("internal", "Failed to check email availability.");
+        }
+    } catch (e) {
+        console.log("[checkIdentifierAvailable] failed:", e && e.message ? e.message : String(e));
         if (e && e.code && e.message) throw e;
         throw new functions.https.HttpsError("internal", e && e.message ? e.message : "Failed");
     }

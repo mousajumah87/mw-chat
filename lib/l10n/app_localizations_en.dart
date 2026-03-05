@@ -39,7 +39,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get birthday => 'Birthday';
 
   @override
-  String get selectBirthday => 'Select birthday';
+  String get selectBirthday => 'Select your birthday';
 
   @override
   String get gender => 'Gender';
@@ -66,7 +66,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get register => 'Register';
 
   @override
-  String get requiredField => 'Required';
+  String get requiredField => 'This field is required';
 
   @override
   String get invalidEmail => 'Invalid email';
@@ -75,7 +75,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get minPassword => 'Minimum 6 characters';
 
   @override
-  String get authError => 'Authentication error';
+  String get authError => 'Something went wrong. Please try again.';
 
   @override
   String get failedToCreateUser => 'Failed to create user';
@@ -95,6 +95,79 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get tooManyRequests => 'Too many attempts. Please try again later.';
+
+  @override
+  String get changePassword => 'Change password';
+
+  @override
+  String get changePasswordSubtitle => 'Update your password securely.';
+
+  @override
+  String get sendResetEmail => 'Send reset email';
+
+  @override
+  String get sendResetEmailSubtitle =>
+      'Forgot it? We will email you a reset link.';
+
+  @override
+  String get changePasswordDialogTitle => 'Change password';
+
+  @override
+  String get currentPassword => 'Current password';
+
+  @override
+  String get newPassword => 'New password';
+
+  @override
+  String get confirmNewPassword => 'Confirm new password';
+
+  @override
+  String get updatePassword => 'Update';
+
+  @override
+  String get cancel => 'Cancel';
+
+  @override
+  String get close => 'Close';
+
+  @override
+  String get passwordUpdatedSuccess => 'Password updated successfully.';
+
+  @override
+  String get notSignedIn => 'You are not signed in.';
+
+  @override
+  String get noPasswordProvider =>
+      'This account doesn’t use a password. Use reset email instead.';
+
+  @override
+  String get noEmailFound => 'No email found for this account.';
+
+  @override
+  String get currentPasswordIncorrect => 'Current password is incorrect.';
+
+  @override
+  String get weakPassword => 'New password is too weak.';
+
+  @override
+  String get requiresRecentLogin => 'Please re-login and try again.';
+
+  @override
+  String get passwordsDoNotMatch => 'Passwords do not match';
+
+  @override
+  String get passwordMinLength => 'Use at least 8 characters';
+
+  @override
+  String get passwordMustDiffer =>
+      'New password must be different from current';
+
+  @override
+  String get genericError => 'Something went wrong. Please try again.';
+
+  @override
+  String get resetPasswordHelperText =>
+      'We’ll send a reset link to your email.';
 
   @override
   String get settingUpProfile => 'Setting up your profile...';
@@ -356,9 +429,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get delete => 'Delete';
-
-  @override
-  String get cancel => 'Cancel';
 
   @override
   String get chatDeleted => 'Chat deleted successfully';
@@ -1518,4 +1588,267 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get incomingCall_unknownCaller => 'Unknown caller';
+
+  @override
+  String get phoneNumberLabel => 'Phone Number';
+
+  @override
+  String get phoneNumberHint => 'Enter your phone number';
+
+  @override
+  String get invalidPhoneNumber => 'Invalid phone number';
+
+  @override
+  String get sendCode => 'Send Code';
+
+  @override
+  String get resendCode => 'Resend Code';
+
+  @override
+  String get verifyCode => 'Verify Code';
+
+  @override
+  String get otpCodeLabel => 'Verification Code';
+
+  @override
+  String get otpCodeHint => 'Enter the verification code';
+
+  @override
+  String get invalidOtp => 'Invalid verification code';
+
+  @override
+  String get sendOtpToContinue => 'Send a verification code to continue';
+
+  @override
+  String get enterOtpToContinue => 'Enter the verification code to continue';
+
+  @override
+  String get emailLinkedSuccess => 'Email linked successfully';
+
+  @override
+  String get addEmailTitle => 'Add your email';
+
+  @override
+  String get addEmailSubtitle =>
+      'Secure your account by linking an email address';
+
+  @override
+  String get confirmPassword => 'Confirm Password';
+
+  @override
+  String get linkEmailButton => 'Link Email';
+
+  @override
+  String get skipForNow => 'Skip for now';
+
+  @override
+  String get emailAlreadyInUseLinking =>
+      'This email is already in use by another account';
+
+  @override
+  String get credentialAlreadyInUse =>
+      'This credential is already associated with another account';
+
+  @override
+  String get providerAlreadyLinked =>
+      'This sign-in method is already linked to your account';
+
+  @override
+  String get countryCodeLabel => 'Country Code';
+
+  @override
+  String get phoneNumberHintDigits => 'Enter phone number (digits only)';
+
+  @override
+  String get phoneNumber => 'Phone number';
+
+  @override
+  String get profileDetailsHint => 'Add your details to complete your profile.';
+
+  @override
+  String get completeYourProfile => 'Complete your profile';
+
+  @override
+  String get webProfileCompletionNote =>
+      'Web note: this screen forces profile completion so names never stay empty.';
+
+  @override
+  String minLengthError(int min) {
+    return 'Must be at least $min characters.';
+  }
+
+  @override
+  String maxLengthError(int max) {
+    return 'Must be $max characters or less.';
+  }
+
+  @override
+  String get invalidNameCharacters =>
+      'Only letters are allowed. You can use spaces, - and \'.';
+
+  @override
+  String get invalidNameFormat =>
+      'Please enter a valid name (no extra spaces or symbols).';
+
+  @override
+  String get emailOrPhoneLabel => 'Email or Phone';
+
+  @override
+  String get emailOrPhoneHintPhone => 'Enter your phone number';
+
+  @override
+  String get emailOrPhoneHintEmail => 'Enter your email address';
+
+  @override
+  String get emailOrPhone => 'Email or Phone';
+
+  @override
+  String get checkYourEmailToVerify =>
+      'Check your email to verify your account.';
+
+  @override
+  String get addPhoneTitle => 'Add your phone number';
+
+  @override
+  String get addPhoneSubtitle =>
+      'Link your phone number to secure your account.';
+
+  @override
+  String get phoneLinkedSuccess => 'Phone number linked successfully.';
+
+  @override
+  String get searchCountryHint => 'Search country';
+
+  @override
+  String get phoneHintExample => 'Enter phone number';
+
+  @override
+  String get emailHintExample => 'Enter email address';
+
+  @override
+  String get phoneAlreadyRegisteredPleaseLogin =>
+      'This phone number is already registered. Please log in.';
+
+  @override
+  String get emailAlreadyRegisteredPleaseLogin =>
+      'This email is already registered. Please log in.';
+
+  @override
+  String get emailNotVerifiedYet => 'Your email is not verified yet.';
+
+  @override
+  String get verifyEmailToActivate =>
+      'Verify your email to activate your account.';
+
+  @override
+  String get verifyYourEmailTitle => 'Verify your email';
+
+  @override
+  String get verifyEmailPanelBodyNoEmail =>
+      'We’ve sent you a verification email. Please check your inbox.';
+
+  @override
+  String verifyEmailPanelBodyWithEmail(String email) {
+    return 'We’ve sent a verification email to $email. Please check your inbox.';
+  }
+
+  @override
+  String get iVerifiedMyEmail => 'I verified my email';
+
+  @override
+  String get iVerified => 'I verified';
+
+  @override
+  String get resend => 'Resend';
+
+  @override
+  String get recaptchaRejected =>
+      'reCAPTCHA verification was rejected. Please try again.';
+
+  @override
+  String get fixChecklistTitle => 'Try the following:';
+
+  @override
+  String get fixChecklistAuthorizedDomains =>
+      'Make sure your domain is authorized in Firebase.';
+
+  @override
+  String get fixChecklistDisableAdBlockers =>
+      'Disable ad blockers or privacy extensions.';
+
+  @override
+  String get fixChecklistAllowCookies => 'Allow third-party cookies.';
+
+  @override
+  String get fixChecklistTryIncognito => 'Try using Incognito / Private mode.';
+
+  @override
+  String get fixChecklistAvoidRetries =>
+      'Avoid repeated attempts in a short time.';
+
+  @override
+  String get devTipTestPhoneNumbers =>
+      'Developer tip: Use Firebase test phone numbers to avoid rate limits.';
+
+  @override
+  String get recaptchaFailedRefresh =>
+      'reCAPTCHA failed. Please refresh the page and try again.';
+
+  @override
+  String get otpRateLimited15Min =>
+      'Too many attempts. Please try again in 15 minutes.';
+
+  @override
+  String get otpTimedOutRefresh =>
+      'Verification timed out. Please refresh and try again.';
+
+  @override
+  String get unauthorizedDomainFix =>
+      'This domain is not authorized. Please check Firebase settings.';
+
+  @override
+  String get confirmationNotReadyResend =>
+      'Confirmation is not ready yet. Please resend the code.';
+
+  @override
+  String get sessionExpiredResend => 'Session expired. Please resend the code.';
+
+  @override
+  String get timedOutTryAgain => 'Request timed out. Please try again.';
+
+  @override
+  String cooldownLabel(int seconds) {
+    return 'You can resend in ${seconds}s';
+  }
+
+  @override
+  String get linkPhoneTitle => 'Link phone number';
+
+  @override
+  String get requestCode => 'Request code';
+
+  @override
+  String get smsCode => 'SMS code';
+
+  @override
+  String get smsCodeHint => 'Enter the SMS code';
+
+  @override
+  String get confirm => 'Confirm';
+
+  @override
+  String get selectCountry => 'Select country';
+
+  @override
+  String get enterSmsCode => 'Please enter the SMS code';
+
+  @override
+  String get requestCodeFirst => 'Please request a verification code first';
+
+  @override
+  String get somethingWentWrong => 'Something went wrong. Please try again.';
+
+  @override
+  String get linkPhoneSubtitle =>
+      'Add a phone number to secure your account and enable phone login.';
 }

@@ -38,6 +38,37 @@
     "resetEmailIfExists": "إذا كان هذا البريد الإلكتروني موجودًا، فستتلقى رابط إعادة التعيين.",
     "tooManyRequests": "محاولات كثيرة. يرجى المحاولة لاحقًا.",
 
+    "changePassword": "تغيير كلمة المرور",
+    "changePasswordSubtitle": "قم بتحديث كلمة المرور بأمان.",
+    "sendResetEmail": "إرسال رابط إعادة التعيين",
+    "sendResetEmailSubtitle": "نسيت كلمة المرور؟ سنرسل لك رابط إعادة التعيين.",
+
+    "changePasswordDialogTitle": "تغيير كلمة المرور",
+    "currentPassword": "كلمة المرور الحالية",
+    "newPassword": "كلمة المرور الجديدة",
+    "confirmNewPassword": "تأكيد كلمة المرور الجديدة",
+    "updatePassword": "تحديث",
+    "cancel": "إلغاء",
+    "close": "إغلاق",
+
+    "passwordUpdatedSuccess": "تم تحديث كلمة المرور بنجاح.",
+    "notSignedIn": "أنت غير مسجّل دخول.",
+    "noPasswordProvider": "هذا الحساب لا يستخدم كلمة مرور. استخدم إعادة التعيين عبر البريد.",
+    "noEmailFound": "لا يوجد بريد إلكتروني لهذا الحساب.",
+
+    "resetEmailSent": "تم إرسال رابط إعادة تعيين كلمة المرور. تحقق من بريدك الإلكتروني.",
+    "tooManyRequests": "محاولات كثيرة. يرجى المحاولة لاحقًا.",
+
+    "currentPasswordIncorrect": "كلمة المرور الحالية غير صحيحة.",
+    "weakPassword": "كلمة المرور الجديدة ضعيفة.",
+    "requiresRecentLogin": "يرجى تسجيل الدخول مجددًا ثم المحاولة.",
+    "passwordsDoNotMatch": "كلمتا المرور غير متطابقتين.",
+    "passwordMinLength": "يجب ألا تقل عن ٨ أحرف",
+    "passwordMustDiffer": "يجب أن تكون مختلفة عن كلمة المرور الحالية",
+    "requiredField": "مطلوب",
+    "genericError": "حدث خطأ. يرجى المحاولة مرة أخرى.",
+    "resetPasswordHelperText": "سنرسل رابط إعادة تعيين كلمة المرور إلى بريدك الإلكتروني.",
+
     "settingUpProfile": "جارٍ إعداد ملفك الشخصي...",
     "accountNotActive": "حسابك غير مفعّل بعد.",
     "waitForActivation": "يرجى الانتظار حتى يتم تفعيل حسابك من قبل المسؤول.",
@@ -658,5 +689,151 @@
     "incomingCall_video": "مكالمة فيديو واردة",
     "incomingCall_accept": "قبول",
     "incomingCall_decline": "رفض",
-    "incomingCall_unknownCaller": "متصل غير معروف"
+    "incomingCall_unknownCaller": "متصل غير معروف",
+    "phoneNumberLabel": "رقم الهاتف",
+    "phoneNumberHint": "أدخل رقم هاتفك",
+    "invalidPhoneNumber": "رقم الهاتف غير صالح",
+
+    "sendCode": "إرسال الرمز",
+    "resendCode": "إعادة إرسال الرمز",
+    "verifyCode": "التحقق من الرمز",
+
+    "otpCodeLabel": "رمز التحقق",
+    "otpCodeHint": "أدخل رمز التحقق",
+    "invalidOtp": "رمز التحقق غير صالح",
+
+    "sendOtpToContinue": "أرسل رمز التحقق للمتابعة",
+    "enterOtpToContinue": "أدخل رمز التحقق للمتابعة",
+    "passwordsDoNotMatch": "كلمتا المرور غير متطابقتين",
+    "emailLinkedSuccess": "تم ربط البريد الإلكتروني بنجاح",
+    "addEmailTitle": "إضافة بريد إلكتروني",
+    "addEmailSubtitle": "قم بتأمين حسابك من خلال ربط بريد إلكتروني",
+
+    "confirmPassword": "تأكيد كلمة المرور",
+    "linkEmailButton": "ربط البريد الإلكتروني",
+    "skipForNow": "تخطي الآن",
+
+    "emailAlreadyInUseLinking": "هذا البريد الإلكتروني مستخدم بالفعل بحساب آخر",
+    "credentialAlreadyInUse": "بيانات الاعتماد هذه مرتبطة بحساب آخر بالفعل",
+    "providerAlreadyLinked": "طريقة تسجيل الدخول هذه مرتبطة بحسابك بالفعل",
+    "countryCodeLabel": "رمز الدولة",
+    "phoneNumberHintDigits": "أدخل رقم الهاتف (أرقام فقط)",
+    "phoneNumber": "رقم الهاتف",
+    "profileDetailsHint": "أضف معلوماتك لإكمال ملفك الشخصي.",
+    "completeYourProfile": "أكمل ملفك الشخصي",
+    "profileUpdated": "تم تحديث الملف الشخصي",
+    "authError": "حدث خطأ ما، يرجى المحاولة مرة أخرى.",
+    "remove": "إزالة",
+    "firstName": "الاسم الأول",
+    "lastName": "اسم العائلة",
+    "requiredField": "هذا الحقل مطلوب",
+    "selectBirthday": "اختر تاريخ ميلادك",
+    "male": "ذكر",
+    "female": "أنثى",
+    "preferNotToSay": "أفضل عدم الإفصاح",
+    "save": "حفظ",
+    "webProfileCompletionNote": "ملاحظة للويب: هذه الصفحة تفرض إكمال الملف الشخصي حتى لا تبقى الأسماء فارغة.",
+    "minLengthError": "يجب أن يكون على الأقل {min} أحرف.",
+    "@minLengthError": {
+    "placeholders": {
+      "min": { "type": "int" }
+    }
+    },
+
+    "maxLengthError": "يجب ألا يزيد عن {max} أحرف.",
+    "@maxLengthError": {
+    "placeholders": {
+      "max": { "type": "int" }
+    }
+    },
+
+    "invalidNameCharacters": "يسمح بالأحرف فقط. يمكنك استخدام المسافات وشرطة - وعلامة ' فقط.",
+    "invalidNameFormat": "يرجى إدخال اسم صحيح (بدون مسافات أو رموز إضافية).",
+    "emailOrPhoneLabel": "البريد الإلكتروني أو رقم الهاتف",
+    "emailOrPhoneHintPhone": "أدخل رقم هاتفك",
+    "emailOrPhoneHintEmail": "أدخل بريدك الإلكتروني",
+    "emailOrPhone": "البريد الإلكتروني أو رقم الهاتف",
+    "checkYourEmailToVerify": "تحقق من بريدك الإلكتروني لتأكيد حسابك.",
+
+    "addPhoneTitle": "أضف رقم هاتفك",
+    "addPhoneSubtitle": "قم بربط رقم هاتفك لتأمين حسابك.",
+
+    "phoneLinkedSuccess": "تم ربط رقم الهاتف بنجاح.",
+
+    "searchCountryHint": "ابحث عن الدولة",
+    "phoneHintExample": "أدخل رقم الهاتف",
+    "emailHintExample": "أدخل البريد الإلكتروني",
+
+    "phoneAlreadyRegisteredPleaseLogin": "رقم الهاتف مسجل مسبقًا. يرجى تسجيل الدخول.",
+    "emailAlreadyRegisteredPleaseLogin": "البريد الإلكتروني مسجل مسبقًا. يرجى تسجيل الدخول.",
+
+    "emailNotVerifiedYet": "لم يتم التحقق من بريدك الإلكتروني بعد.",
+    "verifyEmailToActivate": "يرجى التحقق من بريدك الإلكتروني لتفعيل حسابك.",
+
+    "verifyYourEmailTitle": "تحقق من بريدك الإلكتروني",
+
+    "verifyEmailPanelBodyNoEmail": "لقد أرسلنا رسالة تحقق إلى بريدك الإلكتروني. يرجى مراجعة صندوق الوارد.",
+
+    "verifyEmailPanelBodyWithEmail": "لقد أرسلنا رسالة تحقق إلى {email}. يرجى مراجعة صندوق الوارد.",
+    "@verifyEmailPanelBodyWithEmail": {
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+    },
+
+    "iVerifiedMyEmail": "لقد قمت بالتحقق من بريدي الإلكتروني",
+    "iVerified": "تم التحقق",
+
+    "resend": "إعادة الإرسال",
+
+    "recaptchaRejected": "تم رفض التحقق من reCAPTCHA. يرجى المحاولة مرة أخرى.",
+
+    "fixChecklistTitle": "جرّب الخطوات التالية:",
+    "fixChecklistAuthorizedDomains": "تأكد من أن النطاق مضاف ضمن النطاقات المصرح بها في Firebase.",
+    "fixChecklistDisableAdBlockers": "قم بتعطيل إضافات حظر الإعلانات أو الخصوصية.",
+    "fixChecklistAllowCookies": "اسمح بملفات تعريف الارتباط (Cookies) التابعة لجهات خارجية.",
+    "fixChecklistTryIncognito": "جرّب استخدام وضع التصفح الخفي / الخاص.",
+    "fixChecklistAvoidRetries": "تجنب المحاولات المتكررة خلال وقت قصير.",
+
+    "devTipTestPhoneNumbers": "نصيحة للمطورين: استخدم أرقام اختبار Firebase لتجنب قيود المعدل.",
+
+    "recaptchaFailedRefresh": "فشل التحقق من reCAPTCHA. يرجى تحديث الصفحة والمحاولة مرة أخرى.",
+
+    "otpRateLimited15Min": "محاولات كثيرة. يرجى المحاولة مرة أخرى بعد 15 دقيقة.",
+    "otpTimedOutRefresh": "انتهت مهلة التحقق. يرجى التحديث والمحاولة مرة أخرى.",
+
+    "unauthorizedDomainFix": "هذا النطاق غير مصرح به. يرجى التحقق من إعدادات Firebase.",
+
+    "confirmationNotReadyResend": "رمز التأكيد غير جاهز بعد. يرجى إعادة الإرسال.",
+    "sessionExpiredResend": "انتهت الجلسة. يرجى إعادة إرسال الرمز.",
+    "timedOutTryAgain": "انتهت المهلة. يرجى المحاولة مرة أخرى.",
+
+    "cooldownLabel": "يمكنك إعادة الإرسال خلال {seconds} ثانية",
+    "@cooldownLabel": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+    },
+
+    "noCurrentUser": "لا يوجد مستخدم مسجل الدخول حالياً.",
+    "noCurrentUser": "No authenticated user found.",
+    "linkPhoneTitle": "ربط رقم الهاتف",
+    "phoneNumber": "رقم الهاتف",
+    "phoneNumberHint": "أدخل رقم هاتفك",
+    "requestCode": "إرسال الرمز",
+    "smsCode": "رمز التحقق",
+    "smsCodeHint": "أدخل رمز التحقق",
+    "confirm": "تأكيد",
+    "selectCountry": "اختر الدولة",
+    "invalidPhoneNumber": "رقم الهاتف غير صالح",
+    "enterSmsCode": "يرجى إدخال رمز التحقق",
+    "requestCodeFirst": "يرجى طلب رمز التحقق أولاً",
+    "somethingWentWrong": "حدث خطأ ما، يرجى المحاولة مرة أخرى",
+    "linkPhoneSubtitle": "أضف رقم هاتف لتأمين حسابك وتمكين تسجيل الدخول باستخدام الهاتف."
+
+
 }

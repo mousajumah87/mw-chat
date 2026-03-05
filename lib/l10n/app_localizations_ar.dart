@@ -39,7 +39,7 @@ class AppLocalizationsAr extends AppLocalizations {
   String get birthday => 'تاريخ الميلاد';
 
   @override
-  String get selectBirthday => 'اختر تاريخ الميلاد';
+  String get selectBirthday => 'اختر تاريخ ميلادك';
 
   @override
   String get gender => 'الجنس';
@@ -66,7 +66,7 @@ class AppLocalizationsAr extends AppLocalizations {
   String get register => 'إنشاء حساب';
 
   @override
-  String get requiredField => 'حقل مطلوب';
+  String get requiredField => 'هذا الحقل مطلوب';
 
   @override
   String get invalidEmail => 'بريد إلكتروني غير صالح';
@@ -75,7 +75,7 @@ class AppLocalizationsAr extends AppLocalizations {
   String get minPassword => 'كلمة المرور لا تقل عن 6 أحرف';
 
   @override
-  String get authError => 'خطأ في المصادقة';
+  String get authError => 'حدث خطأ ما، يرجى المحاولة مرة أخرى.';
 
   @override
   String get failedToCreateUser => 'فشل إنشاء المستخدم';
@@ -96,6 +96,78 @@ class AppLocalizationsAr extends AppLocalizations {
 
   @override
   String get tooManyRequests => 'محاولات كثيرة. يرجى المحاولة لاحقًا.';
+
+  @override
+  String get changePassword => 'تغيير كلمة المرور';
+
+  @override
+  String get changePasswordSubtitle => 'قم بتحديث كلمة المرور بأمان.';
+
+  @override
+  String get sendResetEmail => 'إرسال رابط إعادة التعيين';
+
+  @override
+  String get sendResetEmailSubtitle =>
+      'نسيت كلمة المرور؟ سنرسل لك رابط إعادة التعيين.';
+
+  @override
+  String get changePasswordDialogTitle => 'تغيير كلمة المرور';
+
+  @override
+  String get currentPassword => 'كلمة المرور الحالية';
+
+  @override
+  String get newPassword => 'كلمة المرور الجديدة';
+
+  @override
+  String get confirmNewPassword => 'تأكيد كلمة المرور الجديدة';
+
+  @override
+  String get updatePassword => 'تحديث';
+
+  @override
+  String get cancel => 'إلغاء';
+
+  @override
+  String get close => 'إغلاق';
+
+  @override
+  String get passwordUpdatedSuccess => 'تم تحديث كلمة المرور بنجاح.';
+
+  @override
+  String get notSignedIn => 'أنت غير مسجّل دخول.';
+
+  @override
+  String get noPasswordProvider =>
+      'هذا الحساب لا يستخدم كلمة مرور. استخدم إعادة التعيين عبر البريد.';
+
+  @override
+  String get noEmailFound => 'لا يوجد بريد إلكتروني لهذا الحساب.';
+
+  @override
+  String get currentPasswordIncorrect => 'كلمة المرور الحالية غير صحيحة.';
+
+  @override
+  String get weakPassword => 'كلمة المرور الجديدة ضعيفة.';
+
+  @override
+  String get requiresRecentLogin => 'يرجى تسجيل الدخول مجددًا ثم المحاولة.';
+
+  @override
+  String get passwordsDoNotMatch => 'كلمتا المرور غير متطابقتين';
+
+  @override
+  String get passwordMinLength => 'يجب ألا تقل عن ٨ أحرف';
+
+  @override
+  String get passwordMustDiffer => 'يجب أن تكون مختلفة عن كلمة المرور الحالية';
+
+  @override
+  String get genericError => 'حدث خطأ. يرجى المحاولة مرة أخرى.';
+
+  @override
+  String get resetPasswordHelperText =>
+      'سنرسل رابط إعادة تعيين كلمة المرور إلى بريدك الإلكتروني.';
 
   @override
   String get settingUpProfile => 'جارٍ إعداد ملفك الشخصي...';
@@ -358,9 +430,6 @@ class AppLocalizationsAr extends AppLocalizations {
   String get delete => 'حذف';
 
   @override
-  String get cancel => 'إلغاء';
-
-  @override
   String get chatDeleted => 'تم حذف المحادثة بنجاح';
 
   @override
@@ -370,7 +439,7 @@ class AppLocalizationsAr extends AppLocalizations {
   String get chatHistoryDeleted => 'تم حذف سجل المحادثة بنجاح';
 
   @override
-  String get remove => 'حذف';
+  String get remove => 'إزالة';
 
   @override
   String get invite => 'دعوة';
@@ -1519,4 +1588,266 @@ class AppLocalizationsAr extends AppLocalizations {
 
   @override
   String get incomingCall_unknownCaller => 'متصل غير معروف';
+
+  @override
+  String get phoneNumberLabel => 'رقم الهاتف';
+
+  @override
+  String get phoneNumberHint => 'أدخل رقم هاتفك';
+
+  @override
+  String get invalidPhoneNumber => 'رقم الهاتف غير صالح';
+
+  @override
+  String get sendCode => 'إرسال الرمز';
+
+  @override
+  String get resendCode => 'إعادة إرسال الرمز';
+
+  @override
+  String get verifyCode => 'التحقق من الرمز';
+
+  @override
+  String get otpCodeLabel => 'رمز التحقق';
+
+  @override
+  String get otpCodeHint => 'أدخل رمز التحقق';
+
+  @override
+  String get invalidOtp => 'رمز التحقق غير صالح';
+
+  @override
+  String get sendOtpToContinue => 'أرسل رمز التحقق للمتابعة';
+
+  @override
+  String get enterOtpToContinue => 'أدخل رمز التحقق للمتابعة';
+
+  @override
+  String get emailLinkedSuccess => 'تم ربط البريد الإلكتروني بنجاح';
+
+  @override
+  String get addEmailTitle => 'إضافة بريد إلكتروني';
+
+  @override
+  String get addEmailSubtitle => 'قم بتأمين حسابك من خلال ربط بريد إلكتروني';
+
+  @override
+  String get confirmPassword => 'تأكيد كلمة المرور';
+
+  @override
+  String get linkEmailButton => 'ربط البريد الإلكتروني';
+
+  @override
+  String get skipForNow => 'تخطي الآن';
+
+  @override
+  String get emailAlreadyInUseLinking =>
+      'هذا البريد الإلكتروني مستخدم بالفعل بحساب آخر';
+
+  @override
+  String get credentialAlreadyInUse =>
+      'بيانات الاعتماد هذه مرتبطة بحساب آخر بالفعل';
+
+  @override
+  String get providerAlreadyLinked =>
+      'طريقة تسجيل الدخول هذه مرتبطة بحسابك بالفعل';
+
+  @override
+  String get countryCodeLabel => 'رمز الدولة';
+
+  @override
+  String get phoneNumberHintDigits => 'أدخل رقم الهاتف (أرقام فقط)';
+
+  @override
+  String get phoneNumber => 'رقم الهاتف';
+
+  @override
+  String get profileDetailsHint => 'أضف معلوماتك لإكمال ملفك الشخصي.';
+
+  @override
+  String get completeYourProfile => 'أكمل ملفك الشخصي';
+
+  @override
+  String get webProfileCompletionNote =>
+      'ملاحظة للويب: هذه الصفحة تفرض إكمال الملف الشخصي حتى لا تبقى الأسماء فارغة.';
+
+  @override
+  String minLengthError(int min) {
+    return 'يجب أن يكون على الأقل $min أحرف.';
+  }
+
+  @override
+  String maxLengthError(int max) {
+    return 'يجب ألا يزيد عن $max أحرف.';
+  }
+
+  @override
+  String get invalidNameCharacters =>
+      'يسمح بالأحرف فقط. يمكنك استخدام المسافات وشرطة - وعلامة \' فقط.';
+
+  @override
+  String get invalidNameFormat =>
+      'يرجى إدخال اسم صحيح (بدون مسافات أو رموز إضافية).';
+
+  @override
+  String get emailOrPhoneLabel => 'البريد الإلكتروني أو رقم الهاتف';
+
+  @override
+  String get emailOrPhoneHintPhone => 'أدخل رقم هاتفك';
+
+  @override
+  String get emailOrPhoneHintEmail => 'أدخل بريدك الإلكتروني';
+
+  @override
+  String get emailOrPhone => 'البريد الإلكتروني أو رقم الهاتف';
+
+  @override
+  String get checkYourEmailToVerify => 'تحقق من بريدك الإلكتروني لتأكيد حسابك.';
+
+  @override
+  String get addPhoneTitle => 'أضف رقم هاتفك';
+
+  @override
+  String get addPhoneSubtitle => 'قم بربط رقم هاتفك لتأمين حسابك.';
+
+  @override
+  String get phoneLinkedSuccess => 'تم ربط رقم الهاتف بنجاح.';
+
+  @override
+  String get searchCountryHint => 'ابحث عن الدولة';
+
+  @override
+  String get phoneHintExample => 'أدخل رقم الهاتف';
+
+  @override
+  String get emailHintExample => 'أدخل البريد الإلكتروني';
+
+  @override
+  String get phoneAlreadyRegisteredPleaseLogin =>
+      'رقم الهاتف مسجل مسبقًا. يرجى تسجيل الدخول.';
+
+  @override
+  String get emailAlreadyRegisteredPleaseLogin =>
+      'البريد الإلكتروني مسجل مسبقًا. يرجى تسجيل الدخول.';
+
+  @override
+  String get emailNotVerifiedYet => 'لم يتم التحقق من بريدك الإلكتروني بعد.';
+
+  @override
+  String get verifyEmailToActivate =>
+      'يرجى التحقق من بريدك الإلكتروني لتفعيل حسابك.';
+
+  @override
+  String get verifyYourEmailTitle => 'تحقق من بريدك الإلكتروني';
+
+  @override
+  String get verifyEmailPanelBodyNoEmail =>
+      'لقد أرسلنا رسالة تحقق إلى بريدك الإلكتروني. يرجى مراجعة صندوق الوارد.';
+
+  @override
+  String verifyEmailPanelBodyWithEmail(String email) {
+    return 'لقد أرسلنا رسالة تحقق إلى $email. يرجى مراجعة صندوق الوارد.';
+  }
+
+  @override
+  String get iVerifiedMyEmail => 'لقد قمت بالتحقق من بريدي الإلكتروني';
+
+  @override
+  String get iVerified => 'تم التحقق';
+
+  @override
+  String get resend => 'إعادة الإرسال';
+
+  @override
+  String get recaptchaRejected =>
+      'تم رفض التحقق من reCAPTCHA. يرجى المحاولة مرة أخرى.';
+
+  @override
+  String get fixChecklistTitle => 'جرّب الخطوات التالية:';
+
+  @override
+  String get fixChecklistAuthorizedDomains =>
+      'تأكد من أن النطاق مضاف ضمن النطاقات المصرح بها في Firebase.';
+
+  @override
+  String get fixChecklistDisableAdBlockers =>
+      'قم بتعطيل إضافات حظر الإعلانات أو الخصوصية.';
+
+  @override
+  String get fixChecklistAllowCookies =>
+      'اسمح بملفات تعريف الارتباط (Cookies) التابعة لجهات خارجية.';
+
+  @override
+  String get fixChecklistTryIncognito =>
+      'جرّب استخدام وضع التصفح الخفي / الخاص.';
+
+  @override
+  String get fixChecklistAvoidRetries =>
+      'تجنب المحاولات المتكررة خلال وقت قصير.';
+
+  @override
+  String get devTipTestPhoneNumbers =>
+      'نصيحة للمطورين: استخدم أرقام اختبار Firebase لتجنب قيود المعدل.';
+
+  @override
+  String get recaptchaFailedRefresh =>
+      'فشل التحقق من reCAPTCHA. يرجى تحديث الصفحة والمحاولة مرة أخرى.';
+
+  @override
+  String get otpRateLimited15Min =>
+      'محاولات كثيرة. يرجى المحاولة مرة أخرى بعد 15 دقيقة.';
+
+  @override
+  String get otpTimedOutRefresh =>
+      'انتهت مهلة التحقق. يرجى التحديث والمحاولة مرة أخرى.';
+
+  @override
+  String get unauthorizedDomainFix =>
+      'هذا النطاق غير مصرح به. يرجى التحقق من إعدادات Firebase.';
+
+  @override
+  String get confirmationNotReadyResend =>
+      'رمز التأكيد غير جاهز بعد. يرجى إعادة الإرسال.';
+
+  @override
+  String get sessionExpiredResend => 'انتهت الجلسة. يرجى إعادة إرسال الرمز.';
+
+  @override
+  String get timedOutTryAgain => 'انتهت المهلة. يرجى المحاولة مرة أخرى.';
+
+  @override
+  String cooldownLabel(int seconds) {
+    return 'يمكنك إعادة الإرسال خلال $seconds ثانية';
+  }
+
+  @override
+  String get linkPhoneTitle => 'ربط رقم الهاتف';
+
+  @override
+  String get requestCode => 'إرسال الرمز';
+
+  @override
+  String get smsCode => 'رمز التحقق';
+
+  @override
+  String get smsCodeHint => 'أدخل رمز التحقق';
+
+  @override
+  String get confirm => 'تأكيد';
+
+  @override
+  String get selectCountry => 'اختر الدولة';
+
+  @override
+  String get enterSmsCode => 'يرجى إدخال رمز التحقق';
+
+  @override
+  String get requestCodeFirst => 'يرجى طلب رمز التحقق أولاً';
+
+  @override
+  String get somethingWentWrong => 'حدث خطأ ما، يرجى المحاولة مرة أخرى';
+
+  @override
+  String get linkPhoneSubtitle =>
+      'أضف رقم هاتف لتأمين حسابك وتمكين تسجيل الدخول باستخدام الهاتف.';
 }
