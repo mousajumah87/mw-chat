@@ -748,37 +748,68 @@ class _AuthScreenState extends State<AuthScreen> with WidgetsBindingObserver {
   Future<void> _initWebRecaptcha() async {
     if (!kIsWeb) return;
 
-    if (_webRecaptchaVerifier != null && _webRecaptchaRendered && !_webRecaptchaExpired) return;
+    if (_webRecaptchaVerifier != null &&
+        _webRecaptchaRendered &&
+        !_webRecaptchaExpired) {
+      return;
+    }
+
     if (_webRecaptchaBusy) return;
     _webRecaptchaBusy = true;
 
     final rid = DateTime.now().millisecondsSinceEpoch;
 
     try {
+      final mustRecreate = _webRecaptchaVerifier == null ||
+          _webRecaptchaExpired ||
+          !_webRecaptchaRendered;
+
+      if (mustRecreate && _webRecaptchaVerifier != null) {
+        try {
+          _webRecaptchaVerifier!.clear();
+        } catch (_) {}
+        _webRecaptchaVerifier = null;
+      }
+
+      if (_webRecaptchaVerifier != null) {
+        return;
+      }
+
+      _webRecaptchaRendered = false;
+      _webRecaptchaExpired = false;
+
       await ensureRecaptchaContainer(
         parentId: _recaptchaParentId,
         childId: _recaptchaChildId,
         visible: true,
       );
 
-      try {
-        _webRecaptchaVerifier?.clear();
-      } catch (_) {}
+      // Let the browser commit the DOM node before Firebase checks for it.
+      await Future<void>.delayed(const Duration(milliseconds: 16));
 
-      _webRecaptchaVerifier = null;
-      _webRecaptchaRendered = false;
-      _webRecaptchaExpired = false;
+      if (!mounted) return;
+
+      // Another safety guard in case concurrent calls raced.
+      if (_webRecaptchaVerifier != null) {
+        return;
+      }
 
       final verifier = RecaptchaVerifier(
         container: _recaptchaChildId,
         auth: FirebaseAuthPlatform.instance,
         size: RecaptchaVerifierSize.normal,
         theme: RecaptchaVerifierTheme.dark,
-        onError: (e) => debugPrint('[AuthScreen] reCAPTCHA onError rid=$rid: ${e.code} ${e.message}'),
-        onExpired: () {
+        onError: (e) => debugPrint(
+          '[AuthGate] reCAPTCHA onError rid=$rid: ${e.code} ${e.message}',
+        ),
+        onExpired: () async {
           _webRecaptchaExpired = true;
-          debugPrint('[AuthScreen] reCAPTCHA expired rid=$rid');
-          if (_alive) _safeSetState(() {});
+          _webRecaptchaRendered = false;
+          debugPrint('[AuthGate] reCAPTCHA expired rid=$rid');
+
+          if (mounted) setState(() {});
+
+          await _refreshWebRecaptcha();
         },
       );
 
@@ -787,9 +818,18 @@ class _AuthScreenState extends State<AuthScreen> with WidgetsBindingObserver {
       await verifier.render().timeout(const Duration(seconds: 60));
       _webRecaptchaRendered = true;
 
-      debugPrint('[AuthScreen] reCAPTCHA rendered rid=$rid container=$_recaptchaChildId');
+      debugPrint(
+        '[AuthGate] reCAPTCHA rendered rid=$rid container=$_recaptchaChildId',
+      );
     } catch (e, st) {
-      debugPrint('[AuthScreen] _initWebRecaptcha error rid=$rid: $e\n$st');
+      debugPrint('[AuthGate] _initWebRecaptcha error rid=$rid: $e\n$st');
+
+      try {
+        _webRecaptchaVerifier?.clear();
+      } catch (_) {}
+
+      _webRecaptchaVerifier = null;
+      _webRecaptchaRendered = false;
     } finally {
       _webRecaptchaBusy = false;
     }
@@ -809,6 +849,14 @@ class _AuthScreenState extends State<AuthScreen> with WidgetsBindingObserver {
     _webRecaptchaVerifier = null;
     _webRecaptchaRendered = false;
     _webRecaptchaExpired = false;
+
+    await ensureRecaptchaContainer(
+      parentId: _recaptchaParentId,
+      childId: _recaptchaChildId,
+      visible: true,
+    );
+
+    await Future<void>.delayed(const Duration(milliseconds: 16));
 
     await _initWebRecaptcha();
   }
@@ -1177,10 +1225,9 @@ class _AuthScreenState extends State<AuthScreen> with WidgetsBindingObserver {
   // ---------------------------
   Future<void> _sendOtpFromIdentifier() async {
     if (!_alive) return;
-
     if (_sendOtpCompleter != null) return;
-    _sendOtpCompleter = Completer<void>();
 
+    _sendOtpCompleter = Completer<void>();
     final l10n = AppLocalizations.of(context)!;
 
     try {
@@ -1203,11 +1250,11 @@ class _AuthScreenState extends State<AuthScreen> with WidgetsBindingObserver {
       final phone = pf.toE164(pn);
 
       if (!_isLogin) {
-        final ok = await _guardRegisterIdentifierAvailable(
+        final available = await _guardRegisterIdentifierAvailable(
           isPhone: true,
           rawIdentifier: phone,
         );
-        if (!ok) return;
+        if (!available) return;
       }
 
       if (!_canSendOtp) return;
@@ -1219,8 +1266,8 @@ class _AuthScreenState extends State<AuthScreen> with WidgetsBindingObserver {
       });
 
       if (kIsWeb) {
+        // keep your existing web flow
         _webOtpRequestInFlight = true;
-
         try {
           try {
             await FirebaseAuth.instance.setPersistence(Persistence.LOCAL);
@@ -1239,7 +1286,10 @@ class _AuthScreenState extends State<AuthScreen> with WidgetsBindingObserver {
               .signInWithPhoneNumber(phone, verifier)
               .timeout(const Duration(seconds: 90));
 
-          _safeSetState(() => _codeSent = true);
+          _safeSetState(() {
+            _codeSent = true;
+            _submitting = false;
+          });
           _startOtpCooldown();
           return;
         } on FirebaseAuthException catch (e) {
@@ -1267,7 +1317,8 @@ class _AuthScreenState extends State<AuthScreen> with WidgetsBindingObserver {
         } on TimeoutException {
           _setError(l10n.otpTimedOutRefresh);
           return;
-        } catch (_) {
+        } catch (e, st) {
+          debugPrint('[AuthScreen] WEB send otp error: $e\n$st');
           _setError(l10n.authError);
           return;
         } finally {
@@ -1275,47 +1326,101 @@ class _AuthScreenState extends State<AuthScreen> with WidgetsBindingObserver {
         }
       }
 
+      debugPrint('[AuthScreen] verifyPhoneNumber start: $phone');
+
       await FirebaseAuth.instance.verifyPhoneNumber(
         phoneNumber: phone,
         timeout: const Duration(seconds: 60),
         forceResendingToken: _forceResendToken,
+
         verificationCompleted: (PhoneAuthCredential credential) async {
-          try {
-            final cred = await FirebaseAuth.instance.signInWithCredential(credential);
-
-            await _ensureUserDocAfterAuth(
-              cred.user,
-              fallbackError: l10n.authError,
-              firstName: _isLogin ? null : (_pendingFirstName ?? _regFirstName),
-              lastName: _isLogin ? null : (_pendingLastName ?? _regLastName),
-            );
-
-            final uid = cred.user?.uid;
-            if (uid != null) await _warmUserDocFromServer(uid);
-
-            // ✅ Phone sign-in => remind to add email if missing
-            await _maybeShowLinkEmailSheetIfNeeded();
-          } catch (_) {}
+          debugPrint('[AuthScreen] verificationCompleted fired');
+          await _handleAutoVerifiedCredential(credential);
         },
+
         verificationFailed: (FirebaseAuthException e) {
-          _setError(e.message ?? l10n.authError);
+          debugPrint('[AuthScreen] verificationFailed: ${e.code} ${e.message}');
+          if (_isRateLimited(e)) {
+            _startRateLimitCooldown();
+            _setError(l10n.otpRateLimited15Min);
+          } else {
+            _setError(e.message ?? l10n.authError);
+          }
+          _safeSetState(() => _submitting = false);
         },
+
         codeSent: (String verificationId, int? resendToken) {
+          debugPrint('[AuthScreen] codeSent');
           _safeSetState(() {
             _verificationId = verificationId;
             _forceResendToken = resendToken;
             _codeSent = true;
+            _submitting = false;
           });
           _startOtpCooldown();
         },
+
         codeAutoRetrievalTimeout: (String verificationId) {
+          debugPrint('[AuthScreen] codeAutoRetrievalTimeout');
           _verificationId = verificationId;
         },
       );
-    } finally {
+    } catch (e, st) {
+      debugPrint('[AuthScreen] _sendOtpFromIdentifier fatal: $e\n$st');
+      _setError(l10n.authError);
       _safeSetState(() => _submitting = false);
+    } finally {
       _sendOtpCompleter?.complete();
       _sendOtpCompleter = null;
+    }
+  }
+
+  Future<void> _handleAutoVerifiedCredential(PhoneAuthCredential credential) async {
+    if (!_alive) return;
+    final l10n = AppLocalizations.of(context)!;
+
+    try {
+      final userCred = await FirebaseAuth.instance.signInWithCredential(credential);
+      final user = userCred.user;
+      if (user == null) {
+        _setError(l10n.authError);
+        return;
+      }
+
+      await _ensureUserDocAfterAuth(
+        user,
+        fallbackError: l10n.authError,
+        firstName: _isLogin ? null : (_pendingFirstName ?? _regFirstName),
+        lastName: _isLogin ? null : (_pendingLastName ?? _regLastName),
+      );
+
+      await _warmUserDocFromServer(user.uid);
+
+      if (!_alive) return;
+
+      _safeSetState(() {
+        _codeSent = false;
+        _smsCtrl.clear();
+        _submitting = false;
+      });
+
+      // Delay UI work slightly to avoid lifecycle issues
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!_alive) return;
+        try {
+          await _maybeShowLinkEmailSheetIfNeeded();
+        } catch (e, st) {
+          debugPrint('[AuthScreen] link email sheet error: $e\n$st');
+        }
+      });
+    } on FirebaseAuthException catch (e, st) {
+      debugPrint('[AuthScreen] auto verification auth error: ${e.code} ${e.message}\n$st');
+      _setError(e.message ?? l10n.authError);
+      _safeSetState(() => _submitting = false);
+    } catch (e, st) {
+      debugPrint('[AuthScreen] auto verification error: $e\n$st');
+      _setError(l10n.authError);
+      _safeSetState(() => _submitting = false);
     }
   }
 
@@ -1416,22 +1521,37 @@ class _AuthScreenState extends State<AuthScreen> with WidgetsBindingObserver {
         smsCode: sms,
       );
 
-      final cred = await FirebaseAuth.instance.signInWithCredential(credential);
+      final userCred = await FirebaseAuth.instance.signInWithCredential(credential);
+      final user = userCred.user;
+      if (user == null) {
+        _setError(l10n.authError);
+        return;
+      }
 
       await _ensureUserDocAfterAuth(
-        cred.user,
+        user,
         fallbackError: l10n.authError,
         firstName: _isLogin ? null : (_pendingFirstName ?? _regFirstName),
         lastName: _isLogin ? null : (_pendingLastName ?? _regLastName),
       );
 
-      final uid = cred.user?.uid;
-      if (uid != null) await _warmUserDocFromServer(uid);
+      await _warmUserDocFromServer(user.uid);
 
-      await _maybeShowLinkEmailSheetIfNeeded();
-    } on FirebaseAuthException catch (e) {
+      if (_alive) {
+        WidgetsBinding.instance.addPostFrameCallback((_) async {
+          if (!_alive) return;
+          try {
+            await _maybeShowLinkEmailSheetIfNeeded();
+          } catch (e, st) {
+            debugPrint('[AuthScreen] verifyOtp link email error: $e\n$st');
+          }
+        });
+      }
+    } on FirebaseAuthException catch (e, st) {
+      debugPrint('[AuthScreen] _verifyOtpAndLogin FirebaseAuthException: ${e.code} ${e.message}\n$st');
       _setError(e.message ?? l10n.authError);
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('[AuthScreen] _verifyOtpAndLogin error: $e\n$st');
       _setError(l10n.authError);
     } finally {
       _safeSetState(() => _submitting = false);

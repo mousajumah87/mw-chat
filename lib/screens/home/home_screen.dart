@@ -15,6 +15,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/ui/app_info.dart';
 import '../../widgets/ui/mw_background.dart';
 import '../../widgets/ui/mw_app_header.dart';
+import '../chat/chat_screen.dart';
 import '../legal/terms_of_use_screen.dart';
 import 'call_logs_screen.dart';
 import 'mw_friends_tab.dart';
@@ -226,6 +227,30 @@ class _HomeScreenState extends State<HomeScreen>
         s.contains('missing or insufficient permissions');
   }
 
+  Future<void> _openChatFromLogs({
+    required String peerId,
+    required String displayName,
+  }) async {
+    final me = FirebaseAuth.instance.currentUser;
+    if (me == null) return;
+
+    final other = peerId.trim();
+    if (other.isEmpty || other == me.uid) return;
+
+    final ids = [me.uid, other]..sort();
+    final roomId = '${ids[0]}_${ids[1]}';
+
+    if (!mounted) return;
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ChatScreen(
+          roomId: roomId,
+          title: displayName.trim().isEmpty ? 'Chat' : displayName.trim(),
+        ),
+      ),
+    );
+  }
   // Start-call handler used by CallLogsScreen
   Future<void> _startCallFromLogs({
     required String peerId,
@@ -316,7 +341,10 @@ class _HomeScreenState extends State<HomeScreen>
                       builder: (_) => CallLogsScreen(
                         onStartCall: _startCallFromLogs,
                         onOpenChat: ({required peerId, required displayName}) {
-                          // navigate to your chat screen here
+                          _openChatFromLogs(
+                            peerId: peerId,
+                            displayName: displayName,
+                          );
                         },
                         enableVideoButton: false,
                       ),
@@ -392,7 +420,10 @@ class _HomeScreenState extends State<HomeScreen>
                     builder: (_) => CallLogsScreen(
                       onStartCall: _startCallFromLogs,
                       onOpenChat: ({required peerId, required displayName}) {
-                        // navigate to your chat screen here
+                        _openChatFromLogs(
+                          peerId: peerId,
+                          displayName: displayName,
+                        );
                       },
                       enableVideoButton: false,
                     ),

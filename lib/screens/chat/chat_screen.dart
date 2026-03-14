@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart' show UploadTask;
@@ -14,6 +15,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../l10n/app_localizations.dart';
 import '../../utils/chat_attachment_utils.dart';
 import '../../utils/current_chat_tracker.dart';
+import '../../utils/notification_badge_service.dart';
 import '../../utils/presence_service.dart';
 import '../../widgets/chat/chat_input_bar.dart';
 import '../../widgets/chat/chat_media_preview_sheet.dart';
@@ -155,6 +157,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     return _selectedMessageIds.first;
   }
 
+  bool _unreadSyncInFlight = false;
+  DateTime? _lastUnreadSyncAt;
+
   bool get _hasSelection => _selectedMessageIds.isNotEmpty;
 
   bool get _isFriends => ChatFriendshipService.isFriends(_friendStatus);
@@ -256,6 +261,93 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   ChatActivityIndicatorMode get _typingIndicatorMode {
     if (_isOtherRecording) return ChatActivityIndicatorMode.recording;
     return ChatActivityIndicatorMode.typing;
+  }
+
+  Future<void> _resetUnreadBadgeCountServerBestEffort() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      await FirebaseFunctions.instance
+          .httpsCallable('resetMyUnreadBadgeCount')
+          .call();
+    } catch (e) {
+      debugPrint('⚠️ resetMyUnreadBadgeCount failed in chat screen: $e');
+    }
+  }
+
+  Future<int> _computeMyTotalUnreadAcrossRooms() async {
+    if (_currentUserId.isEmpty) return 0;
+
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('privateChats')
+          .where('participants', arrayContains: _currentUserId)
+          .get();
+
+      int total = 0;
+
+      for (final doc in snap.docs) {
+        final data = doc.data();
+        final unreadMap =
+            (data['unreadCounts'] as Map?)?.cast<String, dynamic>() ??
+                const <String, dynamic>{};
+
+        final raw = unreadMap[_currentUserId];
+        if (raw is num) {
+          total += raw.toInt();
+        }
+      }
+
+      return total < 0 ? 0 : total;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  Future<void> _syncBadgesAfterUnreadChange() async {
+    if (_currentUserId.isEmpty) return;
+
+    final totalUnread = await _computeMyTotalUnreadAcrossRooms();
+
+    await NotificationBadgeService.instance.setBadgeCount(totalUnread);
+
+    if (totalUnread <= 0) {
+      await _resetUnreadBadgeCountServerBestEffort();
+    }
+  }
+
+  Future<void> _markRoomReadAndSyncBadges() async {
+    if (_currentUserId.isEmpty) return;
+
+    final now = DateTime.now();
+    if (_unreadSyncInFlight) return;
+    if (_lastUnreadSyncAt != null &&
+        now.difference(_lastUnreadSyncAt!).inMilliseconds < 700) {
+      return;
+    }
+
+    _unreadSyncInFlight = true;
+    _lastUnreadSyncAt = now;
+
+    final roomRef =
+    FirebaseFirestore.instance.collection('privateChats').doc(widget.roomId);
+
+    try {
+      await roomRef.set(
+        {
+          'unreadCounts': {_currentUserId: 0},
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    } catch (_) {}
+
+    try {
+      await _syncBadgesAfterUnreadChange();
+    } finally {
+      _unreadSyncInFlight = false;
+    }
   }
 
   // ------------------------------------------------------------
@@ -648,7 +740,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         if (updates >= 20) break;
       }
 
-      if (updates > 0) await batch.commit();
+      if (updates > 0) {
+        await batch.commit();
+      }
       await _resetMyUnread();
     } catch (_) {}
   }
@@ -657,15 +751,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   // ✅ Firestore meta
   // ------------------------------------------------------------
   Future<void> _resetMyUnread() async {
-    if (_currentUserId.isEmpty) return;
-
-    final roomRef = FirebaseFirestore.instance.collection('privateChats').doc(widget.roomId);
-    try {
-      await roomRef.set(
-        {'unreadCounts': {_currentUserId: 0}},
-        SetOptions(merge: true),
-      );
-    } catch (_) {}
+    await _markRoomReadAndSyncBadges();
   }
 
   Future<void> _updateMyTyping(bool isTyping) async {
@@ -1225,6 +1311,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       );
 
       await batch.commit();
+      unawaited(_resetMyUnread());
 
       if (mounted && !_disposed) {
         await _hapticLight();
@@ -1500,6 +1587,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
 
     await batch.commit();
+    unawaited(_resetMyUnread());
   }
 
 
@@ -2060,12 +2148,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _disposed) return;
-      CurrentChatTracker.instance.enterRoom(widget.roomId);
       _scheduleMarkSeen();
-      _measureComposerHeight(); // ✅ initial composer height
+      _measureComposerHeight();
     });
 
-    _resetMyUnread();
+    unawaited(_resetMyUnread());
 
     _subscribeToBlockState();
     _subscribeToOtherUserBlockState();
@@ -2109,6 +2196,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     switch (state) {
       case AppLifecycleState.resumed:
         _scheduleMarkSeen();
+        unawaited(_resetMyUnread());
         break;
       case AppLifecycleState.inactive:
       case AppLifecycleState.paused:
@@ -2156,6 +2244,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _mediaService = null;
 
     _voiceCtrl.disposeController();
+    _selectedMessageIds.clear();
+    _selectedMessageDoc = null;
+    _selectedIsMe = false;
 
     super.dispose();
   }

@@ -4,6 +4,7 @@
 
 import 'dart:async';
 
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -11,12 +12,19 @@ import 'package:firebase_auth_platform_interface/firebase_auth_platform_interfac
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart'
-    show BindingBase, debugPrint, defaultTargetPlatform, kDebugMode, kIsWeb, kProfileMode;
+    show
+    BindingBase,
+    debugPrint,
+    defaultTargetPlatform,
+    kDebugMode,
+    kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:mw/screens/auth/widgets/sheets/link_email_sheet.dart';
 import 'package:mw/screens/auth/widgets/sheets/link_phone_sheet.dart';
+import 'package:mw/screens/chat/chat_screen.dart';
+import 'package:mw/utils/notification_badge_service.dart';
 import 'package:mw/widgets/ui/mw_swipe_back.dart';
 import 'package:provider/provider.dart';
 
@@ -34,25 +42,39 @@ import 'utils/presence_service.dart';
 import 'utils/typography_provider.dart';
 import 'utils/web/recaptcha_container.dart';
 
-/// ✅ All push UI must show ONLY this title (no body, no sender).
+/// ✅ All push UI must show ONLY this title when we build local notifications.
 const String kMwOnlyPushTitle = 'MW';
+
+/// ✅ Android channel IDs MUST change when sound/settings change.
+const String kMwCallsChannelId = 'mw_calls_v2';
+const String kMwChatChannelId = 'mw_chat_v2';
+const String kMwAchievementsChannelId = 'mw_achievements_v2';
+
+/// ✅ Keep null unless the file is really bundled in iOS/macOS app resources.
+/// Example if bundled: 'mw_pop.caf'
+/// ✅ Keep null unless the file is really bundled in iOS/macOS app resources.
+const String? kMwAppleChatSound = 'mw_pop.caf';
+
+/// ✅ Enable only when explicitly passed:
+/// flutter run --dart-define=MW_FAKE_OTP=true
+const bool kUseFakeOtp = bool.fromEnvironment('MW_FAKE_OTP', defaultValue: false);
 
 /// GLOBAL SNACKBAR KEY (FOR FOREGROUND NOTIFICATIONS)
 final GlobalKey<ScaffoldMessengerState> rootScaffoldMessengerKey =
 GlobalKey<ScaffoldMessengerState>();
 
-/// ✅ GLOBAL NAVIGATOR KEY (CRITICAL for MwSwipeBack when wrapping whole app)
-final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
+/// ✅ GLOBAL NAVIGATOR KEY
+final GlobalKey<NavigatorState> rootNavigatorKey =
+GlobalKey<NavigatorState>();
 
 /// Global instance of CurrentChatTracker used both by Provider and FCM logic.
 final CurrentChatTracker currentChatTracker = CurrentChatTracker.instance;
 
-/// ✅ Prevent duplicate foreground listeners (hot-restart, logout/login, rebuilds)
+/// ✅ Prevent duplicate listeners
 StreamSubscription<RemoteMessage>? _foregroundMsgSub;
 StreamSubscription<RemoteMessage>? _onOpenSub;
 
 /// ✅ Auth debug subscriptions
-StreamSubscription<User?>? _authStateDebugSub;
 StreamSubscription<User?>? _idTokenDebugSub;
 
 /// ------------------------------
@@ -64,8 +86,11 @@ String _asString(dynamic v) {
   return v.toString().trim();
 }
 
-bool _isCallPush(RemoteMessage m) => _asString(m.data['type']).toLowerCase() == 'call';
+bool _isCallPush(RemoteMessage m) =>
+    _asString(m.data['type']).toLowerCase() == 'call';
+
 String _extractCallId(RemoteMessage m) => _asString(m.data['callId']);
+
 String _extractCallType(RemoteMessage m) => _asString(m.data['callType']);
 
 String _extractRoomId(RemoteMessage message) {
@@ -113,6 +138,61 @@ bool _isChatMessage(RemoteMessage message) {
   return rid.isNotEmpty || sid.isNotEmpty;
 }
 
+bool _hasSystemNotificationPayload(RemoteMessage message) {
+  return message.notification != null;
+}
+
+String _extractNotificationTitle(RemoteMessage message) {
+  final dataTitle = _asString(message.data['title']);
+  if (dataTitle.isNotEmpty) return dataTitle;
+
+  final notifTitle = _asString(message.notification?.title);
+  if (notifTitle.isNotEmpty) return notifTitle;
+
+  return kMwOnlyPushTitle;
+}
+
+int _stableNotificationIdFromRoom(String roomId) {
+  var hash = 0;
+  for (final codeUnit in roomId.codeUnits) {
+    hash = (hash * 31 + codeUnit) & 0x7fffffff;
+  }
+  return hash;
+}
+
+Future<void> _resetUnreadBadgeCountServerBestEffort() async {
+  final user = FirebaseAuth.instance.currentUser;
+  if (user == null) return;
+
+  try {
+    await FirebaseFunctions.instance
+        .httpsCallable('resetMyUnreadBadgeCount')
+        .call();
+
+    debugPrint('✅ Server unread badge count reset');
+  } catch (e) {
+    debugPrint('⚠️ resetMyUnreadBadgeCount failed: $e');
+  }
+}
+
+String _extractNotificationBody(RemoteMessage message) {
+  final dataBodyCandidates = <String>[
+    _asString(message.data['body']),
+    _asString(message.data['message']),
+    _asString(message.data['text']),
+    _asString(message.data['content']),
+  ];
+
+  for (final v in dataBodyCandidates) {
+    if (v.isNotEmpty) return v;
+  }
+
+  final notifBody = _asString(message.notification?.body);
+  if (notifBody.isNotEmpty) return notifBody;
+
+  return 'New message';
+}
+
 void _showForegroundBanner({required String title}) {
   rootScaffoldMessengerKey.currentState?.hideCurrentSnackBar();
   rootScaffoldMessengerKey.currentState?.showSnackBar(
@@ -137,8 +217,8 @@ void _showForegroundBanner({required String title}) {
 }
 
 /// ✅ Align with AuthScreen behavior:
-/// - Reload + getIdToken(true) + reload again (web sometimes needs token refresh)
-/// - Only ever SET isActive=true (never false)
+/// - Reload + getIdToken(true) + reload again
+/// - Only ever SET isActive=true
 Future<void> _activateIfEmailVerified(User user) async {
   try {
     await user.reload();
@@ -171,28 +251,15 @@ Future<void> _activateIfEmailVerified(User user) async {
   );
 }
 
-/// Small helper to show debug snackbars from anywhere (only works after UI mounts)
-void _showDebugSnack(String msg) {
-  final s = rootScaffoldMessengerKey.currentState;
-  if (s == null) return;
-  s.hideCurrentSnackBar();
-  s.showSnackBar(
-    SnackBar(
-      content: Text(msg, maxLines: 3, overflow: TextOverflow.ellipsis),
-      behavior: SnackBarBehavior.floating,
-      duration: const Duration(seconds: 4),
-    ),
-  );
-}
-
 /// ---------------------------------------------------------------------------
-/// CallKit answer race guard (shared between CallKit events + Flutter UI)
+/// CallKit answer race guard
 /// ---------------------------------------------------------------------------
 bool isHandlingCallKitAnswer = false;
+
 void setHandlingCallKitAnswer(bool v) => isHandlingCallKitAnswer = v;
 
 /// ------------------------------
-/// Firebase Init Guard (FIXES: [DEFAULT] already exists)
+/// Firebase Init Guard
 /// ------------------------------
 Future<FirebaseApp>? _firebaseInitFuture;
 
@@ -221,32 +288,229 @@ Future<FirebaseApp> _ensureFirebaseInitialized() {
   return _firebaseInitFuture!;
 }
 
+/// ------------------------------
+/// Phone Auth Mode
+/// ------------------------------
+Future<void> _configurePhoneAuthMode() async {
+  if (kIsWeb) return;
+
+  await FirebaseAuth.instance.setSettings(
+    appVerificationDisabledForTesting: kUseFakeOtp,
+  );
+
+  debugPrint(
+    kUseFakeOtp
+        ? '🧪 Firebase phone auth FAKE testing mode enabled'
+        : '✅ Firebase phone auth REAL verification mode enabled',
+  );
+}
+
+/// ------------------------------
+/// Local notifications
+/// ------------------------------
+final FlutterLocalNotificationsPlugin fln = FlutterLocalNotificationsPlugin();
+bool _localNotificationsReady = false;
+
+Future<void> setupMwChannels() async {
+  if (kIsWeb) return;
+  if (_localNotificationsReady) return;
+
+  const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+  const iosInit = DarwinInitializationSettings(
+    requestAlertPermission: true,
+    requestBadgePermission: true,
+    requestSoundPermission: true,
+  );
+
+  const initSettings = InitializationSettings(
+    android: androidInit,
+    iOS: iosInit,
+    macOS: iosInit,
+  );
+
+  await fln.initialize(
+    initSettings,
+    onDidReceiveNotificationResponse: (NotificationResponse resp) async {
+      debugPrint('🔔 Local notification tapped payload=${resp.payload}');
+    },
+  );
+
+  await fln
+      .resolvePlatformSpecificImplementation<
+      AndroidFlutterLocalNotificationsPlugin>()
+      ?.requestNotificationsPermission();
+
+  await fln
+      .resolvePlatformSpecificImplementation<
+      IOSFlutterLocalNotificationsPlugin>()
+      ?.requestPermissions(
+    alert: true,
+    badge: true,
+    sound: true,
+  );
+
+  await fln
+      .resolvePlatformSpecificImplementation<
+      MacOSFlutterLocalNotificationsPlugin>()
+      ?.requestPermissions(
+    alert: true,
+    badge: true,
+    sound: true,
+  );
+
+  const chat = AndroidNotificationChannel(
+    kMwChatChannelId,
+    'MW Chat',
+    description: 'Chat messages',
+    importance: Importance.high,
+    playSound: true,
+    sound: RawResourceAndroidNotificationSound('mw_pop'),
+    enableVibration: true,
+  );
+
+  const calls = AndroidNotificationChannel(
+    kMwCallsChannelId,
+    'MW Calls',
+    description: 'Incoming calls',
+    importance: Importance.max,
+    playSound: true,
+    sound: RawResourceAndroidNotificationSound('mw_ring'),
+    enableVibration: true,
+  );
+
+  const achievements = AndroidNotificationChannel(
+    kMwAchievementsChannelId,
+    'MW Achievements',
+    description: 'Achievements and rewards',
+    importance: Importance.defaultImportance,
+    playSound: true,
+    sound: RawResourceAndroidNotificationSound('mw_success'),
+    enableVibration: true,
+  );
+
+  await fln
+      .resolvePlatformSpecificImplementation<
+      AndroidFlutterLocalNotificationsPlugin>()
+      ?.createNotificationChannel(chat);
+
+  await fln
+      .resolvePlatformSpecificImplementation<
+      AndroidFlutterLocalNotificationsPlugin>()
+      ?.createNotificationChannel(calls);
+
+  await fln
+      .resolvePlatformSpecificImplementation<
+      AndroidFlutterLocalNotificationsPlugin>()
+      ?.createNotificationChannel(achievements);
+
+  _localNotificationsReady = true;
+  debugPrint('✅ Local notifications initialized');
+}
+
+NotificationDetails _buildChatNotificationDetails() {
+  return NotificationDetails(
+    android: const AndroidNotificationDetails(
+      kMwChatChannelId,
+      'MW Chat',
+      channelDescription: 'Chat messages',
+      importance: Importance.high,
+      priority: Priority.high,
+      playSound: true,
+      sound: RawResourceAndroidNotificationSound('mw_pop'),
+      enableVibration: true,
+      ticker: 'MW',
+      icon: '@mipmap/ic_launcher',
+    ),
+    iOS: DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+      sound: kMwAppleChatSound,
+    ),
+    macOS: DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+      sound: kMwAppleChatSound,
+    ),
+  );
+}
+
+Future<void> _showBackgroundChatNotificationIfNeeded(
+    RemoteMessage message,
+    ) async {
+  if (kIsWeb) return;
+
+  // Keep iOS background chat handling with APNs / FCM system delivery.
+  // Avoid local background chat notifications on iOS because they can
+  // interfere with the flow that was previously working.
+  if (defaultTargetPlatform == TargetPlatform.iOS) return;
+
+  if (_isCallPush(message)) return;
+  if (!_isChatMessage(message)) return;
+
+  if (_hasSystemNotificationPayload(message)) {
+    debugPrint('ℹ️ BG chat push already has notification payload, skip local.');
+    return;
+  }
+
+  try {
+    await setupMwChannels();
+
+    final roomId = _extractRoomId(message);
+    final int id = roomId.isNotEmpty
+        ? _stableNotificationIdFromRoom(roomId)
+        : DateTime.now().millisecondsSinceEpoch ~/ 1000;
+
+    await fln.show(
+      id,
+      _extractNotificationTitle(message),
+      _extractNotificationBody(message),
+      _buildChatNotificationDetails(),
+      payload: _extractRoomId(message),
+    );
+
+    debugPrint('✅ Background local chat notification shown. id=$id');
+  } catch (e) {
+    debugPrint('⚠️ background local chat notification failed: $e');
+  }
+}
+
 /// REQUIRED for background notifications (mobile only)
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  WidgetsFlutterBinding.ensureInitialized();
   await _ensureFirebaseInitialized();
 
   debugPrint('🔔 BACKGROUND MESSAGE: ${message.messageId}');
   debugPrint('🔔 DATA: ${message.data}');
+  debugPrint(
+    '🔔 NOTIFICATION PAYLOAD present=${message.notification != null}',
+  );
 
-  if (!_isCallPush(message)) return;
+  if (_isCallPush(message)) {
+    final callId = _extractCallId(message);
+    if (callId.isEmpty) return;
 
-  final callId = _extractCallId(message);
-  if (callId.isEmpty) return;
+    try {
+      await MwCallPushUi.ensureInit();
+    } catch (e) {
+      debugPrint('⚠️ MwCallPushUi.ensureInit failed in BG: $e');
+    }
 
-  try {
-    await MwCallPushUi.ensureInit();
-  } catch (e) {
-    debugPrint('⚠️ MwCallPushUi.ensureInit failed in BG: $e');
+    await MwCallPushUi.showIncomingCallNotificationFromBg(message.data);
+    return;
   }
 
-  await MwCallPushUi.showIncomingCallNotificationFromBg(message.data);
+  await _showBackgroundChatNotificationIfNeeded(message);
 }
 
 /// ------------------------------
 /// Firestore helpers (best-effort)
 /// ------------------------------
-Future<DocumentSnapshot<Map<String, dynamic>>> _getUserDocBestEffort(String uid) async {
+Future<DocumentSnapshot<Map<String, dynamic>>> _getUserDocBestEffort(
+    String uid,
+    ) async {
   final ref = FirebaseFirestore.instance.collection('users').doc(uid);
   try {
     return await ref.get(const GetOptions(source: Source.server));
@@ -254,7 +518,7 @@ Future<DocumentSnapshot<Map<String, dynamic>>> _getUserDocBestEffort(String uid)
     debugPrint('⚠️ _getUserDocBestEffort server failed: $e');
   }
 
-  return ref.get(); // serverAndCache
+  return ref.get();
 }
 
 /// ------------------------------
@@ -272,28 +536,63 @@ Future<void> _storeTokenForUserIfChanged({
 }) async {
   if (token.isEmpty) return;
 
+  final currentUid = FirebaseAuth.instance.currentUser?.uid;
+  if (currentUid == null) {
+    debugPrint('⚠️ Skip storing FCM token: no signed-in user');
+    return;
+  }
+
+  if (currentUid != uid) {
+    debugPrint(
+      '⚠️ Skip storing FCM token: uid mismatch currentUid=$currentUid targetUid=$uid',
+    );
+    return;
+  }
+
   if (_lastStoredUid == uid && _lastStoredFcmToken == token) return;
-  _lastStoredUid = uid;
-  _lastStoredFcmToken = token;
 
-  await FirebaseFirestore.instance.collection('users').doc(uid).set(
-    {
-      'fcmToken': token,
-      'fcmUpdatedAt': FieldValue.serverTimestamp(),
-    },
-    SetOptions(merge: true),
-  );
+  try {
+    await FirebaseFirestore.instance.collection('users').doc(uid).set(
+      {
+        'fcmToken': token,
+        'fcmUpdatedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
 
-  debugPrint('✅ Stored FCM token for user $uid');
+    _lastStoredUid = uid;
+    _lastStoredFcmToken = token;
+
+    debugPrint('✅ Stored FCM token for user $uid');
+  } on FirebaseException catch (e) {
+    debugPrint(
+      '⚠️ Failed to store FCM token for user $uid: code=${e.code} message=${e.message}',
+    );
+  } catch (e) {
+    debugPrint('⚠️ Failed to store FCM token for user $uid: $e');
+  }
 }
 
 Future<void> _syncCurrentTokenIfPossible() async {
   final user = FirebaseAuth.instance.currentUser;
-  if (user == null) return;
+  if (user == null) {
+    debugPrint('⚠️ No signed-in user, skipping FCM token sync.');
+    return;
+  }
 
   try {
+    final apns = await FirebaseMessaging.instance.getAPNSToken();
+    debugPrint('🍎 APNs token exists=${apns != null && apns.isNotEmpty}');
+
     final token = await FirebaseMessaging.instance.getToken();
-    if (token == null || token.isEmpty) return;
+    debugPrint('📲 FCM token value=${token ?? "(null)"}');
+
+    if (token == null || token.isEmpty) {
+      debugPrint('⚠️ FCM token is null/empty.');
+      return;
+    }
+
     await _storeTokenForUserIfChanged(uid: user.uid, token: token);
   } on FirebaseException catch (e) {
     if (e.code == 'apns-token-not-set') {
@@ -308,9 +607,11 @@ Future<void> _syncCurrentTokenIfPossible() async {
 
 /// ✅ Ensure token is ready (THROTTLED, NO force refresh)
 DateTime? _lastIdTokenAttempt;
+
 Future<void> _ensureIdTokenReady(User user) async {
   final now = DateTime.now();
-  if (_lastIdTokenAttempt != null && now.difference(_lastIdTokenAttempt!).inSeconds < 30) {
+  if (_lastIdTokenAttempt != null &&
+      now.difference(_lastIdTokenAttempt!).inSeconds < 30) {
     return;
   }
   _lastIdTokenAttempt = now;
@@ -332,7 +633,8 @@ String? _lastStoredVoipToken;
 String? _lastStoredVoipUid;
 bool _voipBridgeReady = false;
 
-bool get _isIosDevice => !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+bool get _isIosDevice =>
+    !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
 Future<void> _storeVoipTokenForUserIfChanged({
   required String uid,
@@ -343,70 +645,23 @@ Future<void> _storeVoipTokenForUserIfChanged({
   _lastStoredVoipUid = uid;
   _lastStoredVoipToken = token;
 
-  await FirebaseFirestore.instance.collection('users').doc(uid).set(
-    {
-      'voipToken': token,
-      'voipUpdatedAt': FieldValue.serverTimestamp(),
-    },
-    SetOptions(merge: true),
-  );
+  try {
+    await FirebaseFirestore.instance.collection('users').doc(uid).set(
+      {
+        'voipToken': token,
+        'voipUpdatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
 
-  debugPrint('✅ Stored VoIP token for user $uid (len=${token.length})');
-}
-
-final FlutterLocalNotificationsPlugin fln = FlutterLocalNotificationsPlugin();
-
-Future<void> setupMwChannels() async {
-  if (kIsWeb) return;
-
-  const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
-
-  const initSettings = InitializationSettings(
-    android: androidInit,
-  );
-
-  await fln.initialize(
-    settings: initSettings,
-    onDidReceiveNotificationResponse: (NotificationResponse resp) {},
-  );
-
-  final androidPlugin =
-  fln.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
-  if (androidPlugin == null) return;
-
-  const calls = AndroidNotificationChannel(
-    'mw_calls_v1',
-    'MW Calls',
-    description: 'Incoming calls',
-    importance: Importance.max,
-    playSound: true,
-    sound: RawResourceAndroidNotificationSound('mw_ring'),
-    enableVibration: true,
-  );
-
-  const chat = AndroidNotificationChannel(
-    'mw_chat_v1',
-    'MW Chat',
-    description: 'Chat messages',
-    importance: Importance.high,
-    playSound: true,
-    sound: RawResourceAndroidNotificationSound('mw_pop'),
-    enableVibration: true,
-  );
-
-  const achievements = AndroidNotificationChannel(
-    'mw_achievements_v1',
-    'MW Achievements',
-    description: 'Achievements and rewards',
-    importance: Importance.defaultImportance,
-    playSound: true,
-    sound: RawResourceAndroidNotificationSound('mw_success'),
-    enableVibration: true,
-  );
-
-  await androidPlugin.createNotificationChannel(calls);
-  await androidPlugin.createNotificationChannel(chat);
-  await androidPlugin.createNotificationChannel(achievements);
+    debugPrint('✅ Stored VoIP token for user $uid (len=${token.length})');
+  } on FirebaseException catch (e) {
+    debugPrint(
+      '⚠️ Failed to store VoIP token for user $uid: code=${e.code} message=${e.message}',
+    );
+  } catch (e) {
+    debugPrint('⚠️ Failed to store VoIP token for user $uid: $e');
+  }
 }
 
 void _initVoipBridgeOnce() {
@@ -415,19 +670,64 @@ void _initVoipBridgeOnce() {
   _voipBridgeReady = true;
 
   _voipChannel.setMethodCallHandler((call) async {
-    if (call.method != 'voipToken') return;
+    switch (call.method) {
+      case 'voipToken':
+        final token = (call.arguments as String?)?.trim() ?? '';
+        debugPrint('📞 [VoIP] token from iOS len=${token.length}');
 
-    final token = (call.arguments as String?)?.trim() ?? '';
-    debugPrint('📞 [VoIP] token from iOS len=${token.length}');
+        final user = FirebaseAuth.instance.currentUser;
+        if (user == null) {
+          _pendingVoipToken = token;
+          debugPrint('📞 [VoIP] user not logged in → cached token');
+          return;
+        }
 
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      _pendingVoipToken = token;
-      debugPrint('📞 [VoIP] user not logged in → cached token');
-      return;
+        await _storeVoipTokenForUserIfChanged(uid: user.uid, token: token);
+        return;
+
+      case 'voipPushReceived':
+        debugPrint('📞 [VoIP] push received args=${call.arguments}');
+        return;
+
+      case 'callkitEvent':
+        final args = (call.arguments as Map?)?.cast<String, dynamic>() ?? {};
+        final event = _asString(args['event']).toLowerCase();
+        final callId = _asString(args['callId']);
+
+        debugPrint('📞 [CallKit] event=$event callId=$callId args=$args');
+
+        if (event == 'answer') {
+          if (callId.isNotEmpty) {
+            setHandlingCallKitAnswer(true);
+            await MwCallPushUi.handleCallKitAnswer(callId);
+          }
+          return;
+        }
+
+        if (event == 'end') {
+          if (callId.isNotEmpty) {
+            await MwCallPushUi.handleCallKitEnd(callId);
+          }
+          return;
+        }
+
+        if (event == 'audioactivated') {
+          debugPrint('📞 [CallKit] audio activated');
+          return;
+        }
+
+        if (event == 'audiodeactivated') {
+          debugPrint('📞 [CallKit] audio deactivated');
+          return;
+        }
+
+        debugPrint('⚠️ [CallKit] unhandled event=$event');
+        return;
+
+      default:
+        debugPrint('⚠️ [VoIP] unhandled method=${call.method}');
+        return;
     }
-
-    await _storeVoipTokenForUserIfChanged(uid: user.uid, token: token);
   });
 }
 
@@ -446,13 +746,15 @@ Future<void> _flushPendingVoipIfAny(User user) async {
 /// ------------------------------
 void _setupAuthDrivenTokenSync() {
   _authTokenSyncSub?.cancel();
-  _authTokenSyncSub = FirebaseAuth.instance.authStateChanges().listen((user) async {
-    if (user == null) return;
+  _authTokenSyncSub =
+      FirebaseAuth.instance.authStateChanges().listen((user) async {
+        if (user == null) {
+          return;
+        }
 
-    unawaited(_syncCurrentTokenIfPossible());
-    await _flushPendingVoipIfAny(user);
-    unawaited(PresenceService.instance.markOnline());
-  });
+        unawaited(_syncCurrentTokenIfPossible());
+        await _flushPendingVoipIfAny(user);
+      });
 }
 
 /// ------------------------------
@@ -466,7 +768,8 @@ void _setupAuthDebug() {
   _idTokenDebugSub?.cancel();
   _idTokenDebugSub = FirebaseAuth.instance.idTokenChanges().listen((user) {
     final now = DateTime.now();
-    if (_lastTokenLogAt != null && now.difference(_lastTokenLogAt!).inSeconds < 5) {
+    if (_lastTokenLogAt != null &&
+        now.difference(_lastTokenLogAt!).inSeconds < 5) {
       return;
     }
     _lastTokenLogAt = now;
@@ -490,6 +793,83 @@ Future<void> _setupWebAuthPersistence() async {
 /// ------------------------------
 /// Push init (FCM listeners + dedupe)
 /// ------------------------------
+String? _lastOpenedPushRoomId;
+DateTime? _lastOpenedPushRoomAt;
+bool _shouldSuppressDuplicatePushOpen(String roomId) {
+  final now = DateTime.now();
+  if (_lastOpenedPushRoomId == roomId &&
+      _lastOpenedPushRoomAt != null &&
+      now.difference(_lastOpenedPushRoomAt!).inSeconds < 2) {
+    return true;
+  }
+
+  _lastOpenedPushRoomId = roomId;
+  _lastOpenedPushRoomAt = now;
+  return false;
+}
+
+Future<void> _openChatFromPushIfPossible(RemoteMessage message) async {
+  final roomId = _extractRoomId(message).trim();
+  if (roomId.isEmpty) {
+    debugPrint('⚠️ Push chat open skipped: empty roomId');
+    return;
+  }
+
+  if (_shouldSuppressDuplicatePushOpen(roomId)) {
+    debugPrint('ℹ️ Push chat open suppressed as duplicate. roomId=$roomId');
+    return;
+  }
+
+  final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+  if (currentUid.isEmpty) {
+    debugPrint('⚠️ Push chat open skipped: no signed-in user');
+    return;
+  }
+
+  final activeRoomId = (currentChatTracker.activeRoomId ?? '').trim();
+  if (activeRoomId == roomId) {
+    debugPrint('ℹ️ Push chat open skipped: already in target room. roomId=$roomId');
+    return;
+  }
+
+  String chatTitle = _extractNotificationTitle(message).trim();
+  if (chatTitle.isEmpty || chatTitle == kMwOnlyPushTitle) {
+    chatTitle = 'Chat';
+  }
+
+  try {
+    await FirebaseFirestore.instance
+        .collection('privateChats')
+        .doc(roomId)
+        .get(const GetOptions(source: Source.server));
+  } catch (e) {
+    debugPrint('⚠️ Push chat prefetch failed for roomId=$roomId: $e');
+  }
+
+  await Future<void>.delayed(const Duration(milliseconds: 250));
+
+  final nav = rootNavigatorKey.currentState;
+  if (nav == null) {
+    debugPrint('⚠️ Push chat open skipped: navigator not ready');
+    return;
+  }
+
+  try {
+    nav.push(
+      MaterialPageRoute(
+        builder: (_) => ChatScreen(
+          roomId: roomId,
+          title: chatTitle,
+        ),
+      ),
+    );
+    debugPrint('✅ Navigated to chat from push. roomId=$roomId');
+  } catch (e) {
+    debugPrint('⚠️ push chat failed for roomId=$roomId: $e');
+  }
+}
+
+
 Future<void> _initPushNotifications() async {
   final messaging = FirebaseMessaging.instance;
 
@@ -512,6 +892,8 @@ Future<void> _initPushNotifications() async {
 
   if (!kIsWeb) {
     try {
+      // Keep Apple foreground system presentation off to avoid duplicates.
+      // Foreground UI is handled by app logic.
       await messaging.setForegroundNotificationPresentationOptions(
         alert: false,
         badge: false,
@@ -522,72 +904,145 @@ Future<void> _initPushNotifications() async {
     }
   }
 
+  try {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+      final apns = await messaging.getAPNSToken();
+      debugPrint('🍎 APNs token ready=${apns != null && apns.isNotEmpty}');
+    }
+  } catch (e) {
+    debugPrint('⚠️ APNs token read failed: $e');
+  }
+
+  try {
+    final token = await messaging.getToken();
+    debugPrint(
+      '📲 Initial FCM token ready=${token != null && token.isNotEmpty}',
+    );
+  } catch (e) {
+    debugPrint('⚠️ Initial FCM token read failed: $e');
+  }
+
   await _tokenRefreshSub?.cancel();
-  _tokenRefreshSub = FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
-    debugPrint('🔁 TOKEN REFRESHED');
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    await _storeTokenForUserIfChanged(uid: user.uid, token: newToken);
-  });
+  _tokenRefreshSub =
+      FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
+        debugPrint('🔁 TOKEN REFRESHED');
+        final user = FirebaseAuth.instance.currentUser;
+        if (user == null) return;
+        await _storeTokenForUserIfChanged(uid: user.uid, token: newToken);
+      });
 
   await _syncCurrentTokenIfPossible();
 
   await _foregroundMsgSub?.cancel();
   await _onOpenSub?.cancel();
 
-  _foregroundMsgSub = FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-    if (_isCallPush(message)) {
-      final callId = _extractCallId(message);
-      debugPrint('📞 FOREGROUND CALL PUSH callId=$callId type=${_extractCallType(message)}');
-      if (callId.isNotEmpty) {
-        MwCallPushUi.handleCallPushInForeground(message.data);
-      }
-      return;
-    }
+  _foregroundMsgSub =
+      FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
+        debugPrint('🔔 FOREGROUND MESSAGE: ${message.messageId}');
+        debugPrint('🔔 FOREGROUND DATA: ${message.data}');
+        debugPrint(
+          '🔔 FOREGROUND notification payload present=${message.notification != null}',
+        );
 
-    final pushRoomId = _extractRoomId(message);
-    final pushSenderId = _extractSenderId(message);
-    final activeRoomId = (currentChatTracker.activeRoomId ?? '').trim();
+        if (_isCallPush(message)) {
+          final callId = _extractCallId(message);
+          debugPrint(
+            '📞 FOREGROUND CALL PUSH callId=$callId type=${_extractCallType(message)}',
+          );
 
-    debugPrint(
-      '🔔 FOREGROUND | inChat=${currentChatTracker.isInChat} '
-          'activeRoom=$activeRoomId pushRoom=$pushRoomId sender=$pushSenderId',
-    );
+          if (callId.isNotEmpty) {
+            try {
+              MwCallPushUi.handleCallPushInForeground(message.data);
+            } catch (e) {
+              debugPrint('⚠️ handleCallPushInForeground failed: $e');
+            }
+          }
+          return;
+        }
 
-    final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+        final pushRoomId = _extractRoomId(message);
+        final pushSenderId = _extractSenderId(message);
+        final activeRoomId = (currentChatTracker.activeRoomId ?? '').trim();
 
-    if (currentUid.isNotEmpty && pushSenderId.isNotEmpty && pushSenderId == currentUid) {
-      debugPrint('🔕 Self message suppressed.');
-      return;
-    }
+        debugPrint(
+          '🔔 FOREGROUND | inChat=${currentChatTracker.isInChat} '
+              'activeRoom=$activeRoomId pushRoom=$pushRoomId sender=$pushSenderId',
+        );
 
-    if (currentChatTracker.isInChat && _isChatMessage(message)) {
-      debugPrint('🔕 In chat screen → suppress foreground banner.');
-      return;
-    }
+        final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
 
-    _showForegroundBanner(title: kMwOnlyPushTitle);
-  });
+        if (currentUid.isNotEmpty &&
+            pushSenderId.isNotEmpty &&
+            pushSenderId == currentUid) {
+          debugPrint('🔕 Self message suppressed.');
+          return;
+        }
 
-  _onOpenSub = FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-    debugPrint('🔔 OPENED FROM NOTIFICATION');
+        if (currentChatTracker.isInChat && _isChatMessage(message)) {
+          debugPrint('🔕 In chat screen → suppress foreground banner.');
+          return;
+        }
 
-    if (_isCallPush(message)) {
-      final callId = _extractCallId(message);
-      debugPrint('📞 OPENED CALL PUSH callId=$callId type=${_extractCallType(message)}');
-      MwCallPushUi.handleCallPushOnOpen(message.data);
-      return;
-    }
-  });
+        if (_isChatMessage(message)) {
+          _showForegroundBanner(title: _extractNotificationTitle(message));
+
+          // No extra local foreground notification for now.
+          // This keeps behavior stable and avoids duplicate sounds/banners.
+          return;
+        }
+
+        _showForegroundBanner(title: _extractNotificationTitle(message));
+      });
+
+  _onOpenSub =
+      FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) async {
+        debugPrint('🔔 OPENED FROM NOTIFICATION');
+
+        if (_isCallPush(message)) {
+          final callId = _extractCallId(message);
+          debugPrint(
+            '📞 OPENED CALL PUSH callId=$callId type=${_extractCallType(message)}',
+          );
+
+          try {
+            MwCallPushUi.handleCallPushOnOpen(message.data);
+          } catch (e) {
+            debugPrint('⚠️ handleCallPushOnOpen failed: $e');
+          }
+          return;
+        }
+
+        final roomId = _extractRoomId(message);
+        debugPrint('💬 Chat notification opened payload roomId=$roomId');
+
+        if (_isChatMessage(message) && roomId.isNotEmpty) {
+          await _openChatFromPushIfPossible(message);
+        }
+      });
 
   try {
     final initial = await FirebaseMessaging.instance.getInitialMessage();
     if (initial != null) {
       debugPrint('🔔 APP OPENED FROM TERMINATED PUSH');
+
       if (_isCallPush(initial)) {
         final callId = _extractCallId(initial);
-        debugPrint('📞 TERMINATED CALL PUSH callId=$callId type=${_extractCallType(initial)}');
-        MwCallPushUi.handleCallPushOnOpen(initial.data);
+        debugPrint(
+          '📞 TERMINATED CALL PUSH callId=$callId type=${_extractCallType(initial)}',
+        );
+
+        try {
+          MwCallPushUi.handleCallPushOnOpen(initial.data);
+        } catch (e) {
+          debugPrint('⚠️ terminated handleCallPushOnOpen failed: $e');
+        }
+      } else {
+        final roomId = _extractRoomId(initial);
+        debugPrint('💬 Terminated chat notification payload roomId=$roomId');
+
+        if (_isChatMessage(initial) && roomId.isNotEmpty) {
+          await _openChatFromPushIfPossible(initial);
+        }
       }
     }
   } catch (e) {
@@ -599,7 +1054,9 @@ Future<void> main() async {
   FlutterError.onError = (FlutterErrorDetails details) {
     FlutterError.presentError(details);
     debugPrint('❌ FlutterError: ${details.exception}');
-    if (details.stack != null) debugPrint(details.stack.toString());
+    if (details.stack != null) {
+      debugPrint(details.stack.toString());
+    }
   };
 
   BindingBase.debugZoneErrorsAreFatal = kDebugMode;
@@ -609,18 +1066,22 @@ Future<void> main() async {
 
     await _ensureFirebaseInitialized();
     await _setupWebAuthPersistence();
+    await _configurePhoneAuthMode();
 
     _initVoipBridgeOnce();
 
     if (!kIsWeb) {
-      FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+      FirebaseMessaging.onBackgroundMessage(
+        _firebaseMessagingBackgroundHandler,
+      );
     }
 
     if (!kIsWeb) {
       try {
         await FirebaseAppCheck.instance.activate(
           androidProvider: AndroidProvider.playIntegrity,
-          appleProvider: (kDebugMode || kProfileMode) ? AppleProvider.debug : AppleProvider.appAttest,
+          appleProvider:
+          kDebugMode ? AppleProvider.debug : AppleProvider.appAttest,
         );
       } catch (e) {
         debugPrint('⚠️ App Check init skipped: $e');
@@ -641,10 +1102,10 @@ Future<void> main() async {
       debugPrint('⚠️ MwCallPushUi.ensureInit skipped: $e');
     }
 
+    NotificationBadgeService.instance.start(fln);
+    await _initPushNotifications();
     _setupAuthDrivenTokenSync();
     PresenceService.instance.init();
-
-    await _initPushNotifications();
 
     runApp(
       MultiProvider(
@@ -669,7 +1130,9 @@ Future<void> main() async {
             value: currentChatTracker,
           ),
         ],
-        child: const _AppBootstrap(child: MyApp()),
+        child: const _AppBootstrap(
+          child: MyApp(),
+        ),
       ),
     );
   }, (error, stack) {
@@ -680,6 +1143,7 @@ Future<void> main() async {
 
 class _AppBootstrap extends StatefulWidget {
   final Widget child;
+
   const _AppBootstrap({required this.child});
 
   @override
@@ -691,9 +1155,8 @@ class _AppBootstrapState extends State<_AppBootstrap> {
   void initState() {
     super.initState();
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       _setupAuthDebug();
-      unawaited(PresenceService.instance.markOnline());
     });
   }
 
@@ -731,7 +1194,8 @@ class MyApp extends StatelessWidget {
             locale: locale,
             localizationsDelegates: AppLocalizations.localizationsDelegates,
             supportedLocales: AppLocalizations.supportedLocales,
-            onGenerateTitle: (ctx) => AppLocalizations.of(ctx)?.mainTitle ?? 'MW Chat',
+            onGenerateTitle: (ctx) =>
+            AppLocalizations.of(ctx)?.mainTitle ?? 'MW Chat',
             builder: (context, child) {
               if (child == null) return const SizedBox.shrink();
 
@@ -755,10 +1219,7 @@ class MyApp extends StatelessWidget {
   }
 }
 
-/// ✅ AUTH GATE — aligns with AuthScreen rules:
-/// - Never “auto-heal” isActive to true in build
-/// - Never route to Home when user is not active
-/// - Active = (hasPhone) OR (emailVerified from FirebaseAuth)
+/// ✅ AUTH GATE
 class AuthGate extends StatefulWidget {
   const AuthGate({super.key});
 
@@ -770,12 +1231,10 @@ class _AuthGateState extends State<AuthGate> {
   String? _lastUid;
   Future<void>? _initFuture;
 
-  // ✅ Prevent spamming prompts
   bool _promptedLinkEmailThisSession = false;
   bool _promptedLinkPhoneThisSession = false;
   bool _linkSheetOpen = false;
 
-  // ✅ Web reCAPTCHA (needed for link phone on Web)
   RecaptchaVerifier? _webRecaptchaVerifier;
   bool _webRecaptchaRendered = false;
   bool _webRecaptchaExpired = false;
@@ -813,30 +1272,38 @@ class _AuthGateState extends State<AuthGate> {
     return first.isEmpty || last.isEmpty;
   }
 
-  // -----------------------------
-  // Web reCAPTCHA init / refresh
-  // -----------------------------
   Future<void> _initWebRecaptcha() async {
     if (!kIsWeb) return;
 
-    if (_webRecaptchaVerifier != null && _webRecaptchaRendered && !_webRecaptchaExpired) return;
+    if (_webRecaptchaVerifier != null &&
+        _webRecaptchaRendered &&
+        !_webRecaptchaExpired) {
+      return;
+    }
+
     if (_webRecaptchaBusy) return;
     _webRecaptchaBusy = true;
 
     final rid = DateTime.now().millisecondsSinceEpoch;
 
     try {
-      await ensureRecaptchaContainer(
-        parentId: _recaptchaParentId,
-        childId: _recaptchaChildId,
-        visible: true,
-      );
+      _webRecaptchaVerifier?.clear();
 
-      try {
-        _webRecaptchaVerifier?.clear();
-      } catch (_) {}
+      final mustRecreate = _webRecaptchaVerifier == null ||
+          _webRecaptchaExpired ||
+          !_webRecaptchaRendered;
 
-      _webRecaptchaVerifier = null;
+      if (mustRecreate && _webRecaptchaVerifier != null) {
+        try {
+          _webRecaptchaVerifier!.clear();
+        } catch (_) {}
+        _webRecaptchaVerifier = null;
+      }
+
+      if (_webRecaptchaVerifier != null) {
+        return;
+      }
+
       _webRecaptchaRendered = false;
       _webRecaptchaExpired = false;
 
@@ -845,18 +1312,28 @@ class _AuthGateState extends State<AuthGate> {
         auth: FirebaseAuthPlatform.instance,
         size: RecaptchaVerifierSize.normal,
         theme: RecaptchaVerifierTheme.dark,
-        onError: (e) => debugPrint('[AuthGate] reCAPTCHA onError rid=$rid: ${e.code} ${e.message}'),
-        onExpired: () {
+        onError: (e) => debugPrint(
+          '[AuthGate] reCAPTCHA onError rid=$rid: ${e.code} ${e.message}',
+        ),
+        onExpired: () async {
           _webRecaptchaExpired = true;
+          _webRecaptchaRendered = false;
           debugPrint('[AuthGate] reCAPTCHA expired rid=$rid');
+
+          if (mounted) setState(() {});
+
+          await _refreshWebRecaptcha();
         },
       );
 
       _webRecaptchaVerifier = verifier;
+
       await verifier.render().timeout(const Duration(seconds: 60));
       _webRecaptchaRendered = true;
 
-      debugPrint('[AuthGate] reCAPTCHA rendered rid=$rid container=$_recaptchaChildId');
+      debugPrint(
+        '[AuthGate] reCAPTCHA rendered rid=$rid container=$_recaptchaChildId',
+      );
     } catch (e, st) {
       debugPrint('[AuthGate] _initWebRecaptcha error rid=$rid: $e\n$st');
     } finally {
@@ -878,6 +1355,14 @@ class _AuthGateState extends State<AuthGate> {
     _webRecaptchaVerifier = null;
     _webRecaptchaRendered = false;
     _webRecaptchaExpired = false;
+
+    await ensureRecaptchaContainer(
+      parentId: _recaptchaParentId,
+      childId: _recaptchaChildId,
+      visible: true,
+    );
+
+    await Future<void>.delayed(const Duration(milliseconds: 16));
 
     await _initWebRecaptcha();
   }
@@ -904,17 +1389,13 @@ class _AuthGateState extends State<AuthGate> {
     try {
       await _getUserDocBestEffort(uid);
       _serverFetchedUid = uid;
-
-      if (mounted) setState(() {}); // ✅ important
     } catch (_) {
+      // ignore
     } finally {
       _serverFetchInFlight = false;
     }
   }
 
-  // -----------------------------
-  // Link email to current user
-  // -----------------------------
   Future<void> _linkEmailPasswordToCurrentUser({
     required AppLocalizations l10n,
     required String email,
@@ -922,7 +1403,10 @@ class _AuthGateState extends State<AuthGate> {
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      throw FirebaseAuthException(code: 'no-current-user', message: l10n.authError);
+      throw FirebaseAuthException(
+        code: 'no-current-user',
+        message: l10n.authError,
+      );
     }
 
     final normalizedEmail = email.trim().toLowerCase();
@@ -933,7 +1417,6 @@ class _AuthGateState extends State<AuthGate> {
 
     await user.linkWithCredential(credential);
 
-    // Best-effort: send verification email
     try {
       await user.sendEmailVerification();
     } catch (_) {}
@@ -964,24 +1447,19 @@ class _AuthGateState extends State<AuthGate> {
     }
   }
 
-  // -----------------------------
-  // Link phone to current user
-  // -----------------------------
-  // -----------------------------
-// Link phone to current user
-// -----------------------------
   Future<void> _linkPhoneCredentialToCurrentUser({
     required AppLocalizations l10n,
     required PhoneAuthCredential cred,
     required String e164,
-
-    // ✅ NEW (store in Firestore so profile/setup is consistent)
     required String phoneCountryIso2,
     required String phoneCountryDialCode,
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      throw FirebaseAuthException(code: 'no-current-user', message: l10n.authError);
+      throw FirebaseAuthException(
+        code: 'no-current-user',
+        message: l10n.authError,
+      );
     }
 
     await user.linkWithCredential(cred);
@@ -991,7 +1469,7 @@ class _AuthGateState extends State<AuthGate> {
         'phoneNumber': e164,
         'phoneCountryIso2': phoneCountryIso2,
         'phoneCountryDialCode': phoneCountryDialCode,
-        'isActive': true, // ✅ phone users are active immediately
+        'isActive': true,
         'updatedAt': FieldValue.serverTimestamp(),
       },
       SetOptions(merge: true),
@@ -1003,8 +1481,6 @@ class _AuthGateState extends State<AuthGate> {
     required String smsCode,
     required ConfirmationResult cr,
     required String e164,
-
-    // ✅ NEW (store in Firestore so profile/setup is consistent)
     required String phoneCountryIso2,
     required String phoneCountryDialCode,
   }) async {
@@ -1012,7 +1488,10 @@ class _AuthGateState extends State<AuthGate> {
 
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      throw FirebaseAuthException(code: 'no-current-user', message: l10n.authError);
+      throw FirebaseAuthException(
+        code: 'no-current-user',
+        message: l10n.authError,
+      );
     }
 
     await FirebaseFirestore.instance.collection('users').doc(user.uid).set(
@@ -1027,9 +1506,6 @@ class _AuthGateState extends State<AuthGate> {
     );
   }
 
-// -----------------------------
-// Decide whether to prompt
-// -----------------------------
   Future<void> _maybePromptLinking({
     required User user,
     required Map<String, dynamic> data,
@@ -1047,7 +1523,6 @@ class _AuthGateState extends State<AuthGate> {
     final hasAnyEmail = authEmail.isNotEmpty || fsEmail.isNotEmpty;
     final hasAnyPhone = authPhone.isNotEmpty || fsPhone.isNotEmpty;
 
-    // 1) Phone login -> missing email => prompt link email
     if (hasAnyPhone && !hasAnyEmail && !_promptedLinkEmailThisSession) {
       _promptedLinkEmailThisSession = true;
       _linkSheetOpen = true;
@@ -1075,7 +1550,6 @@ class _AuthGateState extends State<AuthGate> {
       return;
     }
 
-    // 2) Email login -> missing phone => prompt link phone
     if (hasAnyEmail && !hasAnyPhone && !_promptedLinkPhoneThisSession) {
       _promptedLinkPhoneThisSession = true;
       _linkSheetOpen = true;
@@ -1089,8 +1563,6 @@ class _AuthGateState extends State<AuthGate> {
           defaultCountry: null,
           defaultDialIso2: 'US',
           onSkip: () async {},
-
-          // ✅ UPDATED signature: (cred, e164, countryIso2, dialCode)
           onLinkWithCredential: (cred, e164, countryIso2, dialCode) async {
             await _linkPhoneCredentialToCurrentUser(
               l10n: l10n,
@@ -1100,8 +1572,6 @@ class _AuthGateState extends State<AuthGate> {
               phoneCountryDialCode: dialCode,
             );
           },
-
-          // ✅ UPDATED signature: (smsCode, cr, e164, countryIso2, dialCode)
           onLinkWebConfirm: (smsCode, cr, e164, countryIso2, dialCode) async {
             await _confirmWebPhoneLink(
               l10n: l10n,
@@ -1112,12 +1582,13 @@ class _AuthGateState extends State<AuthGate> {
               phoneCountryDialCode: dialCode,
             );
           },
-
           initWebRecaptcha: () async => _initWebRecaptcha(),
           getWebRecaptchaVerifier: () => _webRecaptchaVerifier,
           refreshWebRecaptcha: () async => _refreshWebRecaptcha(),
           isWebRecaptchaReady: () =>
-          _webRecaptchaVerifier != null && _webRecaptchaRendered && !_webRecaptchaExpired,
+          _webRecaptchaVerifier != null &&
+              _webRecaptchaRendered &&
+              !_webRecaptchaExpired,
           webRecaptchaHint: () => _webRecaptchaHint(l10n),
         );
       } finally {
@@ -1126,7 +1597,6 @@ class _AuthGateState extends State<AuthGate> {
     }
   }
 
-  // ✅ Reset prompt flags per user session
   void _resetPromptSessionIfUserChanged(String uid) {
     if (_lastUid != uid) {
       _promptedLinkEmailThisSession = false;
@@ -1153,31 +1623,27 @@ class _AuthGateState extends State<AuthGate> {
     return hasPhone || emailVerified;
   }
 
-  // -----------------------------
-  // Safe ensure user doc exists
-  // -----------------------------
   Future<void> _bestEffortEnsureUserDocExists(User user) async {
     final ref = FirebaseFirestore.instance.collection('users').doc(user.uid);
 
     try {
-      // ✅ IMPORTANT: check SERVER first so we don't "recreate" due to cache cold-start
       DocumentSnapshot<Map<String, dynamic>> snap;
       try {
         snap = await ref.get(const GetOptions(source: Source.server));
       } catch (_) {
-        snap = await ref.get(); // fallback: serverAndCache
+        snap = await ref.get();
       }
 
       final shouldBeActive = _authSaysActive(user);
 
-      // If doc missing -> create minimal doc
       if (!snap.exists) {
         final data = <String, dynamic>{
-          'email': user.email ?? '',
+          'email': (user.email ?? '').trim().toLowerCase(),
           'phoneNumber': user.phoneNumber ?? '',
           if (shouldBeActive) 'isActive': true,
           if (user.emailVerified) 'emailVerified': true,
-          if (user.emailVerified) 'emailVerifiedAt': FieldValue.serverTimestamp(),
+          if (user.emailVerified)
+            'emailVerifiedAt': FieldValue.serverTimestamp(),
           'isOnline': false,
           'hasAcceptedTerms': false,
           'createdAt': FieldValue.serverTimestamp(),
@@ -1189,30 +1655,26 @@ class _AuthGateState extends State<AuthGate> {
         return;
       }
 
-      // ✅ Doc exists -> PATCH legacy users safely (only set TRUE fields)
       final data = snap.data() ?? <String, dynamic>{};
       final fsIsActive = (data['isActive'] == true);
 
       final patch = <String, dynamic>{
-        // keep these fresh if missing
-        if ((data['email'] ?? '').toString().trim().isEmpty && (user.email ?? '').trim().isNotEmpty)
+        if ((data['email'] ?? '').toString().trim().isEmpty &&
+            (user.email ?? '').trim().isNotEmpty)
           'email': user.email!.trim().toLowerCase(),
-        if ((data['phoneNumber'] ?? '').toString().trim().isEmpty && (user.phoneNumber ?? '').trim().isNotEmpty)
-          'phoneNumber': (user.phoneNumber ?? '').trim(),
-
-        // legacy: if auth says active, ensure Firestore isActive true
+        if ((data['phoneNumber'] ?? '').toString().trim().isEmpty &&
+            (user.phoneNumber ?? '').trim().isNotEmpty)
+          'phoneNumber': user.phoneNumber!.trim(),
         if (shouldBeActive && !fsIsActive) 'isActive': true,
-
-        // legacy: sync emailVerified flag into Firestore
-        if (user.emailVerified && data['emailVerified'] != true) 'emailVerified': true,
-        if (user.emailVerified && data['emailVerifiedAt'] == null) 'emailVerifiedAt': FieldValue.serverTimestamp(),
-
-        // ensure timestamps exist
+        if (user.emailVerified && data['emailVerified'] != true)
+          'emailVerified': true,
+        if (user.emailVerified && data['emailVerifiedAt'] == null)
+          'emailVerifiedAt': FieldValue.serverTimestamp(),
         if (data['createdAt'] == null) 'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
       };
 
       if (patch.isNotEmpty) {
+        patch['updatedAt'] = FieldValue.serverTimestamp();
         await ref.set(patch, SetOptions(merge: true));
       }
     } catch (e) {
@@ -1223,15 +1685,6 @@ class _AuthGateState extends State<AuthGate> {
   Future<void> _prepareUser(User user) async {
     try {
       await user.reload();
-    } catch (_) {}
-
-    // For web email verification refresh
-    try {
-      await user.getIdToken(true);
-    } catch (_) {}
-
-    try {
-      await FirebaseAuth.instance.currentUser?.reload();
     } catch (_) {}
 
     final refreshed = FirebaseAuth.instance.currentUser ?? user;
@@ -1257,15 +1710,16 @@ class _AuthGateState extends State<AuthGate> {
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, authSnap) {
         if (authSnap.connectionState == ConnectionState.waiting) {
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
         }
 
         final user = authSnap.data;
         if (user == null) return const AuthScreen();
 
-        _resetPromptSessionIfUserChanged(user.uid); // ✅ move here
+        _resetPromptSessionIfUserChanged(user.uid);
 
-        // ✅ memoize per user
         if (_lastUid != user.uid || _initFuture == null) {
           _lastUid = user.uid;
           _initFuture = _prepareUser(user);
@@ -1275,13 +1729,16 @@ class _AuthGateState extends State<AuthGate> {
           future: _initFuture,
           builder: (context, prepSnap) {
             if (prepSnap.connectionState == ConnectionState.waiting) {
-              return const Scaffold(body: Center(child: CircularProgressIndicator()));
+              return const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              );
             }
 
-            final docRef = FirebaseFirestore.instance.collection('users').doc(user.uid);
+            final docRef =
+            FirebaseFirestore.instance.collection('users').doc(user.uid);
 
             return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-              stream: docRef.snapshots(includeMetadataChanges: true),
+              stream: docRef.snapshots(),
               builder: (context, docSnap) {
                 if (!docSnap.hasData) {
                   return Scaffold(
@@ -1289,7 +1746,11 @@ class _AuthGateState extends State<AuthGate> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const SizedBox(width: 44, height: 44, child: CircularProgressIndicator()),
+                          const SizedBox(
+                            width: 44,
+                            height: 44,
+                            child: CircularProgressIndicator(),
+                          ),
                           const SizedBox(height: 16),
                           Text(
                             l10n.settingUpProfile,
@@ -1303,9 +1764,9 @@ class _AuthGateState extends State<AuthGate> {
                 }
 
                 final doc = docSnap.data!;
+                final data = doc.data() ?? <String, dynamic>{};
                 final isFromCache = doc.metadata.isFromCache;
 
-                // ✅ Force at least one server fetch after login to avoid stale cache gating
                 if (isFromCache && _serverFetchedUid != user.uid) {
                   unawaited(_ensureServerDocOnce(user.uid));
 
@@ -1313,11 +1774,23 @@ class _AuthGateState extends State<AuthGate> {
                     body: Center(child: CircularProgressIndicator()),
                   );
                 }
-                final data = doc.data() ?? <String, dynamic>{};
+
+                final rawUnreadBadge = data['unreadBadgeCount'];
+                final unreadBadgeCount = rawUnreadBadge is num
+                    ? rawUnreadBadge.toInt()
+                    : 0;
+
+                if (!kIsWeb) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!mounted) return;
+                    unawaited(
+                      NotificationBadgeService.instance.setBadgeCount(unreadBadgeCount),
+                    );
+                  });
+                }
+
                 final fsActive = (data['isActive'] == true);
 
-                // ✅ Allow phone-auth users immediately even if legacy Firestore not updated yet.
-                // Email users still require Firestore activation (or verification flow).
                 final hasPhoneAuth = (user.phoneNumber ?? '').trim().isNotEmpty;
                 final effectiveActive = fsActive || hasPhoneAuth;
 
@@ -1326,7 +1799,9 @@ class _AuthGateState extends State<AuthGate> {
                   if (!needsNames) {
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                       if (!mounted) return;
-                      unawaited(_maybePromptLinking(user: user, data: data, l10n: l10n));
+                      unawaited(
+                        _maybePromptLinking(user: user, data: data, l10n: l10n),
+                      );
                     });
                   }
                 }
@@ -1345,10 +1820,8 @@ class _AuthGateState extends State<AuthGate> {
 
                       final refreshed = FirebaseAuth.instance.currentUser ?? user;
 
-                      // If they verified email, activate.
                       await _activateIfEmailVerified(refreshed);
 
-                      // Touch doc (forces fresh fetch / UI refresh)
                       try {
                         await _getUserDocBestEffort(refreshed.uid);
                       } catch (_) {}
@@ -1360,21 +1833,19 @@ class _AuthGateState extends State<AuthGate> {
                   );
                 }
 
-                // ✅ Active -> must have required names before Home
                 final needsNames = _needsNamesFromFirestore(data);
 
-                // If names missing, force CompleteProfileScreen (no skipping).
                 if (needsNames) {
                   return CompleteProfileScreen(uid: user.uid);
                 }
 
-                // Only prompt linking after profile names are complete (avoids stacking flows).
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if (!mounted) return;
-                  unawaited(_maybePromptLinking(user: user, data: data, l10n: l10n));
+                  unawaited(
+                    _maybePromptLinking(user: user, data: data, l10n: l10n),
+                  );
                 });
 
-                // ✅ Active + names OK -> Home
                 return const HomeScreen();
               },
             );
@@ -1418,12 +1889,19 @@ class _PendingActivationScreen extends StatelessWidget {
                     end: Alignment.bottomRight,
                   ),
                 ),
-                child: const Icon(Icons.lock_clock_rounded, color: Colors.black, size: 34),
+                child: const Icon(
+                  Icons.lock_clock_rounded,
+                  color: Colors.black,
+                  size: 34,
+                ),
               ),
               const SizedBox(height: 20),
               Text(
                 l10n.accountNotActive,
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 10),
@@ -1437,7 +1915,7 @@ class _PendingActivationScreen extends StatelessWidget {
                 l10n.autoUpdateNotice,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: Colors.white.withOpacity(0.65),
+                  color: Colors.white.withValues(alpha: 0.65),
                   fontSize: 12.5,
                 ),
               ),
@@ -1447,24 +1925,40 @@ class _PendingActivationScreen extends StatelessWidget {
                 icon: const Icon(Icons.refresh_rounded, color: Colors.black),
                 label: Text(
                   l10n.checkAgain,
-                  style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w800),
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: kPrimaryGold,
                   foregroundColor: Colors.black,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 18),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 12,
+                    horizontal: 18,
+                  ),
                 ),
               ),
               const SizedBox(height: 12),
               OutlinedButton.icon(
                 onPressed: () => onLogout(),
                 icon: const Icon(Icons.logout, color: kTextSecondary),
-                label: Text(l10n.logout, style: const TextStyle(color: kTextSecondary)),
+                label: Text(
+                  l10n.logout,
+                  style: const TextStyle(color: kTextSecondary),
+                ),
                 style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: Colors.white.withOpacity(0.18)),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 18),
+                  side: BorderSide(color: Colors.white.withValues(alpha: 0.18)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 12,
+                    horizontal: 18,
+                  ),
                 ),
               ),
             ],

@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/presence_helper.dart';
 import '../../widgets/ui/app_info.dart';
 import '../../widgets/ui/mw_avatar.dart';
 import '../../widgets/ui/mw_background.dart';
@@ -64,8 +65,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
   static const String _fieldEmailVisibility = 'emailVisibility';
 
   Timestamp? _readTs(Map<String, dynamic> m, String k) {
-    final v = m[k];
-    return v is Timestamp ? v : null;
+    return MwPresenceHelper.readTimestamp(m, k);
   }
 
   String _readEmailVisibility(Map<String, dynamic> data) {
@@ -119,14 +119,12 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     required bool rawIsOnline,
     required Timestamp? lastActive,
   }) {
-    if (!canSeePresence) return false;
-    if (!rawIsOnline) return false;
-
-    // ✅ If lastActive missing, still trust isOnline=true (prevents "always offline" bug)
-    if (lastActive == null) return true;
-
-    final diffSeconds = DateTime.now().difference(lastActive.toDate()).inSeconds;
-    return diffSeconds <= _onlineTtlSeconds;
+    return MwPresenceHelper.isOnlineForDisplay(
+      canSeePresence: canSeePresence,
+      rawIsOnline: rawIsOnline,
+      lastActive: lastActive,
+      ttlSeconds: _onlineTtlSeconds,
+    );
   }
 
 
@@ -571,14 +569,13 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                                     isActive: isActive,
                                   );
 
-                                  final bool rawIsOnline = isActive &&
-                                      ((data['isOnline'] == true) || (data['online'] == true));
+                                  final bool rawIsOnline = MwPresenceHelper.readRawOnline(
+                                    data,
+                                    isActive: isActive,
+                                  );
 
                                   // ✅ TTL uses lastActive first, then legacy fallbacks (align with Friends tab)
-                                  final Timestamp? lastActive =
-                                      _readTs(data, 'lastActive') ??
-                                          _readTs(data, 'updatedAt') ??
-                                          _readTs(data, 'lastSeen');
+                                  final Timestamp? lastActive = _readTs(data, 'lastActive');
 
                                   final effectiveOnline = _isOnlineWithTtl(
                                     canSeePresence: canSeePresence,

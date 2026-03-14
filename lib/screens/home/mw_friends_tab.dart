@@ -2,6 +2,7 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -10,6 +11,8 @@ import 'package:vibration/vibration.dart';
 import '../../l10n/app_localizations.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/chat_utils.dart';
+import '../../utils/notification_badge_service.dart';
+import '../../utils/presence_helper.dart';
 import '../../widgets/ui/mw_avatar.dart';
 import '../../widgets/ui/mw_search_field.dart';
 import '../chat/chat_screen.dart';
@@ -238,8 +241,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
   }
 
   Timestamp? _readTs(Map<String, dynamic> m, String k) {
-    final v = m[k];
-    return v is Timestamp ? v : null;
+    return MwPresenceHelper.readTimestamp(m, k);
   }
 
   /// ✅ Robust online decision:
@@ -251,17 +253,13 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     required Timestamp? lastActive,
     required int ttlSeconds,
   }) {
-    if (!canSeePresence) return false;
-    if (!rawIsOnline) return false;
-
-    // ✅ IMPORTANT: allow online display even if lastActive isn't present yet
-    // (e.g., legacy accounts, first run after update, or rules temporarily blocking lastActive)
-    if (lastActive == null) return true;
-
-    final ageSec = DateTime.now().difference(lastActive.toDate()).inSeconds;
-    return ageSec <= ttlSeconds;
+    return MwPresenceHelper.isOnlineForDisplay(
+      canSeePresence: canSeePresence,
+      rawIsOnline: rawIsOnline,
+      lastActive: lastActive,
+      ttlSeconds: ttlSeconds,
+    );
   }
-
 
   bool _listEquals(List<String> a, List<String> b) {
     if (identical(a, b)) return true;
@@ -631,13 +629,12 @@ class _MwFriendsTabState extends State<MwFriendsTab>
           isActive: isActive,
         );
 
-        final bool rawIsOnline = isActive &&
-            ((data['isOnline'] == true) || (data['online'] == true));
+        final bool rawIsOnline = MwPresenceHelper.readRawOnline(
+          data,
+          isActive: isActive,
+        );
 
-        final Timestamp? lastActive =
-            _readTs(data, 'lastActive') ??
-                _readTs(data, 'updatedAt') ??
-                _readTs(data, 'lastSeen'); // fallback only
+        final Timestamp? lastActive = _readTs(data, 'lastActive');
 
         final bool isOnlineForDisplay = _computeIsOnlineForDisplay(
           canSeePresence: canSeePresence,
@@ -1386,20 +1383,44 @@ class _MwFriendsTabState extends State<MwFriendsTab>
   Future<void> _resetUnreadIfNeeded(String roomId, int unreadCount) async {
     if (unreadCount <= 0) return;
     if (_resettingRooms.contains(roomId)) return;
+
     _resettingRooms.add(roomId);
 
+    // Optimistic local update first so UI becomes responsive immediately.
+    if (mounted) {
+      setState(() {
+        _unreadCache = {
+          ..._unreadCache,
+          roomId: 0,
+        };
+      });
+    }
+
     try {
-      await FirebaseFirestore.instance.collection('privateChats').doc(roomId).set(
+      final totalUnread = _unreadCache.values.fold<int>(0, (sum, v) => sum + v);
+      await NotificationBadgeService.instance.setBadgeCount(totalUnread);
+
+      if (totalUnread <= 0) {
+        await FirebaseFunctions.instance
+            .httpsCallable('resetMyUnreadBadgeCount')
+            .call();
+      }
+    } catch (_) {}
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('privateChats')
+          .doc(roomId)
+          .set(
         {
           'unreadCounts': {_currentUid: 0},
           'updatedAt': FieldValue.serverTimestamp(),
         },
         SetOptions(merge: true),
-      );
-    } catch (_) {
-      // ignore
+      ).timeout(const Duration(seconds: 8));
+    } catch (e) {
+      debugPrint('⚠️ _resetUnreadIfNeeded failed for room=$roomId: $e');
     } finally {
-      await Future<void>.delayed(const Duration(milliseconds: 250));
       _resettingRooms.remove(roomId);
     }
   }
@@ -1485,14 +1506,12 @@ class _MwFriendsTabState extends State<MwFriendsTab>
       isActive: isActive,
     );
 
-    final bool rawIsOnline = isActive &&
-        ((data['isOnline'] == true) || (data['online'] == true));
+    final bool rawIsOnline = MwPresenceHelper.readRawOnline(
+      data,
+      isActive: isActive,
+    );
 
-    final Timestamp? lastActive =
-        _readTs(data, 'lastActive') ??
-            _readTs(data, 'updatedAt') ??
-            _readTs(data, 'lastSeen');
-
+    final Timestamp? lastActive = _readTs(data, 'lastActive');
     final Timestamp? lastSeen = _readTs(data, 'lastSeen');
 
     final bool computed = _computeIsOnlineForDisplay(
@@ -1535,8 +1554,8 @@ class _MwFriendsTabState extends State<MwFriendsTab>
 
     Future<void> openChat() async {
       if (!mounted) return;
+      if (isBusy) return;
 
-      // ✅ close keyboard (search, etc.)
       FocusManager.instance.primaryFocus?.unfocus();
 
       try {
@@ -1545,16 +1564,17 @@ class _MwFriendsTabState extends State<MwFriendsTab>
         }
       } catch (_) {}
 
-      if (!isBlockedRelationship) {
-        await _resetUnreadIfNeeded(roomId, unreadCount);
-      }
-
       if (!mounted) return;
+
       Navigator.of(context, rootNavigator: true).push(
         MaterialPageRoute(
           builder: (_) => ChatScreen(roomId: roomId, title: displayName),
         ),
       );
+
+      if (!isBlockedRelationship) {
+        unawaited(_resetUnreadIfNeeded(roomId, unreadCount));
+      }
     }
 
     Widget buildTrailing() {

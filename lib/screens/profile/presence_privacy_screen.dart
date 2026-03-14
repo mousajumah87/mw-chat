@@ -65,10 +65,6 @@ class _PresencePrivacyScreenState extends State<PresencePrivacyScreen>
     await FirebaseFirestore.instance.collection('users').doc(uid).set(
       {
         'showOnlineStatus': v,
-        // If user disables showing online status, force offline display.
-        if (!v) 'isOnline': false,
-        if (!v) 'online': false,
-        // ✅ do NOT touch lastSeen here; PresenceService owns it
       },
       SetOptions(merge: true),
     );
@@ -337,10 +333,7 @@ class _PresencePrivacyScreenState extends State<PresencePrivacyScreen>
                           final bool rawIsOnline =
                               (data['isOnline'] == true) || (data['online'] == true);
 
-                          // ✅ Use lastActive for TTL freshness (online indicator)
-                          final Timestamp? lastActiveTs = _readTs(data, 'lastActive') ??
-                              _readTs(data, 'updatedAt') ??
-                              _readTs(data, 'lastSeen');
+                          final Timestamp? lastActiveTs = _readTs(data, 'lastActive');
 
                           final DateTime? lastActiveDt = lastActiveTs?.toDate();
                           final now = DateTime.now();

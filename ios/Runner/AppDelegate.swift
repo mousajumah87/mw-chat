@@ -8,7 +8,7 @@ import FirebaseAppCheck
 #if DEBUG
 final class MWAppCheckProviderFactory: NSObject, AppCheckProviderFactory {
   func createProvider(with app: FirebaseApp) -> AppCheckProvider? {
-    return AppCheckDebugProvider(app: app)
+    AppCheckDebugProvider(app: app)
   }
 }
 #endif
@@ -22,34 +22,35 @@ final class MWAppCheckProviderFactory: NSObject, AppCheckProviderFactory {
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
 
-    // ---- Firebase config first ----
+    #if DEBUG
+    AppCheck.setAppCheckProviderFactory(MWAppCheckProviderFactory())
+    #endif
+
     if FirebaseApp.app() == nil {
       FirebaseApp.configure()
       print("[Firebase] configured")
     }
 
-    // ---- App Check ----
-    // Debug builds: use Debug provider so you can test easily
-    // Release/TestFlight: DON'T set a factory here to avoid missing symbols.
-    // Firebase will use the default provider configured for the app.
-    #if DEBUG
-    AppCheck.setAppCheckProviderFactory(MWAppCheckProviderFactory())
-    #endif
+    let result = super.application(
+      application,
+      didFinishLaunchingWithOptions: launchOptions
+    )
 
     GeneratedPluginRegistrant.register(with: self)
 
-    guard let controller = window?.rootViewController as? FlutterViewController else {
-      return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+    if let controller = window?.rootViewController as? FlutterViewController {
+      let channel = FlutterMethodChannel(
+        name: channelName,
+        binaryMessenger: controller.binaryMessenger
+      )
+
+      VoipPushManager.shared.setChannel(channel)
+      VoipPushManager.shared.register()
+      print("[VoIP] channel attached and registration started")
+    } else {
+      print("[VoIP] FlutterViewController not available at launch")
     }
 
-    let channel = FlutterMethodChannel(
-      name: channelName,
-      binaryMessenger: controller.binaryMessenger
-    )
-
-    VoipPushManager.shared.setChannel(channel)
-    VoipPushManager.shared.register()
-
-    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+    return result
   }
 }

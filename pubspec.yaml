@@ -2,7 +2,7 @@ name: mw
 description: "MW Chat – modern private messaging app. Copyright ©2025 Mousa Abu Hilal."
 publish_to: 'none'
 
-version: 1.0.7+13
+version: 1.0.7+23
 
 environment:
   sdk: ^3.10.0
@@ -15,54 +15,77 @@ dependencies:
     sdk: flutter
 
   cupertino_icons: ^1.0.8
-  firebase_core: ^4.2.1
-  cloud_firestore: ^6.1.0
-  firebase_storage: ^13.0.4
-  firebase_app_check: ^0.4.1+2
-  image_picker: ^1.2.1
-  path: ^1.9.1
-  file_picker: ^10.3.7
+
+  # -------------------------
+  # Firebase
+  # -------------------------
+  firebase_core: ^4.4.0
+  firebase_auth: ^6.1.4
+  cloud_firestore: ^6.1.2
+  firebase_storage: ^13.0.6
+  firebase_database: ^12.1.2
+  firebase_messaging: ^16.1.1
+  cloud_functions: ^6.0.6
+  firebase_app_check: ^0.4.1+4
+
+  # -------------------------
+  # Your NEW phone/auth deps (fixes your compile errors)
+  # -------------------------
+  country_picker: ^2.0.27
+  phone_numbers_parser: ^9.0.20
+
+  # -------------------------
+  # App utilities
+  # -------------------------
   intl: ^0.20.2
+  http: ^1.2.2
+  path: ^1.9.1
+  path_provider: ^2.1.0
   shared_preferences: ^2.5.3
   provider: ^6.1.5+1
-  share_plus: ^12.0.1
-  vibration: ^3.1.4
+  url_launcher: ^6.3.0
+  google_fonts: ^8.0.0
+
+  # -------------------------
+  # Media / Files
+  # -------------------------
+  image_picker: ^1.2.1
+  file_picker: ^10.3.8
+  image: ^4.7.2
   cached_network_image: ^3.4.0
   transparent_image: ^2.0.1
-  url_launcher: ^6.3.0
   record: ^6.1.2
   audioplayers: ^6.5.1
-  video_player: ^2.8.1
-  firebase_messaging: ^16.0.4
-  cloud_functions: ^6.0.4
-  image: ^4.2.0
-  path_provider: ^2.1.0
-  firebase_database: ^12.0.0
-  http: ^1.2.2
-  scrollable_positioned_list: ^0.3.8
-  google_fonts: ^8.0.0
+  video_player: ^2.10.1
   video_thumbnail: ^0.5.3
   wechat_assets_picker: ^10.1.0
   flutter_webrtc: ^1.2.1
-  firebase_auth: ^6.1.3
-  flutter_local_notifications: ^17.2.2
+  firebase_auth_platform_interface: ^8.1.3
 
+  # -------------------------
+  # Notifications
+  # -------------------------
+  flutter_local_notifications: ^17.2.2
+  flutter_app_badger: ^1.5.0
+
+  # -------------------------
+  # UI / UX helpers
+  # -------------------------
+  share_plus: ^12.0.1
+  vibration: ^3.1.4
+  scrollable_positioned_list: ^0.3.8
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+
   flutter_lints: ^6.0.0
 
-  # App Icon generator
   flutter_launcher_icons: ^0.14.4
-
-  # Splash screen generator
   flutter_native_splash: ^2.4.1
 
 flutter:
   uses-material-design: true
-
-  # Needed so Flutter generates app_localizations.dart
   generate: true
 
   assets:
@@ -76,9 +99,6 @@ flutter:
     - assets/typing/smurf_keyboard.png
     - assets/emojis/
 
-  # =========================
-  # FONT FAMILIES
-  # =========================
   fonts:
     - family: Poppins
       fonts:
@@ -102,9 +122,6 @@ flutter:
         - asset: assets/fonts/NotoSansArabic-Bold.ttf
           weight: 700
 
-# =========================
-# APP ICON CONFIGURATION
-# =========================
 flutter_launcher_icons:
   android: true
   ios: true
@@ -114,9 +131,6 @@ flutter_launcher_icons:
     generate: true
     image_path: "assets/logo/mw_mark.png"
 
-# =========================
-# SPLASH SCREEN CONFIGURATION
-# =========================
 flutter_native_splash:
   color: "#0E0E0E"
   image: assets/logo/mw_mark_transparent.png

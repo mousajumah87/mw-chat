@@ -18,6 +18,7 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
@@ -32,7 +33,7 @@ android {
         versionName = flutter.versionName
     }
 
-    // 🔐 REAL RELEASE SIGNING (important!)
+    // 🔐 REAL RELEASE SIGNING
     signingConfigs {
         create("release") {
             val keystoreProperties = Properties()
@@ -67,4 +68,8 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }

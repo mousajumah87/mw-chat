@@ -4,11 +4,11 @@
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 
-// ✅ Node 20 safe APNs: HTTP/2 + jose (replaces `apn`)
+// Node 20 safe APNs: HTTP/2 + jose
 const http2 = require("http2");
 const { SignJWT, importPKCS8 } = require("jose");
 
-// ✅ used to generate short/stable keys for APNs collapse-id (<= 64 bytes)
+// Stable short keys for collapse IDs
 const crypto = require("crypto");
 
 admin.initializeApp();
@@ -20,15 +20,19 @@ admin.initializeApp();
 function asString(v) {
     return typeof v === "string" ? v : "";
 }
+
 function trimString(v) {
     return asString(v).trim();
 }
+
 function isNonEmptyString(v) {
     return typeof v === "string" && v.trim().length > 0;
 }
+
 function uniqStrings(arr) {
     const out = [];
     const seen = new Set();
+
     for (const v of arr || []) {
         const s = trimString(v);
         if (!s) continue;
@@ -36,43 +40,87 @@ function uniqStrings(arr) {
         seen.add(s);
         out.push(s);
     }
-    return out;
-}
-function chunk(arr, n) {
-    const out = [];
-    for (let i = 0; i < (arr || []).length; i += n) out.push(arr.slice(i, i + n));
+
     return out;
 }
 
-// ✅ APNs requires apns-collapse-id <= 64 bytes.
-// We generate a stable, short key based on roomId/callId (hash), safe for iOS + Android.
+function chunk(arr, n) {
+    const out = [];
+    for (let i = 0; i < (arr || []).length; i += n) {
+        out.push(arr.slice(i, i + n));
+    }
+    return out;
+}
+
+// APNs requires apns-collapse-id <= 64 bytes.
 function shortStableKey(prefix, raw, maxLen = 64) {
     const s = trimString(raw);
-    const h = crypto.createHash("sha256").update(s).digest("hex").slice(0, 32); // 32 chars
+    const h = crypto.createHash("sha256").update(s).digest("hex").slice(0, 32);
     const out = `${prefix}_${h}`;
     return out.length > maxLen ? out.slice(0, maxLen) : out;
 }
 
-// ✅ NEW: feature flag for hiding message content in push notifications
 function isHideMessageBodyEnabled() {
     const v = trimString(process.env.HIDE_MESSAGE_BODY).toLowerCase();
     return v === "1" || v === "true" || v === "yes";
 }
 
-// ✅ NEW: build notification body (never include real message text when enabled)
 function buildNotificationBody(message) {
     if (isHideMessageBodyEnabled()) return "New message";
     const t = message && typeof message.text === "string" ? message.text.trim() : "";
     return t.length ? t : "New message in MW Chat";
 }
 
-/**
- * Extract FCM tokens from user doc.
- * Supports:
- *  - user.fcmToken: string
- *  - user.fcmTokens: array<string>
- *  - user.fcmTokensMap: map<string,bool|string|number>
- */
+async function incrementUnreadBadgeCounts(db, receiverIds) {
+    if (!Array.isArray(receiverIds) || !receiverIds.length) return;
+
+    await Promise.all(
+        receiverIds.map(async (uid) => {
+            try {
+                await db.collection("users").doc(uid).set(
+                    {
+                        unreadBadgeCount: admin.firestore.FieldValue.increment(1),
+                        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                    },
+                    { merge: true }
+                );
+            } catch (e) {
+                console.log("[BADGE] incrementUnreadBadgeCounts failed", {
+                    uid,
+                    message: e && e.message ? e.message : String(e),
+                });
+            }
+        })
+    );
+}
+
+exports.resetMyUnreadBadgeCount = functions.region("us-central1").https.onCall(async (data, context) => {
+    try {
+        const uid =
+            context && context.auth && typeof context.auth.uid === "string" && context.auth.uid.length
+                ? context.auth.uid
+                : null;
+
+        if (!uid) {
+            throw new functions.https.HttpsError("unauthenticated", "You must be signed in.");
+        }
+
+        await admin.firestore().collection("users").doc(uid).set(
+            {
+                unreadBadgeCount: 0,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true }
+        );
+
+        return { ok: true, unreadBadgeCount: 0 };
+    } catch (e) {
+        console.error("resetMyUnreadBadgeCount failed", e);
+        if (e && e.code && e.message) throw e;
+        throw new functions.https.HttpsError("internal", e && e.message ? e.message : "Failed");
+    }
+});
+
 function extractFcmTokensFromUserDoc(userData) {
     const tokens = [];
 
@@ -99,13 +147,6 @@ function extractFcmTokensFromUserDoc(userData) {
     return uniqStrings(tokens);
 }
 
-/**
- * Extract VoIP tokens from user doc.
- * Supports:
- *  - user.voipToken: string
- *  - user.voipTokens: array<string>
- *  - user.voipTokensMap: map<string,bool|string|number>
- */
 function extractVoipTokensFromUserDoc(userData) {
     const tokens = [];
 
@@ -143,10 +184,14 @@ function tokensToRemoveFromSendResult(tokens, sendResponse) {
         const err = r && r.error ? r.error : null;
         const code = err && err.code ? String(err.code) : "";
 
-        if (code.includes("messaging/invalid-registration-token") || code.includes("messaging/registration-token-not-registered")) {
+        if (
+            code.includes("messaging/invalid-registration-token") ||
+            code.includes("messaging/registration-token-not-registered")
+        ) {
             bad.push(tokens[i]);
         }
     }
+
     return bad;
 }
 
@@ -179,12 +224,14 @@ async function cleanupInvalidFcmTokensBestEffort(db, receiverIds, invalidTokens)
                 if (data.fcmTokensMap && typeof data.fcmTokensMap === "object" && !Array.isArray(data.fcmTokensMap)) {
                     let changed = false;
                     const nextMap = { ...data.fcmTokensMap };
+
                     for (const t of invalidSet) {
                         if (t in nextMap) {
                             delete nextMap[t];
                             changed = true;
                         }
                     }
+
                     if (changed) updates.fcmTokensMap = nextMap;
                 }
 
@@ -198,14 +245,11 @@ async function cleanupInvalidFcmTokensBestEffort(db, receiverIds, invalidTokens)
     );
 }
 
-/**
- * log per-token failures so you can see WHY totalFailure=1
- */
 function logMulticastFailures(tag, tokens, response, extra) {
     try {
         if (!response || !Array.isArray(response.responses)) return;
-        const failures = [];
 
+        const failures = [];
         for (let i = 0; i < response.responses.length; i++) {
             const r = response.responses[i];
             if (r && r.success) continue;
@@ -219,7 +263,7 @@ function logMulticastFailures(tag, tokens, response, extra) {
         }
 
         if (failures.length) {
-            console.log(`[${tag}] ❌ FCM failures:`, {
+            console.log(`[${tag}] FCM failures`, {
                 ...(extra || {}),
                 count: failures.length,
                 failures,
@@ -229,7 +273,7 @@ function logMulticastFailures(tag, tokens, response, extra) {
 }
 
 // ----------------------------------------------
-// ✅ APNs (VoIP) helpers - Node 20 SAFE
+// APNs (VoIP) helpers - Node 20 safe
 // ----------------------------------------------
 
 function getApnsConfig() {
@@ -237,15 +281,49 @@ function getApnsConfig() {
     const keyId = trimString(process.env.APNS_KEY_ID);
 
     let p8 = asString(process.env.APNS_P8);
-    if (p8.includes("\\n")) p8 = p8.replace(/\\n/g, "\n");
+
+    // Normalize common secret-storage formats
+    p8 = p8.trim();
+
+    // Strip wrapping quotes if the whole key was saved as a quoted string
+    if (
+        (p8.startsWith('"') && p8.endsWith('"')) ||
+        (p8.startsWith("'") && p8.endsWith("'"))
+    ) {
+        p8 = p8.slice(1, -1);
+    }
+
+    // Convert escaped newlines into real newlines
+    if (p8.includes("\\n")) {
+        p8 = p8.replace(/\\n/g, "\n");
+    }
+
+    // Final trim after normalization
+    p8 = p8.trim();
 
     const productionExplicit = trimString(process.env.APNS_PRODUCTION).toLowerCase();
-    const production = productionExplicit === "true" ? true : productionExplicit === "false" ? false : false;
+    const production =
+        productionExplicit === "true" ? true :
+            productionExplicit === "false" ? false :
+                false;
 
     const topic = trimString(process.env.APNS_VOIP_TOPIC);
 
+    console.log("[CALL][VOIP] APNs config sanity", {
+        hasTeamId: !!teamId,
+        hasKeyId: !!keyId,
+        hasP8: !!p8,
+        p8Length: p8.length,
+        p8Begin: p8.slice(0, 32),
+        p8End: p8.slice(-32),
+        production,
+        topic,
+    });
+
     if (!teamId || !keyId || !p8) return null;
-    if (!topic) return { teamId, keyId, p8, production, topic: "", topicMissing: true };
+    if (!topic) {
+        return { teamId, keyId, p8, production, topic: "", topicMissing: true };
+    }
 
     return { teamId, keyId, p8, production, topic, topicMissing: false };
 }
@@ -257,15 +335,26 @@ async function getCachedPrivateKey(cfg) {
     const cacheKey = `${cfg.teamId}|${cfg.keyId}|${cfg.p8.length}`;
     if (_cachedPk && _cachedPkKey === cacheKey) return _cachedPk;
 
-    const pk = await importPKCS8(cfg.p8, "ES256");
-    _cachedPk = pk;
-    _cachedPkKey = cacheKey;
-    return pk;
+    try {
+        const pk = await importPKCS8(cfg.p8, "ES256");
+        _cachedPk = pk;
+        _cachedPkKey = cacheKey;
+        return pk;
+    } catch (e) {
+        console.log("[CALL][VOIP] importPKCS8 failed", {
+            message: e && e.message ? e.message : String(e),
+            p8Length: cfg.p8.length,
+            p8Begin: cfg.p8.slice(0, 32),
+            p8End: cfg.p8.slice(-32),
+        });
+        throw e;
+    }
 }
 
 async function buildApnsJwt(cfg) {
     const privateKey = await getCachedPrivateKey(cfg);
     const now = Math.floor(Date.now() / 1000);
+
     return await new SignJWT({})
         .setProtectedHeader({ alg: "ES256", kid: cfg.keyId })
         .setIssuedAt(now)
@@ -274,6 +363,8 @@ async function buildApnsJwt(cfg) {
 }
 
 async function sendVoipApnsPushBestEffort({ voipToken, payload, callId }) {
+    let client = null;
+
     try {
         const cfg = getApnsConfig();
 
@@ -281,12 +372,17 @@ async function sendVoipApnsPushBestEffort({ voipToken, payload, callId }) {
             console.log("[CALL][VOIP] APNs config missing; skipping VoIP push");
             return { ok: false, skipped: true, reason: "missing_apns_config" };
         }
+
         if (cfg.topicMissing) {
-            console.log("[CALL][VOIP] APNS_VOIP_TOPIC missing; skipping VoIP push", { callId, production: cfg.production });
+            console.log("[CALL][VOIP] APNS_VOIP_TOPIC missing; skipping VoIP push", {
+                callId,
+                production: cfg.production,
+            });
             return { ok: false, skipped: true, reason: "missing_apns_topic" };
         }
+
         if (!voipToken) {
-            console.log("[CALL][VOIP] missing voipToken; skipping VoIP push");
+            console.log("[CALL][VOIP] missing voipToken; skipping VoIP push", { callId });
             return { ok: false, skipped: true, reason: "missing_voip_token" };
         }
 
@@ -298,7 +394,7 @@ async function sendVoipApnsPushBestEffort({ voipToken, payload, callId }) {
             ...payload,
         });
 
-        const client = http2.connect(`https://${host}`);
+        client = http2.connect(`https://${host}`);
 
         const req = client.request({
             ":method": "POST",
@@ -317,7 +413,9 @@ async function sendVoipApnsPushBestEffort({ voipToken, payload, callId }) {
         });
 
         req.setEncoding("utf8");
-        req.on("data", (chunk) => (resp += chunk));
+        req.on("data", (part) => {
+            resp += part;
+        });
 
         await new Promise((resolve, reject) => {
             req.on("end", resolve);
@@ -325,14 +423,12 @@ async function sendVoipApnsPushBestEffort({ voipToken, payload, callId }) {
             req.end(body);
         });
 
-        client.close();
-
         let parsed = null;
         try {
             parsed = resp ? JSON.parse(resp) : null;
         } catch (_) {}
 
-        console.log("[CALL][VOIP] apns result:", {
+        console.log("[CALL][VOIP] apns result", {
             callId,
             production: cfg.production,
             topic: cfg.topic,
@@ -343,17 +439,29 @@ async function sendVoipApnsPushBestEffort({ voipToken, payload, callId }) {
 
         return { ok: status === 200, status, response: parsed || resp || "" };
     } catch (e) {
-        console.log("[CALL][VOIP] send failed:", callId, e && e.message ? e.message : String(e));
-        return { ok: false, error: true, reason: "exception", message: e && e.message ? e.message : String(e) };
+        console.log("[CALL][VOIP] send failed", {
+            callId,
+            message: e && e.message ? e.message : String(e),
+        });
+
+        return {
+            ok: false,
+            error: true,
+            reason: "exception",
+            message: e && e.message ? e.message : String(e),
+        };
+    } finally {
+        try {
+            if (client) client.close();
+        } catch (_) {}
     }
 }
 
 // ----------------------------------------------
-// ✅ Trigger: New message in private chat
+// Trigger: New message in private chat
 // ----------------------------------------------
 exports.onPrivateMessageCreate = functions
     .runWith({
-        // ✅ attach the secret (no deprecated runtime config)
         secrets: ["HIDE_MESSAGE_BODY"],
     })
     .region("us-central1")
@@ -369,11 +477,9 @@ exports.onPrivateMessageCreate = functions
 
             const db = admin.firestore();
 
-            // skip call messages if you store them in messages
             const msgType = trimString(message.type);
             if (msgType === "call") return null;
 
-            // 1) Load room doc and receivers
             const roomRef = db.doc(`privateChats/${roomId}`);
             const roomSnap = await roomRef.get();
             if (!roomSnap.exists) return null;
@@ -386,12 +492,11 @@ exports.onPrivateMessageCreate = functions
             const senderId = trimString(message.senderId);
             const receiverIds = participantIds.filter((uid) => uid && uid !== senderId);
             if (!receiverIds.length) {
-                console.log("[MSG] No receivers for room", roomId);
+                console.log("[MSG] no receivers", { roomId, senderId });
                 return null;
             }
 
-            // 2) Load sender + receivers
-            let senderName = "New message";
+            let senderName = "MW";
             if (senderId) {
                 try {
                     const senderSnap = await db.collection("users").doc(senderId).get();
@@ -401,87 +506,142 @@ exports.onPrivateMessageCreate = functions
                 } catch (_) {}
             }
 
-            // ✅ IMPORTANT: notification body is privacy-safe if flag enabled
             const notifBody = buildNotificationBody(message);
 
-            const userSnaps = await Promise.all(receiverIds.map((uid) => db.collection("users").doc(uid).get()));
+            // Step 1: increment unread badge count for all receivers first
+            await incrementUnreadBadgeCounts(db, receiverIds);
 
-            // 3) Collect tokens
-            const tokens = uniqStrings(userSnaps.flatMap((s) => (s.exists ? extractFcmTokensFromUserDoc(s.data() || {}) : [])));
+            // Step 2: read fresh user docs after increment so push uses latest count
+            const userSnaps = await Promise.all(
+                receiverIds.map((uid) => db.collection("users").doc(uid).get())
+            );
 
-            if (!tokens.length) {
-                console.log("[MSG] No FCM tokens for receivers in room", roomId, { receiverIds });
-                return null;
-            }
-
-            // 4) Send
             const roomKey = shortStableKey("mw_room", roomId);
-            const tokenBatches = chunk(tokens, 500);
+
+            console.log("[MSG] sending chat push", {
+                roomId,
+                messageId,
+                receiverIds,
+                senderName,
+                notifBody,
+            });
 
             let totalSuccess = 0;
             let totalFailure = 0;
             const invalidTokens = [];
 
-            for (const batch of tokenBatches) {
-                const multicastMessage = {
-                    tokens: batch,
+            for (let i = 0; i < receiverIds.length; i++) {
+                const receiverId = receiverIds[i];
+                const userSnap = userSnaps[i];
 
-                    // data-only for app routing
-                    data: {
-                        roomId: String(roomId),
-                        senderId: String(senderId || ""),
-                        type: "private_message",
-                        roomKey: String(roomKey),
-                        messageId: String(messageId || ""),
-                    },
+                if (!userSnap.exists) continue;
 
-                    android: {
-                        priority: "high",
-                        collapseKey: roomKey,
+                const userData = userSnap.data() || {};
+                const receiverTokens = extractFcmTokensFromUserDoc(userData);
+
+                if (!receiverTokens.length) {
+                    console.log("[MSG] no FCM tokens for receiver", {
+                        roomId,
+                        messageId,
+                        receiverId,
+                    });
+                    continue;
+                }
+
+                const rawBadgeCount = Number(userData.unreadBadgeCount || 0);
+                const badgeCount =
+                    Number.isFinite(rawBadgeCount) && rawBadgeCount > 0
+                        ? Math.floor(rawBadgeCount)
+                        : 0;
+                const tokenBatches = chunk(receiverTokens, 500);
+
+                console.log("[MSG] sending chat push to receiver", {
+                    roomId,
+                    messageId,
+                    receiverId,
+                    tokenCount: receiverTokens.length,
+                    badgeCount,
+                });
+
+                for (const batch of tokenBatches) {
+                    const multicastMessage = {
+                        tokens: batch,
+
                         notification: {
-                            tag: roomKey,
-                            // ✅ chat channel uses mw_pop sound on device side
-                            channelId: "mw_chat_v1",
-                            title: senderName,
+                            title: senderName || "MW",
                             body: notifBody,
                         },
-                    },
 
-                    apns: {
-                        headers: {
-                            "apns-push-type": "alert",
-                            "apns-priority": "10",
-                            "apns-collapse-id": roomKey,
+                        data: {
+                            roomId: String(roomId),
+                            senderId: String(senderId || ""),
+                            senderName: String(senderName || "MW"),
+                            receiverId: String(receiverId),
+                            type: "chat",
+                            roomKey: String(roomKey),
+                            messageId: String(messageId || ""),
+                            title: String(senderName || "MW"),
+                            body: String(notifBody),
+                            badgeCount: String(badgeCount),
                         },
-                        payload: {
-                            aps: {
-                                alert: { title: senderName, body: notifBody },
-                                // ✅ iOS message sound (file must exist in app bundle)
-                                sound: "mw_pop.caf",
-                                "thread-id": roomKey,
+
+                        android: {
+                            priority: "high",
+                            collapseKey: roomKey,
+                            ttl: 60 * 1000,
+                            notification: {
+                                tag: roomKey,
+                                channelId: "mw_chat_v2",
+                                title: senderName || "MW",
+                                body: notifBody,
+                                sound: "mw_pop",
                             },
                         },
-                    },
-                };
 
-                const response = await admin.messaging().sendEachForMulticast(multicastMessage);
+                        apns: {
+                            headers: {
+                                "apns-push-type": "alert",
+                                "apns-priority": "10",
+                                "apns-collapse-id": roomKey,
+                            },
+                            payload: {
+                                aps: {
+                                    alert: {
+                                        title: senderName || "MW",
+                                        body: notifBody,
+                                    },
+                                    sound: "mw_pop.caf",
+                                    badge: badgeCount,
+                                    "thread-id": roomKey,
+                                },
+                            },
+                        },
+                    };
 
-                totalSuccess += response.successCount || 0;
-                totalFailure += response.failureCount || 0;
+                    const response = await admin.messaging().sendEachForMulticast(multicastMessage);
 
-                logMulticastFailures("MSG", batch, response, { roomId, messageId });
-                invalidTokens.push(...tokensToRemoveFromSendResult(batch, response));
+                    totalSuccess += response.successCount || 0;
+                    totalFailure += response.failureCount || 0;
+
+                    logMulticastFailures("MSG", batch, response, {
+                        roomId,
+                        messageId,
+                        receiverId,
+                        badgeCount,
+                    });
+
+                    invalidTokens.push(...tokensToRemoveFromSendResult(batch, response));
+                }
             }
 
             if (invalidTokens.length) {
                 await cleanupInvalidFcmTokensBestEffort(db, receiverIds, uniqStrings(invalidTokens));
             }
 
-            console.log("✅ MSG FCM send summary:", {
+            console.log("[MSG] send summary", {
                 roomId,
                 messageId,
                 receivers: receiverIds.length,
-                tokens: tokens.length,
                 totalSuccess,
                 totalFailure,
                 hideBody: isHideMessageBodyEnabled(),
@@ -489,13 +649,13 @@ exports.onPrivateMessageCreate = functions
 
             return null;
         } catch (e) {
-            console.error("onPrivateMessageCreate failed:", e);
+            console.error("onPrivateMessageCreate failed", e);
             return null;
         }
     });
 
 // ----------------------------------------------
-// ✅ Trigger: New call created (USES SECRETS)
+// Trigger: New call created
 // ----------------------------------------------
 exports.onCallCreate = functions
     .runWith({
@@ -513,7 +673,6 @@ exports.onCallCreate = functions
 
             const callerId = trimString(call.callerId);
             const calleeId = trimString(call.calleeId);
-
             const callType = trimString(call.type) || trimString(call.callType) || "audio";
             const status = trimString(call.status) || "ringing";
 
@@ -523,10 +682,12 @@ exports.onCallCreate = functions
             const db = admin.firestore();
 
             const calleeSnap = await db.collection("users").doc(calleeId).get();
-            if (!calleeSnap.exists) return null;
+            if (!calleeSnap.exists) {
+                console.log("[CALL] callee user doc missing", { callId, calleeId });
+                return null;
+            }
 
             const calleeData = calleeSnap.data() || {};
-
             const fcmTokens = extractFcmTokensFromUserDoc(calleeData);
 
             let voipToken = "";
@@ -545,6 +706,15 @@ exports.onCallCreate = functions
 
             const callKey = shortStableKey("mw_call", callId);
 
+            console.log("[CALL] preparing call push", {
+                callId,
+                callerId,
+                calleeId,
+                callType,
+                voipTokenPresent: !!voipToken,
+                fcmTokens: fcmTokens.length,
+            });
+
             const voipPayload = {
                 type: "call",
                 callId: String(callId),
@@ -554,14 +724,12 @@ exports.onCallCreate = functions
                 callKey: String(callKey),
             };
 
-            // ✅ VoIP push: CallKit handles real ringing on iOS (ringtoneSound = mw_ring.caf)
             const voipRes = await sendVoipApnsPushBestEffort({
                 voipToken,
                 payload: voipPayload,
                 callId,
             });
 
-            // ✅ FCM fallback (Android uses its own mw_calls_v1 channel with mw_ring.mp3)
             if (fcmTokens.length) {
                 const title = "MW";
                 const body = "Incoming call";
@@ -574,6 +742,12 @@ exports.onCallCreate = functions
                 for (const batch of tokenBatches) {
                     const multicastMessage = {
                         tokens: batch,
+
+                        notification: {
+                            title,
+                            body,
+                        },
+
                         data: {
                             type: "call",
                             callId: String(callId),
@@ -581,6 +755,8 @@ exports.onCallCreate = functions
                             calleeId: String(calleeId),
                             callType: String(callType),
                             callKey: String(callKey),
+                            title: String(title),
+                            body: String(body),
                         },
 
                         android: {
@@ -589,10 +765,10 @@ exports.onCallCreate = functions
                             collapseKey: callKey,
                             notification: {
                                 tag: callKey,
-                                // ✅ versioned calls channel
-                                channelId: "mw_calls_v1",
+                                channelId: "mw_calls_v2",
                                 title,
                                 body,
+                                sound: "mw_ring",
                             },
                         },
 
@@ -605,8 +781,7 @@ exports.onCallCreate = functions
                             payload: {
                                 aps: {
                                     alert: { title, body },
-                                    // ✅ fallback iOS alert sound (if user doesn't get VoIP)
-                                    //sound: "mw_ring.caf",
+                                    sound: "mw_ring.caf",
                                     "thread-id": callKey,
                                     "interruption-level": "time-sensitive",
                                 },
@@ -626,7 +801,7 @@ exports.onCallCreate = functions
                     await cleanupInvalidFcmTokensBestEffort(db, [calleeId], uniqStrings(invalidTokens));
                 }
 
-                console.log("[CALL] push summary:", {
+                console.log("[CALL] push summary", {
                     callId,
                     calleeId,
                     fcmTokens: fcmTokens.length,
@@ -642,23 +817,41 @@ exports.onCallCreate = functions
                             pushSentAt: admin.firestore.FieldValue.serverTimestamp(),
                             pushVoip: voipRes && voipRes.ok === true,
                             pushFcm: totalSuccess > 0,
-                            pushVoipReason: voipRes && voipRes.reason ? String(voipRes.reason) : admin.firestore.FieldValue.delete(),
+                            pushVoipReason:
+                                voipRes && voipRes.reason
+                                    ? String(voipRes.reason)
+                                    : admin.firestore.FieldValue.delete(),
                         },
                         { merge: true }
                     );
                 } catch (_) {}
             } else {
-                console.log("[CALL] no FCM tokens; voip result:", {
+                console.log("[CALL] no FCM tokens; voip result", {
                     callId,
                     calleeId,
                     voip: voipRes,
                     voipTokenPresent: !!voipToken,
                 });
+
+                try {
+                    await db.collection("calls").doc(callId).set(
+                        {
+                            pushSentAt: admin.firestore.FieldValue.serverTimestamp(),
+                            pushVoip: voipRes && voipRes.ok === true,
+                            pushFcm: false,
+                            pushVoipReason:
+                                voipRes && voipRes.reason
+                                    ? String(voipRes.reason)
+                                    : admin.firestore.FieldValue.delete(),
+                        },
+                        { merge: true }
+                    );
+                } catch (_) {}
             }
 
             return null;
         } catch (e) {
-            console.error("onCallCreate failed:", e);
+            console.error("onCallCreate failed", e);
             return null;
         }
     });
@@ -669,18 +862,26 @@ exports.onCallCreate = functions
 exports.purgeChatRoom = functions.region("us-central1").https.onCall(async (data, context) => {
     try {
         const uid =
-            context && context.auth && typeof context.auth.uid === "string" && context.auth.uid.length ? context.auth.uid : null;
+            context && context.auth && typeof context.auth.uid === "string" && context.auth.uid.length
+                ? context.auth.uid
+                : null;
 
-        if (!uid) throw new functions.https.HttpsError("unauthenticated", "You must be signed in.");
+        if (!uid) {
+            throw new functions.https.HttpsError("unauthenticated", "You must be signed in.");
+        }
 
         const roomId = data && typeof data.roomId === "string" ? data.roomId.trim() : "";
-        if (!roomId) throw new functions.https.HttpsError("invalid-argument", "roomId is required.");
+        if (!roomId) {
+            throw new functions.https.HttpsError("invalid-argument", "roomId is required.");
+        }
 
         const db = admin.firestore();
 
         const roomRef = db.doc(`privateChats/${roomId}`);
         const roomSnap = await roomRef.get();
-        if (!roomSnap.exists) return { ok: true, deleted: 0, skipped: 0, reason: "room_missing" };
+        if (!roomSnap.exists) {
+            return { ok: true, deleted: 0, skipped: 0, reason: "room_missing" };
+        }
 
         const roomData = roomSnap.data() || {};
         const participants = Array.isArray(roomData.participants) ? roomData.participants : [];
@@ -691,9 +892,13 @@ exports.purgeChatRoom = functions.region("us-central1").https.onCall(async (data
         }
 
         const inputPaths = data && Array.isArray(data.paths) ? data.paths : [];
-        const paths = uniqStrings(inputPaths.map((p) => (typeof p === "string" ? p.trim() : "")).filter(Boolean));
+        const paths = uniqStrings(
+            inputPaths.map((p) => (typeof p === "string" ? p.trim() : "")).filter(Boolean)
+        );
 
-        if (!paths.length) return { ok: true, deleted: 0, skipped: 0, reason: "no_paths" };
+        if (!paths.length) {
+            return { ok: true, deleted: 0, skipped: 0, reason: "no_paths" };
+        }
 
         const bucket = admin.storage().bucket();
         let deleted = 0;
@@ -702,6 +907,7 @@ exports.purgeChatRoom = functions.region("us-central1").https.onCall(async (data
         const chunkSize = 50;
         for (let i = 0; i < paths.length; i += chunkSize) {
             const slice = paths.slice(i, i + chunkSize);
+
             await Promise.all(
                 slice.map(async (p) => {
                     try {
@@ -709,7 +915,7 @@ exports.purgeChatRoom = functions.region("us-central1").https.onCall(async (data
                         deleted += 1;
                     } catch (e) {
                         skipped += 1;
-                        console.log("Storage delete failed:", p, e && e.message ? e.message : String(e));
+                        console.log("Storage delete failed", p, e && e.message ? e.message : String(e));
                     }
                 })
             );
@@ -717,17 +923,14 @@ exports.purgeChatRoom = functions.region("us-central1").https.onCall(async (data
 
         return { ok: true, deleted, skipped };
     } catch (e) {
-        console.error("purgeChatRoom failed:", e);
+        console.error("purgeChatRoom failed", e);
         if (e && e.code && e.message) throw e;
         throw new functions.https.HttpsError("internal", e && e.message ? e.message : "Failed");
     }
 });
 
 // ----------------------------------------------
-// ✅ NEW Callable: checkIdentifierAvailable (WhatsApp-style registration guard)
-// - Phone must be E.164 like +14258664221
-// - Email is lowercased
-// Returns: { available: boolean, reason?: string, uid?: string|null }
+// Callable: checkIdentifierAvailable
 // ----------------------------------------------
 exports.checkIdentifierAvailable = functions.region("us-central1").https.onCall(async (data, context) => {
     try {
@@ -742,11 +945,12 @@ exports.checkIdentifierAvailable = functions.region("us-central1").https.onCall(
             throw new functions.https.HttpsError("invalid-argument", "type must be 'phone' or 'email'.");
         }
 
-        // Optional small validation to avoid useless admin calls
         if (type === "phone") {
-            // Expect + followed by digits (basic E.164 guard)
             if (!value.startsWith("+") || value.length < 8) {
-                throw new functions.https.HttpsError("invalid-argument", "Phone must be in E.164 format, e.g. +14258664221");
+                throw new functions.https.HttpsError(
+                    "invalid-argument",
+                    "Phone must be in E.164 format, e.g. +14258664221"
+                );
             }
         }
 
@@ -755,29 +959,45 @@ exports.checkIdentifierAvailable = functions.region("us-central1").https.onCall(
         if (type === "phone") {
             try {
                 const u = await auth.getUserByPhoneNumber(value);
-                return { available: false, reason: "phone_in_use", uid: u && u.uid ? String(u.uid) : null };
+                return {
+                    available: false,
+                    reason: "phone_in_use",
+                    uid: u && u.uid ? String(u.uid) : null,
+                };
             } catch (e) {
-                // user-not-found => available
                 const code = e && e.code ? String(e.code) : "";
                 if (code.includes("auth/user-not-found")) return { available: true };
-                console.log("[checkIdentifierAvailable] phone lookup error:", code, e && e.message ? e.message : String(e));
+
+                console.log(
+                    "[checkIdentifierAvailable] phone lookup error",
+                    code,
+                    e && e.message ? e.message : String(e)
+                );
                 throw new functions.https.HttpsError("internal", "Failed to check phone availability.");
             }
         }
 
-        // email
         const email = value.toLowerCase();
         try {
             const u = await auth.getUserByEmail(email);
-            return { available: false, reason: "email_in_use", uid: u && u.uid ? String(u.uid) : null };
+            return {
+                available: false,
+                reason: "email_in_use",
+                uid: u && u.uid ? String(u.uid) : null,
+            };
         } catch (e) {
             const code = e && e.code ? String(e.code) : "";
             if (code.includes("auth/user-not-found")) return { available: true };
-            console.log("[checkIdentifierAvailable] email lookup error:", code, e && e.message ? e.message : String(e));
+
+            console.log(
+                "[checkIdentifierAvailable] email lookup error",
+                code,
+                e && e.message ? e.message : String(e)
+            );
             throw new functions.https.HttpsError("internal", "Failed to check email availability.");
         }
     } catch (e) {
-        console.log("[checkIdentifierAvailable] failed:", e && e.message ? e.message : String(e));
+        console.log("[checkIdentifierAvailable] failed", e && e.message ? e.message : String(e));
         if (e && e.code && e.message) throw e;
         throw new functions.https.HttpsError("internal", e && e.message ? e.message : "Failed");
     }

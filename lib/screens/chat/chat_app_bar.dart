@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../../utils/presence_helper.dart';
 import '../profile/profile_screen.dart';
 import '../home/user_profile_screen.dart';
 import '../../l10n/app_localizations.dart';
@@ -153,15 +154,12 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
     required bool rawIsOnline,
     required Timestamp? lastActive,
   }) {
-    if (!canSeePresence) return false;
-    if (!rawIsOnline) return false;
-
-    // ✅ IMPORTANT: if lastActive is missing (legacy users / rollout / rules),
-    // still show online when isOnline=true.
-    if (lastActive == null) return true;
-
-    final diffSeconds = DateTime.now().difference(lastActive.toDate()).inSeconds;
-    return diffSeconds <= _onlineTtlSeconds;
+    return MwPresenceHelper.isOnlineForDisplay(
+      canSeePresence: canSeePresence,
+      rawIsOnline: rawIsOnline,
+      lastActive: lastActive,
+      ttlSeconds: _onlineTtlSeconds,
+    );
   }
 
 
@@ -347,19 +345,17 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
                   friendStatus: friendStatus,
                 );
 
-                final bool rawIsOnline = isActive &&
-                    ((otherData['isOnline'] == true) || (otherData['online'] == true));
+                final bool rawIsOnline = MwPresenceHelper.readRawOnline(
+                  otherData,
+                  isActive: isActive,
+                );
 
-                // ✅ TTL freshness should use lastActive (fallbacks are safe)
-                final Timestamp? lastActive = otherData['lastActive'] is Timestamp
-                    ? otherData['lastActive'] as Timestamp
-                    : (otherData['updatedAt'] is Timestamp
-                    ? otherData['updatedAt'] as Timestamp
-                    : (otherData['lastSeen'] is Timestamp
-                    ? otherData['lastSeen'] as Timestamp
-                    : null));
+                // ✅ Online TTL must use only lastActive.
+                // Keep null-safe behavior inside _isOnlineForDisplay for rollout compatibility.
+                final Timestamp? lastActive =
+                otherData['lastActive'] is Timestamp ? otherData['lastActive'] as Timestamp : null;
 
-                // ✅ lastSeen remains "offline at" for display text only
+                // ✅ lastSeen is the offline timestamp shown to the user.
                 final Timestamp? lastSeen =
                 otherData['lastSeen'] is Timestamp ? otherData['lastSeen'] as Timestamp : null;
 
