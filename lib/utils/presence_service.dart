@@ -1,5 +1,3 @@
-//lib/utils/presence_service.dart
-
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -23,10 +21,12 @@ class PresenceService with WidgetsBindingObserver {
   Timer? _heartbeat;
   static const Duration _heartbeatEvery = Duration(seconds: 60);
 
-  Timer? _offlineDebounce;
-  static const Duration _offlineDebounceDelay = Duration(seconds: 2);
+  Timer? _inactiveDebounce;
+  static const Duration _inactiveDebounceDelay = Duration(milliseconds: 800);
 
   Future<void> _writeChain = Future<void>.value();
+
+  bool _lastKnownOnline = false;
 
   void _log(String msg) {
     debugPrint('[PresenceService] $msg');
@@ -48,8 +48,8 @@ class PresenceService with WidgetsBindingObserver {
       _currentUser = user;
       _log('authStateChanges user=${user?.uid}');
 
-      _offlineDebounce?.cancel();
-      _offlineDebounce = null;
+      _inactiveDebounce?.cancel();
+      _inactiveDebounce = null;
 
       if (_disposed) return;
 
@@ -59,6 +59,7 @@ class PresenceService with WidgetsBindingObserver {
         _startHeartbeat();
       } else {
         _stopHeartbeat();
+        _lastKnownOnline = false;
       }
     });
   }
@@ -67,8 +68,7 @@ class PresenceService with WidgetsBindingObserver {
     if (_disposed) return;
 
     try {
-      final doc =
-      await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
       final data = doc.data() ?? <String, dynamic>{};
 
       final patch = <String, dynamic>{};
@@ -94,12 +94,22 @@ class PresenceService with WidgetsBindingObserver {
     }
   }
 
+  void _enqueueWrite(Future<void> Function() task) {
+    _writeChain = _writeChain.then((_) async {
+      if (_disposed) return;
+      await task();
+    }).catchError((e, st) {
+      _log('write failed: $e\n$st');
+    });
+  }
+
   void _startHeartbeat() {
     _heartbeat?.cancel();
     _heartbeat = Timer.periodic(_heartbeatEvery, (_) {
       _enqueueWrite(() async {
         final user = _currentUser ?? FirebaseAuth.instance.currentUser;
         if (_disposed || user == null) return;
+        if (!_lastKnownOnline) return;
 
         await FirebaseFirestore.instance.collection('users').doc(user.uid).set(
           {
@@ -119,39 +129,59 @@ class PresenceService with WidgetsBindingObserver {
     _heartbeat = null;
   }
 
-  void _enqueueWrite(Future<void> Function() task) {
-    _writeChain = _writeChain
-        .then((_) async {
-      if (_disposed) return;
-      await task();
-    })
-        .catchError((e, st) {
-      _log('write failed: $e\n$st');
-    });
-  }
-
-  Future<void> _setPresence({
-    required bool isOnline,
-    required bool updateLastSeen,
-  }) async {
+  Future<void> _setOnlinePresence() async {
     final user = _currentUser ?? FirebaseAuth.instance.currentUser;
     if (_disposed || user == null) return;
 
+    if (_lastKnownOnline) {
+      // still refresh timestamps if needed, but avoid duplicate state churn
+      _enqueueWrite(() async {
+        await FirebaseFirestore.instance.collection('users').doc(user.uid).set(
+          {
+            'isOnline': true,
+            'online': true,
+            'lastActive': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true),
+        );
+      });
+      await _writeChain;
+      return;
+    }
+
+    _lastKnownOnline = true;
+
     _enqueueWrite(() async {
-      final payload = <String, dynamic>{
-        'isOnline': isOnline,
-        'online': isOnline,
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
-
-      payload['lastActive'] = FieldValue.serverTimestamp();
-
-      if (updateLastSeen) {
-        payload['lastSeen'] = FieldValue.serverTimestamp();
-      }
-
       await FirebaseFirestore.instance.collection('users').doc(user.uid).set(
-        payload,
+        {
+          'isOnline': true,
+          'online': true,
+          'lastActive': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    });
+
+    await _writeChain;
+  }
+
+  Future<void> _setOfflinePresence() async {
+    final user = _currentUser ?? FirebaseAuth.instance.currentUser;
+    if (_disposed || user == null) return;
+
+    if (!_lastKnownOnline) return;
+    _lastKnownOnline = false;
+
+    _enqueueWrite(() async {
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set(
+        {
+          'isOnline': false,
+          'online': false,
+          'lastSeen': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
         SetOptions(merge: true),
       );
     });
@@ -163,17 +193,14 @@ class PresenceService with WidgetsBindingObserver {
     final user = _currentUser ?? FirebaseAuth.instance.currentUser;
     if (_disposed || user == null) return;
 
-    await _setPresence(
-      isOnline: true,
-      updateLastSeen: false,
-    );
+    await _setOnlinePresence();
   }
 
   Future<void> markOnline() async {
     if (_disposed) return;
 
-    _offlineDebounce?.cancel();
-    _offlineDebounce = null;
+    _inactiveDebounce?.cancel();
+    _inactiveDebounce = null;
 
     await _markOnlineInternal();
     _startHeartbeat();
@@ -182,19 +209,16 @@ class PresenceService with WidgetsBindingObserver {
   Future<void> markOffline() async {
     if (_disposed) return;
 
-    _offlineDebounce?.cancel();
-    _offlineDebounce = null;
+    _inactiveDebounce?.cancel();
+    _inactiveDebounce = null;
 
     _stopHeartbeat();
-    await _setPresence(
-      isOnline: false,
-      updateLastSeen: true,
-    );
+    await _setOfflinePresence();
   }
 
-  void _scheduleOffline() {
-    _offlineDebounce?.cancel();
-    _offlineDebounce = Timer(_offlineDebounceDelay, () {
+  void _scheduleInactiveFallback() {
+    _inactiveDebounce?.cancel();
+    _inactiveDebounce = Timer(_inactiveDebounceDelay, () {
       unawaited(markOffline());
     });
   }
@@ -203,18 +227,25 @@ class PresenceService with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (_disposed) return;
 
+    _log('lifecycle=$state');
+
     switch (state) {
       case AppLifecycleState.resumed:
-        _offlineDebounce?.cancel();
-        _offlineDebounce = null;
+        _inactiveDebounce?.cancel();
+        _inactiveDebounce = null;
         unawaited(markOnline());
         break;
 
       case AppLifecycleState.inactive:
+      // transient on iOS during app switch / overlays / lock transition
+        _scheduleInactiveFallback();
+        break;
+
       case AppLifecycleState.paused:
       case AppLifecycleState.hidden:
       case AppLifecycleState.detached:
-        _scheduleOffline();
+      // mobile-safe: write offline immediately before app is suspended
+        unawaited(markOffline());
         break;
     }
   }
@@ -222,12 +253,12 @@ class PresenceService with WidgetsBindingObserver {
   Future<void> disposeService() async {
     if (_disposed) return;
 
-    _offlineDebounce?.cancel();
-    _offlineDebounce = null;
+    _inactiveDebounce?.cancel();
+    _inactiveDebounce = null;
     _stopHeartbeat();
 
     try {
-      await _setPresence(isOnline: false, updateLastSeen: true);
+      await _setOfflinePresence();
     } catch (e, st) {
       _log('dispose offline write failed: $e\n$st');
     }

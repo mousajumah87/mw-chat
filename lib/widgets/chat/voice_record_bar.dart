@@ -210,6 +210,7 @@ class _VoiceRecordBarState extends State<VoiceRecordBar> {
   }) {
     return Container(
       margin: margin,
+      constraints: const BoxConstraints(minHeight: 76),
       decoration: mwTypingGlassDecoration(radius: 16).copyWith(
         color: kChatInputBarBg.withOpacity(0.62),
         border: Border.all(
@@ -231,7 +232,10 @@ class _VoiceRecordBarState extends State<VoiceRecordBar> {
           filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            child: child,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: child,
+            ),
           ),
         ),
       ),
@@ -482,13 +486,13 @@ class _VoiceRecordBarState extends State<VoiceRecordBar> {
                   children: [
                     SliderTheme(
                       data: SliderTheme.of(context).copyWith(
-                        trackHeight: 3,
+                        trackHeight: 2.5,
                         activeTrackColor: kPrimaryGold.withOpacity(0.85),
                         inactiveTrackColor: kChatInputBarBorder.withOpacity(0.55),
                         thumbColor: kPrimaryGold.withOpacity(0.95),
                         overlayColor: kPrimaryGold.withOpacity(0.12),
-                        thumbShape: const RoundSliderThumbShape(
-                            enabledThumbRadius: 7),
+                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                        overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
                       ),
                       child: Slider(
                         value: canSeek ? pos.inMilliseconds.toDouble() : 0,

@@ -27,7 +27,7 @@ class _PresencePrivacyScreenState extends State<PresencePrivacyScreen>
   static const String _friendReqEveryone = 'everyone';
   static const String _friendReqNobody = 'nobody';
 
-  // ✅ Cache last good user document to prevent “text changing” on re-enter/reconnect
+  // Cache last good user document to prevent text changing on re-enter/reconnect
   Map<String, dynamic>? _cachedUserData;
 
   @override
@@ -52,8 +52,7 @@ class _PresencePrivacyScreenState extends State<PresencePrivacyScreen>
   }
 
   Future<void> _setField(String uid, String key, dynamic value) async {
-    // ✅ IMPORTANT:
-    // Do NOT update lastSeen from this screen.
+    // Do not update lastSeen from this screen.
     // lastSeen should represent "went offline at", and is written by PresenceService when offline.
     await FirebaseFirestore.instance.collection('users').doc(uid).set(
       {key: value},
@@ -137,7 +136,10 @@ class _PresencePrivacyScreenState extends State<PresencePrivacyScreen>
                       borderRadius: BorderRadius.circular(16),
                       onTap: disabled ? null : () => Navigator.of(ctx).pop(o.value),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 14,
+                        ),
                         decoration: BoxDecoration(
                           color: kSurfaceAltColor.withOpacity(disabled ? 0.30 : 0.55),
                           borderRadius: BorderRadius.circular(16),
@@ -175,11 +177,23 @@ class _PresencePrivacyScreenState extends State<PresencePrivacyScreen>
                             ),
                             const SizedBox(width: 12),
                             if (disabled)
-                              Icon(Icons.lock_outline_rounded, color: Colors.white24, size: 18)
+                              const Icon(
+                                Icons.lock_outline_rounded,
+                                color: Colors.white24,
+                                size: 18,
+                              )
                             else if (isSelected)
-                              Icon(Icons.check_circle_rounded, color: kPrimaryGold, size: 20)
+                              const Icon(
+                                Icons.check_circle_rounded,
+                                color: kPrimaryGold,
+                                size: 20,
+                              )
                             else
-                              Icon(Icons.circle_outlined, color: Colors.white24, size: 20),
+                              const Icon(
+                                Icons.circle_outlined,
+                                color: Colors.white24,
+                                size: 20,
+                              ),
                           ],
                         ),
                       ),
@@ -201,12 +215,12 @@ class _PresencePrivacyScreenState extends State<PresencePrivacyScreen>
   String _visLabel(AppLocalizations l10n, String v) {
     switch (v) {
       case _visFriends:
-        return l10n.presencePrivacyProfileVisValueFriends;
+        return l10n.presencePrivacyFriends;
       case _visNobody:
-        return l10n.presencePrivacyProfileVisValueNobody;
+        return l10n.presencePrivacyNobody;
       case _visEveryone:
       default:
-        return l10n.presencePrivacyProfileVisValueEveryone;
+        return l10n.presencePrivacyEveryone;
     }
   }
 
@@ -319,23 +333,29 @@ class _PresencePrivacyScreenState extends State<PresencePrivacyScreen>
                               (data['showOnlineStatus'] as bool?) ?? true;
 
                           final profileVisibility =
-                              (data['profileVisibility'] as String?) ?? _visEveryone;
+                              (data['profileVisibility'] as String?) ??
+                                  _visEveryone;
 
-                          // ✅ Email visibility stored as `emailVisibility`
+                          // Email visibility stored as `emailVisibility`
                           // default = friends (best privacy default)
                           final emailVisibility =
-                              (data['emailVisibility'] as String?) ?? _visFriends;
+                              (data['emailVisibility'] as String?) ??
+                                  _visFriends;
 
                           final friendRequests =
-                              (data['friendRequests'] as String?) ?? _friendReqEveryone;
+                              (data['friendRequests'] as String?) ??
+                                  _friendReqEveryone;
 
-                          // ✅ Your Firestore doc can contain both `isOnline` and `online`
+                          // Firestore doc can contain both `isOnline` and `online`
                           final bool rawIsOnline =
-                              (data['isOnline'] == true) || (data['online'] == true);
+                              (data['isOnline'] == true) ||
+                                  (data['online'] == true);
 
-                          final Timestamp? lastActiveTs = _readTs(data, 'lastActive');
+                          final Timestamp? lastActiveTs =
+                          _readTs(data, 'lastActive');
 
-                          final DateTime? lastActiveDt = lastActiveTs?.toDate();
+                          final DateTime? lastActiveDt =
+                          lastActiveTs?.toDate();
                           final now = DateTime.now();
                           final bool isStale = lastActiveDt == null
                               ? true
@@ -344,32 +364,43 @@ class _PresencePrivacyScreenState extends State<PresencePrivacyScreen>
                           final bool effectiveOnline =
                               showOnlineStatus && rawIsOnline && !isStale;
 
-                          // ✅ lastSeen remains the "offline timestamp" for display only
-                          final Timestamp? lastSeenTs = _readTs(data, 'lastSeen');
+                          // lastSeen remains the offline timestamp for display only
+                          final Timestamp? lastSeenTs =
+                          _readTs(data, 'lastSeen');
 
                           String statusLine;
                           if (!showOnlineStatus) {
-                            statusLine = l10n.presencePrivacyStatusHiddenOffline;
-                          } else if (effectiveOnline) {
-                            statusLine = l10n.presencePrivacyStatusVisibleOnline;
-                          } else {
                             statusLine =
-                                l10n.presencePrivacyStatusVisibleOfflineWhenInactive;
+                                l10n.presencePrivacyStatusHiddenOffline;
+                          } else if (effectiveOnline) {
+                            statusLine =
+                                l10n.presencePrivacyStatusVisibleOnline;
+                          } else {
+                            statusLine = l10n
+                                .presencePrivacyStatusVisibleOfflineWhenInactive;
                           }
 
-                          final lastSeenFull = formatTimestampFull(lastSeenTs);
+                          final lastSeenFull =
+                          formatTimestampFull(lastSeenTs);
 
                           final lastSeenLine = lastSeenFull.isEmpty
                               ? l10n.presencePrivacyLastSeenUnavailable
-                              : l10n.presencePrivacyLastSeenLine(lastSeenFull);
+                              : l10n.presencePrivacyLastSeenLine(
+                            lastSeenFull,
+                          );
 
-                          Widget sectionTitle(String title, String subtitle) {
+                          Widget sectionTitle(
+                              String title,
+                              String subtitle,
+                              ) {
                             return Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              crossAxisAlignment:
+                              CrossAxisAlignment.stretch,
                               children: [
                                 Text(
                                   title,
-                                  style: theme.textTheme.titleLarge?.copyWith(
+                                  style:
+                                  theme.textTheme.titleLarge?.copyWith(
                                     color: Colors.white,
                                     fontWeight: FontWeight.w800,
                                     letterSpacing: 0.2,
@@ -379,7 +410,8 @@ class _PresencePrivacyScreenState extends State<PresencePrivacyScreen>
                                 const SizedBox(height: 6),
                                 Text(
                                   subtitle,
-                                  style: theme.textTheme.bodySmall?.copyWith(
+                                  style:
+                                  theme.textTheme.bodySmall?.copyWith(
                                     color: Colors.white70,
                                     height: 1.35,
                                   ),
@@ -407,23 +439,30 @@ class _PresencePrivacyScreenState extends State<PresencePrivacyScreen>
                                     vertical: 12,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: kSurfaceAltColor.withOpacity(0.55),
-                                    borderRadius: BorderRadius.circular(16),
+                                    color:
+                                    kSurfaceAltColor.withOpacity(0.55),
+                                    borderRadius:
+                                    BorderRadius.circular(16),
                                     border: Border.all(
-                                      color: Colors.white.withOpacity(0.08),
+                                      color:
+                                      Colors.white.withOpacity(0.08),
                                     ),
                                   ),
                                   child: Row(
-                                    crossAxisAlignment: CrossAxisAlignment.center,
+                                    crossAxisAlignment:
+                                    CrossAxisAlignment.center,
                                     children: [
                                       Container(
                                         width: 38,
                                         height: 38,
                                         decoration: BoxDecoration(
-                                          color: Colors.black.withOpacity(0.25),
-                                          borderRadius: BorderRadius.circular(12),
+                                          color: Colors.black
+                                              .withOpacity(0.25),
+                                          borderRadius:
+                                          BorderRadius.circular(12),
                                           border: Border.all(
-                                            color: Colors.white.withOpacity(0.10),
+                                            color: Colors.white
+                                                .withOpacity(0.10),
                                           ),
                                         ),
                                         child: Icon(
@@ -440,18 +479,21 @@ class _PresencePrivacyScreenState extends State<PresencePrivacyScreen>
                                           children: [
                                             Text(
                                               title,
-                                              style:
-                                              theme.textTheme.titleSmall?.copyWith(
+                                              style: theme
+                                                  .textTheme.titleSmall
+                                                  ?.copyWith(
                                                 color: Colors.white,
-                                                fontWeight: FontWeight.w700,
+                                                fontWeight:
+                                                FontWeight.w700,
                                               ),
                                               textAlign: TextAlign.start,
                                             ),
                                             const SizedBox(height: 4),
                                             Text(
                                               subtitle,
-                                              style:
-                                              theme.textTheme.bodySmall?.copyWith(
+                                              style: theme
+                                                  .textTheme.bodySmall
+                                                  ?.copyWith(
                                                 color: Colors.white60,
                                                 height: 1.25,
                                               ),
@@ -489,8 +531,10 @@ class _PresencePrivacyScreenState extends State<PresencePrivacyScreen>
                                 children: [
                                   Text(
                                     text,
-                                    style: theme.textTheme.labelMedium?.copyWith(
-                                      color: Colors.white.withOpacity(0.92),
+                                    style: theme.textTheme.labelMedium
+                                        ?.copyWith(
+                                      color:
+                                      Colors.white.withOpacity(0.92),
                                       fontWeight: FontWeight.w800,
                                     ),
                                   ),
@@ -534,8 +578,11 @@ class _PresencePrivacyScreenState extends State<PresencePrivacyScreen>
                                   Expanded(
                                     child: Text(
                                       statusLine,
-                                      style: theme.textTheme.bodyMedium?.copyWith(
-                                        color: Colors.white.withOpacity(0.92),
+                                      style: theme
+                                          .textTheme.bodyMedium
+                                          ?.copyWith(
+                                        color: Colors.white
+                                            .withOpacity(0.92),
                                         fontWeight: FontWeight.w700,
                                         height: 1.2,
                                       ),
@@ -561,11 +608,13 @@ class _PresencePrivacyScreenState extends State<PresencePrivacyScreen>
                                 ),
                               ),
                               child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                crossAxisAlignment:
+                                CrossAxisAlignment.stretch,
                                 children: [
                                   Text(
                                     l10n.presencePrivacyAutoOfflineTitle,
-                                    style: theme.textTheme.titleSmall?.copyWith(
+                                    style: theme.textTheme.titleSmall
+                                        ?.copyWith(
                                       color: Colors.white,
                                       fontWeight: FontWeight.w800,
                                     ),
@@ -573,8 +622,11 @@ class _PresencePrivacyScreenState extends State<PresencePrivacyScreen>
                                   ),
                                   const SizedBox(height: 8),
                                   Text(
-                                    l10n.presencePrivacyAutoOfflineBody(staleLabel()),
-                                    style: theme.textTheme.bodySmall?.copyWith(
+                                    l10n.presencePrivacyAutoOfflineBody(
+                                      staleLabel(),
+                                    ),
+                                    style: theme.textTheme.bodySmall
+                                        ?.copyWith(
                                       color: Colors.white60,
                                       height: 1.35,
                                     ),
@@ -586,13 +638,16 @@ class _PresencePrivacyScreenState extends State<PresencePrivacyScreen>
                                       Icon(
                                         Icons.history_rounded,
                                         size: 18,
-                                        color: Colors.white70.withOpacity(0.85),
+                                        color: Colors.white70
+                                            .withOpacity(0.85),
                                       ),
                                       const SizedBox(width: 8),
                                       Expanded(
                                         child: Text(
                                           lastSeenLine,
-                                          style: theme.textTheme.bodySmall?.copyWith(
+                                          style: theme
+                                              .textTheme.bodySmall
+                                              ?.copyWith(
                                             color: Colors.white70,
                                           ),
                                           textAlign: TextAlign.start,
@@ -607,10 +662,12 @@ class _PresencePrivacyScreenState extends State<PresencePrivacyScreen>
 
                           return SingleChildScrollView(
                             key: const PageStorageKey<String>(
-                                'presence_privacy_scroll'),
+                              'presence_privacy_scroll',
+                            ),
                             physics: const BouncingScrollPhysics(),
                             child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              crossAxisAlignment:
+                              CrossAxisAlignment.stretch,
                               children: [
                                 sectionTitle(
                                   l10n.presencePrivacySectionOnlineTitle,
@@ -619,14 +676,18 @@ class _PresencePrivacyScreenState extends State<PresencePrivacyScreen>
                                 const SizedBox(height: 14),
                                 flatTile(
                                   icon: Icons.shield_outlined,
-                                  title: l10n.presencePrivacyShowWhenOnlineTitle,
+                                  title: l10n
+                                      .presencePrivacyShowWhenOnlineTitle,
                                   subtitle: showOnlineStatus
-                                      ? l10n.presencePrivacyShowWhenOnlineSubtitleOn
-                                      : l10n.presencePrivacyShowWhenOnlineSubtitleOff,
+                                      ? l10n
+                                      .presencePrivacyShowWhenOnlineSubtitleOn
+                                      : l10n
+                                      .presencePrivacyShowWhenOnlineSubtitleOff,
                                   trailing: Switch.adaptive(
                                     value: showOnlineStatus,
                                     activeColor: kPrimaryGold,
-                                    onChanged: (v) => _setShowOnline(uid, v),
+                                    onChanged: (v) =>
+                                        _setShowOnline(uid, v),
                                   ),
                                 ),
                                 const SizedBox(height: 12),
@@ -636,128 +697,161 @@ class _PresencePrivacyScreenState extends State<PresencePrivacyScreen>
                                 const SizedBox(height: 26),
                                 sectionTitle(
                                   l10n.presencePrivacySectionProfileTitle,
-                                  l10n.presencePrivacySectionProfileSubtitle,
+                                  l10n
+                                      .presencePrivacySectionProfileSubtitle,
                                 ),
                                 const SizedBox(height: 14),
                                 flatTile(
-                                  icon: Icons.visibility_outlined,
-                                  title: l10n.presencePrivacyProfileVisTitle,
-                                  subtitle: l10n.presencePrivacyProfileVisSubtitle,
-                                  trailing: valueChip(_visLabel(l10n, profileVisibility)),
+                                  icon: Icons.person_outline_rounded,
+                                  title:
+                                  l10n.presencePrivacyProfileVisTitle,
+                                  subtitle: l10n
+                                      .presencePrivacyProfileVisSubtitle,
+                                  trailing: valueChip(
+                                    _visLabel(l10n, profileVisibility),
+                                  ),
                                   onTap: () {
                                     _showPickerSheet(
                                       context: context,
                                       theme: theme,
-                                      title: l10n.presencePrivacyProfileVisTitle,
-                                      subtitle: l10n.presencePrivacyProfileVisSheetHint,
+                                      title: l10n
+                                          .presencePrivacyProfileVisTitle,
+                                      subtitle: l10n
+                                          .presencePrivacyProfileVisSheetSubtitle,
                                       currentValue: profileVisibility,
                                       options: [
                                         _PickerOption(
                                           value: _visEveryone,
-                                          title:
-                                          l10n.presencePrivacyProfileVisEveryoneTitle,
+                                          title: l10n
+                                              .presencePrivacyEveryone,
                                           subtitle: l10n
-                                              .presencePrivacyProfileVisEveryoneSubtitle,
+                                              .presencePrivacyProfileEveryone,
                                         ),
                                         _PickerOption(
                                           value: _visFriends,
-                                          title:
-                                          l10n.presencePrivacyProfileVisFriendsTitle,
+                                          title: l10n
+                                              .presencePrivacyFriends,
                                           subtitle: l10n
-                                              .presencePrivacyProfileVisFriendsSubtitle,
+                                              .presencePrivacyProfileFriends,
                                         ),
                                         _PickerOption(
                                           value: _visNobody,
                                           title:
-                                          l10n.presencePrivacyProfileVisNobodyTitle,
+                                          l10n.presencePrivacyNobody,
                                           subtitle: l10n
-                                              .presencePrivacyProfileVisNobodySubtitle,
+                                              .presencePrivacyProfileNobody,
                                         ),
                                       ],
-                                      onSelected: (v) =>
-                                          _setField(uid, 'profileVisibility', v),
+                                      onSelected: (v) => _setField(
+                                        uid,
+                                        'profileVisibility',
+                                        v,
+                                      ),
                                     );
                                   },
                                 ),
                                 const SizedBox(height: 12),
-
-                                // ✅ Email visibility (uses same stable strings)
                                 flatTile(
                                   icon: Icons.email_outlined,
-                                  title: 'Email visibility',
-                                  subtitle:
-                                  'Choose who can see your email on your profile.',
-                                  trailing: valueChip(_visLabel(l10n, emailVisibility)),
+                                  title:
+                                  l10n.presencePrivacyEmailVisTitle,
+                                  subtitle: l10n
+                                      .presencePrivacyEmailVisSubtitle,
+                                  trailing: valueChip(
+                                    _visLabel(l10n, emailVisibility),
+                                  ),
                                   onTap: () {
                                     _showPickerSheet(
                                       context: context,
                                       theme: theme,
-                                      title: 'Email visibility',
-                                      subtitle:
-                                      'This only affects what other users can see. You will always see your own email.',
+                                      title: l10n
+                                          .presencePrivacyEmailVisTitle,
+                                      subtitle: l10n
+                                          .presencePrivacyEmailVisSheetSubtitle,
                                       currentValue: emailVisibility,
                                       options: [
-                                        const _PickerOption(
+                                        _PickerOption(
                                           value: _visEveryone,
-                                          title: 'Everyone',
-                                          subtitle:
-                                          'Anyone can see your email on your profile.',
+                                          title: l10n
+                                              .presencePrivacyEveryone,
+                                          subtitle: l10n
+                                              .presencePrivacyEmailEveryone,
                                         ),
-                                        const _PickerOption(
+                                        _PickerOption(
                                           value: _visFriends,
-                                          title: 'Friends',
-                                          subtitle:
-                                          'Only your friends can see your email.',
+                                          title: l10n
+                                              .presencePrivacyFriends,
+                                          subtitle: l10n
+                                              .presencePrivacyEmailFriends,
                                         ),
-                                        const _PickerOption(
+                                        _PickerOption(
                                           value: _visNobody,
-                                          title: 'Nobody',
-                                          subtitle: 'Hide your email from everyone.',
+                                          title:
+                                          l10n.presencePrivacyNobody,
+                                          subtitle: l10n
+                                              .presencePrivacyEmailNobody,
                                         ),
                                       ],
-                                      onSelected: (v) =>
-                                          _setField(uid, 'emailVisibility', v),
+                                      onSelected: (v) => _setField(
+                                        uid,
+                                        'emailVisibility',
+                                        v,
+                                      ),
                                     );
                                   },
                                 ),
-
                                 const SizedBox(height: 12),
                                 flatTile(
-                                  icon: Icons.person_add_alt_1_outlined,
-                                  title: l10n.presencePrivacyFriendReqTitle,
-                                  subtitle: l10n.presencePrivacyFriendReqSubtitle,
-                                  trailing: valueChip(_friendReqLabel(l10n, friendRequests)),
+                                  icon:
+                                  Icons.person_add_alt_1_outlined,
+                                  title:
+                                  l10n.presencePrivacyFriendReqTitle,
+                                  subtitle: l10n
+                                      .presencePrivacyFriendReqSubtitle,
+                                  trailing: valueChip(
+                                    _friendReqLabel(
+                                      l10n,
+                                      friendRequests,
+                                    ),
+                                  ),
                                   onTap: () {
                                     _showPickerSheet(
                                       context: context,
                                       theme: theme,
-                                      title: l10n.presencePrivacyFriendReqTitle,
-                                      subtitle: l10n.presencePrivacyFriendReqSheetHint,
+                                      title: l10n
+                                          .presencePrivacyFriendReqTitle,
+                                      subtitle: l10n
+                                          .presencePrivacyFriendReqSheetHint,
                                       currentValue: friendRequests,
                                       options: [
                                         _PickerOption(
                                           value: _friendReqEveryone,
-                                          title:
-                                          l10n.presencePrivacyFriendReqEveryoneTitle,
-                                          subtitle:
-                                          l10n.presencePrivacyFriendReqEveryoneSubtitle,
+                                          title: l10n
+                                              .presencePrivacyFriendReqEveryoneTitle,
+                                          subtitle: l10n
+                                              .presencePrivacyFriendReqEveryoneSubtitle,
                                         ),
                                         _PickerOption(
                                           value: _friendReqNobody,
-                                          title: l10n.presencePrivacyFriendReqNobodyTitle,
-                                          subtitle:
-                                          l10n.presencePrivacyFriendReqNobodySubtitle,
+                                          title: l10n
+                                              .presencePrivacyFriendReqNobodyTitle,
+                                          subtitle: l10n
+                                              .presencePrivacyFriendReqNobodySubtitle,
                                         ),
                                       ],
-                                      onSelected: (v) =>
-                                          _setField(uid, 'friendRequests', v),
+                                      onSelected: (v) => _setField(
+                                        uid,
+                                        'friendRequests',
+                                        v,
+                                      ),
                                     );
                                   },
                                 ),
                                 const SizedBox(height: 18),
                                 Text(
                                   l10n.presencePrivacyTip,
-                                  style: theme.textTheme.bodySmall?.copyWith(
+                                  style:
+                                  theme.textTheme.bodySmall?.copyWith(
                                     color: Colors.white54,
                                   ),
                                   textAlign: TextAlign.center,

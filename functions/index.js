@@ -16,7 +16,6 @@ admin.initializeApp();
 // ----------------------------------------------
 // Helpers
 // ----------------------------------------------
-
 function asString(v) {
     return typeof v === "string" ? v : "";
 }
@@ -120,6 +119,140 @@ exports.resetMyUnreadBadgeCount = functions.region("us-central1").https.onCall(a
         throw new functions.https.HttpsError("internal", e && e.message ? e.message : "Failed");
     }
 });
+
+exports.onFriendRequestCreate = functions
+    .region("us-central1")
+    .firestore.document("users/{targetUid}/friends/{fromUid}")
+    .onCreate(async (snap, context) => {
+        try {
+            if (!snap || !snap.exists) return null;
+
+            const db = admin.firestore();
+            const data = snap.data() || {};
+
+            const targetUid = trimString(context.params.targetUid);
+            const fromUid = trimString(context.params.fromUid);
+            const status = trimString(data.status).toLowerCase();
+
+            console.log("[FRIEND] trigger fired", {
+                targetUid: context.params.targetUid,
+                fromUid: context.params.fromUid,
+                data: snap.data(),
+            });
+
+            if (!targetUid || !fromUid) return null;
+            if (status !== "incoming") return null;
+
+            const targetSnap = await db.collection("users").doc(targetUid).get();
+            if (!targetSnap.exists) {
+                console.log("[FRIEND] target user doc missing", { targetUid, fromUid });
+                return null;
+            }
+
+            let senderName = "Someone";
+            try {
+                const senderSnap = await db.collection("users").doc(fromUid).get();
+                const senderData = senderSnap.exists ? senderSnap.data() || {} : {};
+                const full = `${trimString(senderData.firstName)} ${trimString(senderData.lastName)}`.trim();
+                const displayName = trimString(senderData.displayName);
+                const username = trimString(senderData.username);
+
+                if (full) senderName = full;
+                else if (displayName) senderName = displayName;
+                else if (username) senderName = username;
+            } catch (_) {}
+
+            const userData = targetSnap.data() || {};
+            const fcmTokens = extractFcmTokensFromUserDoc(userData);
+
+            if (!fcmTokens.length) {
+                console.log("[FRIEND] no FCM tokens", { targetUid, fromUid });
+                return null;
+            }
+
+            const title = senderName || "MW";
+            const body = "sent you a friend request";
+            const socialKey = shortStableKey("mw_friend", `${targetUid}_${fromUid}`);
+
+            let totalSuccess = 0;
+            let totalFailure = 0;
+            const invalidTokens = [];
+
+            for (const batch of chunk(fcmTokens, 500)) {
+                const multicastMessage = {
+                    tokens: batch,
+                    notification: {
+                        title,
+                        body,
+                    },
+                    data: {
+                        type: "friend_request",
+                        fromUid: String(fromUid),
+                        targetUid: String(targetUid),
+                        title: String(title),
+                        body: String(body),
+                    },
+                    android: {
+                        priority: "high",
+                        collapseKey: socialKey,
+                        ttl: 60 * 1000,
+                        notification: {
+                            tag: socialKey,
+                            channelId: "mw_social_v1",
+                            title,
+                            body,
+                            sound: "mw_pop",
+                        },
+                    },
+                    apns: {
+                        headers: {
+                            "apns-push-type": "alert",
+                            "apns-priority": "10",
+                            "apns-collapse-id": socialKey,
+                        },
+                        payload: {
+                            aps: {
+                                alert: { title, body },
+                                sound: "mw_pop.caf",
+                                "thread-id": socialKey,
+                            },
+                        },
+                    },
+                };
+
+                const response = await admin.messaging().sendEachForMulticast(multicastMessage);
+                totalSuccess += response.successCount || 0;
+                totalFailure += response.failureCount || 0;
+
+                logMulticastFailures("FRIEND", batch, response, {
+                    targetUid,
+                    fromUid,
+                });
+
+                invalidTokens.push(...tokensToRemoveFromSendResult(batch, response));
+            }
+
+            if (invalidTokens.length) {
+                await cleanupInvalidFcmTokensBestEffort(
+                    db,
+                    [targetUid],
+                    uniqStrings(invalidTokens)
+                );
+            }
+
+            console.log("[FRIEND] push summary", {
+                targetUid,
+                fromUid,
+                totalSuccess,
+                totalFailure,
+            });
+
+            return null;
+        } catch (e) {
+            console.error("onFriendRequestCreate failed", e);
+            return null;
+        }
+    });
 
 function extractFcmTokensFromUserDoc(userData) {
     const tokens = [];

@@ -1065,11 +1065,11 @@ class AppLocalizationsEn extends AppLocalizations {
       'Control who can view your profile and who can add you as a friend.';
 
   @override
-  String get presencePrivacyProfileVisTitle => 'Who can see my profile';
+  String get presencePrivacyProfileVisTitle => 'Profile visibility';
 
   @override
   String get presencePrivacyProfileVisSubtitle =>
-      'Choose who can view your profile details.';
+      'Choose who can see your profile details.';
 
   @override
   String get presencePrivacyProfileVisSheetHint =>
@@ -1851,4 +1851,51 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get linkPhoneSubtitle =>
       'Add a phone number to secure your account and enable phone login.';
+
+  @override
+  String get presencePrivacyEveryone => 'Everyone';
+
+  @override
+  String get presencePrivacyFriends => 'Friends';
+
+  @override
+  String get presencePrivacyNobody => 'Nobody';
+
+  @override
+  String get presencePrivacyProfileVisSheetSubtitle =>
+      'This controls who can view your profile information.';
+
+  @override
+  String get presencePrivacyProfileEveryone =>
+      'Anyone can see your profile details.';
+
+  @override
+  String get presencePrivacyProfileFriends =>
+      'Only your friends can see your profile details.';
+
+  @override
+  String get presencePrivacyProfileNobody =>
+      'Hide your profile details from everyone.';
+
+  @override
+  String get presencePrivacyEmailVisTitle => 'Email visibility';
+
+  @override
+  String get presencePrivacyEmailVisSubtitle =>
+      'Choose who can see your email on your profile.';
+
+  @override
+  String get presencePrivacyEmailVisSheetSubtitle =>
+      'This only affects what other users can see. You will always see your own email.';
+
+  @override
+  String get presencePrivacyEmailEveryone =>
+      'Anyone can see your email on your profile.';
+
+  @override
+  String get presencePrivacyEmailFriends =>
+      'Only your friends can see your email.';
+
+  @override
+  String get presencePrivacyEmailNobody => 'Hide your email from everyone.';
 }

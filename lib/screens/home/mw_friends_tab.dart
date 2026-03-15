@@ -1,4 +1,3 @@
-// lib/screens/home/mw_friends_tab.dart
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -63,16 +62,16 @@ class _MwFriendsTabState extends State<MwFriendsTab>
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _userDocSub;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _friendsSub;
 
-  // ✅ background subscriptions for each related user doc (fixes “online only after scroll”)
-  final Map<String, StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>> _friendUserDocSubs =
-  <String, StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>>{};
+  // Background subscriptions for each related user doc
+  final Map<String, StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>>
+  _friendUserDocSubs = <String, StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>>{};
   final Map<String, Map<String, dynamic>> _friendUserDataCache = <String, Map<String, dynamic>>{};
   final Set<String> _missingUserIds = <String>{};
 
-  // ✅ MW USERS tab: cursor pagination (FAST)
+  // MW USERS tab: cursor pagination
   static const int _pageSize = 40;
   final List<QueryDocumentSnapshot<Map<String, dynamic>>> _mwUserDocs = [];
-  final Set<String> _mwUserIds = <String>{}; // ✅ prevents duplicates
+  final Set<String> _mwUserIds = <String>{};
   DocumentSnapshot<Map<String, dynamic>>? _mwUsersCursor;
   bool _mwUsersLoading = false;
   bool _mwUsersHasMore = true;
@@ -96,7 +95,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
   static const String _presenceFriends = 'friends';
   static const String _presenceNobody = 'nobody';
 
-
   static const String _privacyEveryone = 'everyone';
   static const String _privacyFriends = 'friends';
   static const String _privacyNobody = 'nobody';
@@ -116,18 +114,18 @@ class _MwFriendsTabState extends State<MwFriendsTab>
   Duration get _trailingAnim => kIsWeb ? Duration.zero : const Duration(milliseconds: 220);
 
   // ============================================================
-  // ✅ ZERO-MOVEMENT FRIENDS LIST (NO FLASH / NO JUMP)
+  // ZERO-MOVEMENT FRIENDS LIST (NO FLASH / NO JUMP)
   // ============================================================
 
-  // Real-time presence caches (updated by user doc streams)
+  // Real-time presence caches
   final Map<String, bool> _friendOnlineDisplayCache = {};
   final Map<String, bool> _friendActiveCache = {};
 
-  // Stable buckets/order used by UI (only updated on "safe moments")
-  final Map<String, bool> _stableOnlineBucket = {}; // uid -> true if currently in Online section
-  List<String> _stableFriendsOrder = const []; // stable order used for friend section sorting
+  // Stable buckets/order used by UI
+  final Map<String, bool> _stableOnlineBucket = {};
+  List<String> _stableFriendsOrder = const [];
 
-  // Friends-only scroll controller (separate from MW users list)
+  // Friends-only scroll controller
   final ScrollController _friendsScrollController = ScrollController();
   bool _friendsIsScrolling = false;
   Timer? _friendsScrollIdleTimer;
@@ -137,8 +135,10 @@ class _MwFriendsTabState extends State<MwFriendsTab>
   bool _pendingFriendsResort = false;
   Timer? _friendsApplyDebounce;
 
-  // Optional periodic "safe" refresh (prevents stale buckets forever)
+  // Optional periodic safe refresh
   Timer? _friendsPeriodicTimer;
+
+  bool _friendsListRepaintQueued = false;
 
   void _onFriendsScroll() {
     if (!_isFriendsOnly) return;
@@ -161,16 +161,25 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     });
   }
 
+  void _scheduleFriendsListRepaint() {
+    if (!mounted || !_isFriendsOnly || _friendsListRepaintQueued) return;
+    _friendsListRepaintQueued = true;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _friendsListRepaintQueued = false;
+      if (!mounted || !_isFriendsOnly) return;
+      setState(() {});
+    });
+  }
+
   void _applyPendingFriendsMovesIfSafe() {
     if (!mounted) return;
     if (!_isFriendsOnly) return;
     if (!_friendsLoaded) return;
-
-    if (_friendsIsScrolling) return; // zero movement while scrolling
+    if (_friendsIsScrolling) return;
 
     bool changed = false;
 
-    // 1) Rebucket (online/offline)
     if (_pendingFriendsRebucket) {
       _pendingFriendsRebucket = false;
 
@@ -189,7 +198,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
       }
     }
 
-    // 2) Resort
     if (_pendingFriendsResort) {
       _pendingFriendsResort = false;
 
@@ -216,7 +224,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
   void didUpdateWidget(covariant MwFriendsTab oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    // If we just switched into MW Users tab, bootstrap immediately
     final bool becameMwUsers =
         oldWidget.mode != MwFriendsTabMode.mwUsersOnly &&
             widget.mode == MwFriendsTabMode.mwUsersOnly;
@@ -225,7 +232,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
       unawaited(_bootstrapMwUsers());
     }
 
-    // If we just switched into Friends tab, ensure buckets are ready
     final bool becameFriends =
         oldWidget.mode != MwFriendsTabMode.friendsOnly &&
             widget.mode == MwFriendsTabMode.friendsOnly;
@@ -238,27 +244,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
         _markFriendsNeedResort();
       });
     }
-  }
-
-  Timestamp? _readTs(Map<String, dynamic> m, String k) {
-    return MwPresenceHelper.readTimestamp(m, k);
-  }
-
-  /// ✅ Robust online decision:
-  /// - If isOnline=true but lastActive missing → still show online (new field rollout / rules)
-  /// - TTL uses lastActive if available
-  bool _computeIsOnlineForDisplay({
-    required bool canSeePresence,
-    required bool rawIsOnline,
-    required Timestamp? lastActive,
-    required int ttlSeconds,
-  }) {
-    return MwPresenceHelper.isOnlineForDisplay(
-      canSeePresence: canSeePresence,
-      rawIsOnline: rawIsOnline,
-      lastActive: lastActive,
-      ttlSeconds: ttlSeconds,
-    );
   }
 
   bool _listEquals(List<String> a, List<String> b) {
@@ -304,6 +289,48 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     }
   }
 
+  _ResolvedPresenceState _resolvePresenceState({
+    required Map<String, dynamic> data,
+    required String uid,
+    required String? friendStatus,
+  }) {
+    final bool isActive = _isActiveUser(data);
+    final bool isBlockedRelationship = _isRelationshipBlocked(data, uid);
+
+    final String presenceVisibility = _readPresenceVisibility(data);
+
+    final bool canSeePresence = _canSeePresence(
+      presenceVisibility: presenceVisibility,
+      friendStatus: friendStatus,
+      isBlockedRelationship: isBlockedRelationship,
+      isActive: isActive,
+    );
+
+    final bool rawIsOnline = MwPresenceHelper.readRawOnline(
+      data,
+      isActive: isActive,
+    );
+
+    final Timestamp? lastActive = MwPresenceHelper.readTimestamp(data, 'lastActive');
+    final Timestamp? lastSeen = MwPresenceHelper.readTimestamp(data, 'lastSeen');
+
+    final bool isOnlineForDisplay = MwPresenceHelper.isOnlineForDisplay(
+      canSeePresence: canSeePresence,
+      rawIsOnline: rawIsOnline,
+      lastActive: lastActive,
+      ttlSeconds: _onlineTtlSeconds,
+    );
+
+    return _ResolvedPresenceState(
+      isActive: isActive,
+      canSeePresence: canSeePresence,
+      rawIsOnline: rawIsOnline,
+      lastActive: lastActive,
+      lastSeen: lastSeen,
+      isOnlineForDisplay: isOnlineForDisplay,
+    );
+  }
+
   bool _setFriendPresenceCaches({
     required String uid,
     required bool isActive,
@@ -324,12 +351,10 @@ class _MwFriendsTabState extends State<MwFriendsTab>
   }
 
   int _compareFriendIdsForFriendsSection(String a, String b) {
-    // 0) Missing always last
     final bool aMissing = _missingUserIds.contains(a);
     final bool bMissing = _missingUserIds.contains(b);
     if (aMissing != bMissing) return aMissing ? 1 : -1;
 
-    // 1) Unread first
     final int unreadA = _unreadCache[buildRoomId(_currentUid, a)] ?? 0;
     final int unreadB = _unreadCache[buildRoomId(_currentUid, b)] ?? 0;
     final bool aHasUnread = unreadA > 0;
@@ -337,17 +362,14 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     if (aHasUnread != bHasUnread) return aHasUnread ? -1 : 1;
     if (unreadA != unreadB) return unreadB.compareTo(unreadA);
 
-    // 2) Active next
     final bool aActive = _friendActiveCache[a] ?? false;
     final bool bActive = _friendActiveCache[b] ?? false;
     if (aActive != bActive) return aActive ? -1 : 1;
 
-    // 3) Online next
     final bool aOnline = _friendOnlineDisplayCache[a] ?? false;
     final bool bOnline = _friendOnlineDisplayCache[b] ?? false;
     if (aOnline != bOnline) return aOnline ? -1 : 1;
 
-    // 4) fallback
     return a.compareTo(b);
   }
 
@@ -506,7 +528,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
         _friendRequestsLastSeenAt = seen;
       });
 
-      // privacy + blocked affects presence visibility -> rebucket/resort
       _markFriendsNeedRebucket();
       _markFriendsNeedResort();
     });
@@ -552,10 +573,10 @@ class _MwFriendsTabState extends State<MwFriendsTab>
 
         _friendsLoaded = true;
 
-        // cleanup old caches
         _friendOnlineDisplayCache.removeWhere((uid, _) => !statusMap.containsKey(uid));
         _friendActiveCache.removeWhere((uid, _) => !statusMap.containsKey(uid));
         _friendUserDataCache.removeWhere((uid, _) => !statusMap.containsKey(uid));
+        _addFriendVisibilityCache.removeWhere((uid, _) => !statusMap.containsKey(uid));
 
         _stableOnlineBucket.removeWhere((uid, _) => !statusMap.containsKey(uid));
         _stableFriendsOrder =
@@ -564,7 +585,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
         _missingUserIds.removeWhere((uid) => !statusMap.containsKey(uid));
       });
 
-      // ✅ CRITICAL FIX: ensure we listen to ALL related users immediately (not only on scroll)
       _syncFriendUserDocSubscriptions(statusMap.keys.toSet());
 
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -576,11 +596,9 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     });
   }
 
-  // ✅ safer: do not mutate the input Set
   void _syncFriendUserDocSubscriptions(Set<String> targetIds) {
     final ids = <String>{...targetIds}..remove(_currentUid);
 
-    // Cancel subscriptions not needed anymore
     final existing = _friendUserDocSubs.keys.toList();
     for (final uid in existing) {
       if (!ids.contains(uid)) {
@@ -590,7 +608,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
       }
     }
 
-    // Add subscriptions for new ids
     for (final uid in ids) {
       if (_friendUserDocSubs.containsKey(uid)) continue;
 
@@ -600,7 +617,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
         final friendStatus = _friendStatuses[uid];
         final data = snap.data();
 
-        // missing/deleted
         if (data == null) {
           final wasMissing = _missingUserIds.contains(uid);
           _missingUserIds.add(uid);
@@ -609,72 +625,30 @@ class _MwFriendsTabState extends State<MwFriendsTab>
           if (!wasMissing) {
             _markFriendsNeedRebucket();
             _markFriendsNeedResort();
+            _scheduleFriendsListRepaint();
           }
           return;
         }
 
-        // became available again
         final wasMissing = _missingUserIds.remove(uid);
         _friendUserDataCache[uid] = data;
 
-        // Presence computation WITHOUT waiting for tile build:
-        final bool isActive = _isActiveUser(data);
-        final bool isBlockedRelationship = _isRelationshipBlocked(data, uid);
-
-        final presenceVisibility = _readPresenceVisibility(data);
-        final canSeePresence = _canSeePresence(
-          presenceVisibility: presenceVisibility,
+        final resolved = _resolvePresenceState(
+          data: data,
+          uid: uid,
           friendStatus: friendStatus,
-          isBlockedRelationship: isBlockedRelationship,
-          isActive: isActive,
         );
-
-        final bool rawIsOnline = MwPresenceHelper.readRawOnline(
-          data,
-          isActive: isActive,
-        );
-
-        final Timestamp? lastActive = _readTs(data, 'lastActive');
-
-        final bool isOnlineForDisplay = _computeIsOnlineForDisplay(
-          canSeePresence: canSeePresence,
-          rawIsOnline: rawIsOnline,
-          lastActive: lastActive,
-          ttlSeconds: _onlineTtlSeconds,
-        );
-
 
         final bool changed = _setFriendPresenceCaches(
           uid: uid,
-          isActive: isActive,
-          isOnlineForDisplay: isOnlineForDisplay,
+          isActive: resolved.isActive,
+          isOnlineForDisplay: resolved.isOnlineForDisplay,
         );
 
         if (wasMissing || changed) {
           _markFriendsNeedRebucket();
           _markFriendsNeedResort();
-
-          if (mounted && _isFriendsOnly) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (!mounted) return;
-              setState(() {});
-            });
-          }
-        }
-
-
-        if (wasMissing) {
-          _markFriendsNeedRebucket();
-          _markFriendsNeedResort();
-        }
-
-        // ✅ ensure tiles appear immediately when data arrives
-        if (mounted && _isFriendsOnly) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted) return;
-            // only repaint if needed; cheap setState is OK here because list is virtualized
-            setState(() {});
-          });
+          _scheduleFriendsListRepaint();
         }
       });
 
@@ -713,14 +687,8 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     super.dispose();
   }
 
-  // ----------------------------
-  // Search helpers
-  // ----------------------------
   String _normalizeQ(String s) => s.trim().toLowerCase();
 
-  /// ✅ Display name builder:
-  /// Uses firstName + lastName first, then displayName/fullName/username,
-  /// never uses email, and always returns a safe fallback.
   String _displayNameFromData(AppLocalizations l10n, Map<String, dynamic> data, String userId) {
     String clean(String? v) => (v ?? '').trim();
 
@@ -747,7 +715,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     final q = _normalizeQ(_searchQuery);
     if (q.isEmpty) return true;
 
-    // ✅ Email removed from search for privacy
     final String displayName = (data['displayName'] as String?) ?? '';
     final String username = (data['username'] as String?) ?? '';
     final String fullName = (data['fullName'] as String?) ?? '';
@@ -787,9 +754,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     );
   }
 
-  // ----------------------------
-  // Privacy helpers
-  // ----------------------------
   String _normalizePrivacy(String? raw) {
     final v = raw?.trim().toLowerCase();
     if (v == null || v.isEmpty) return _privacyEveryone;
@@ -822,9 +786,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     return ChatFriendshipService.isFriends(currentStatusWithTarget);
   }
 
-  // ----------------------------
-  // Block / Unblock
-  // ----------------------------
   Future<void> _unblockUser(String uid) async {
     if (uid.isEmpty) return;
     if (!_blockedUserIds.contains(uid)) return;
@@ -874,9 +835,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     }
   }
 
-  // ----------------------------
-  // Friend actions
-  // ----------------------------
   Future<void> _sendFriendRequest(String friendUid) async {
     final l10n = AppLocalizations.of(context)!;
     if (friendUid.isEmpty || friendUid == _currentUid) return;
@@ -1069,9 +1027,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     }
   }
 
-  // ----------------------------
-  // ✅ UNKNOWN / DELETED USER TILE
-  // ----------------------------
   Widget _buildMissingUserTile(
       BuildContext context, {
         required String uid,
@@ -1164,10 +1119,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     );
   }
 
-  // ✅ NEW: LOADING TILE (fixes “blank list” problem)
   Widget _buildLoadingUserTile(BuildContext context, String uid) {
-    // Keep it cheap and stable height so list never looks empty.
-    // Also helps “zero movement” approach because placeholders occupy space.
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
       color: Colors.white.withOpacity(0.06),
@@ -1245,11 +1197,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     } catch (_) {}
   }
 
-  // ----------------------------
-  // Presence privacy
-  // ----------------------------
   String _readPresenceVisibility(Map<String, dynamic> data) {
-    // Legacy boolean wins: if user disabled online status → nobody
     final dynamic rawShow = data[_legacyShowOnlineStatusField];
     if (rawShow is bool && rawShow == false) return _presenceNobody;
 
@@ -1259,10 +1207,8 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     if (raw == _presenceEveryone) return _presenceEveryone;
     if (raw == _presenceFriends) return _presenceFriends;
 
-    // Default if missing/unknown
     return _presenceFriends;
   }
-
 
   bool _canSeePresence({
     required String presenceVisibility,
@@ -1273,17 +1219,10 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     if (!isActive) return false;
     if (isBlockedRelationship) return false;
     if (presenceVisibility == _presenceNobody) return false;
-
     if (presenceVisibility == _presenceEveryone) return true;
-
-    // friends-only
     return ChatFriendshipService.isFriends(friendStatus);
   }
 
-
-  // ----------------------------
-  // Profile + Add friend privacy
-  // ----------------------------
   String _readPrivacyValue(Map<String, dynamic> data, String field) {
     final String? rawNew = data[field] as String?;
     String? rawLegacy;
@@ -1386,7 +1325,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
 
     _resettingRooms.add(roomId);
 
-    // Optimistic local update first so UI becomes responsive immediately.
     if (mounted) {
       setState(() {
         _unreadCache = {
@@ -1464,11 +1402,20 @@ class _MwFriendsTabState extends State<MwFriendsTab>
         : (privateUrl != null && privateUrl.isNotEmpty ? privateUrl : null);
 
     final avatarType = data['avatarType'] as String?;
-    final bool isActive = _isActiveUser(data);
 
     final bool blockedByMe = _isBlockedByMe(userId);
     final bool blockedMe = _hasBlockedMe(data, userId);
     final bool isBlockedRelationship = blockedByMe || blockedMe;
+
+    final resolved = _resolvePresenceState(
+      data: data,
+      uid: userId,
+      friendStatus: friendStatus,
+    );
+
+    final bool isActive = resolved.isActive;
+    final bool canSeePresence = resolved.canSeePresence;
+    final Timestamp? lastSeen = resolved.lastSeen;
 
     final profileVisibility = _readPrivacyValue(data, _fieldProfileVisibility);
     final addFriendVisibility = _readPrivacyValue(data, _fieldAddFriendVisibility);
@@ -1498,34 +1445,10 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     final bool canOpenChat =
         isActive && !isBlockedRelationship && (hasRelationship || profileVisibility == _privacyEveryone);
 
-    final presenceVisibility = _readPresenceVisibility(data);
-    final canSeePresence = _canSeePresence(
-      presenceVisibility: presenceVisibility,
-      friendStatus: friendStatus,
-      isBlockedRelationship: isBlockedRelationship,
-      isActive: isActive,
-    );
-
-    final bool rawIsOnline = MwPresenceHelper.readRawOnline(
-      data,
-      isActive: isActive,
-    );
-
-    final Timestamp? lastActive = _readTs(data, 'lastActive');
-    final Timestamp? lastSeen = _readTs(data, 'lastSeen');
-
-    final bool computed = _computeIsOnlineForDisplay(
-      canSeePresence: canSeePresence,
-      rawIsOnline: rawIsOnline,
-      lastActive: lastActive,
-      ttlSeconds: _onlineTtlSeconds,
-    );
-
     final bool isOnlineForDisplay =
     (_isFriendsOnly && _friendOnlineDisplayCache.containsKey(userId))
         ? (_friendOnlineDisplayCache[userId] ?? false)
-        : computed;
-
+        : resolved.isOnlineForDisplay;
 
     final subtitleText = blockedMe
         ? (l10n.blockedByUserBanner ?? 'This user has blocked you.')
@@ -1548,8 +1471,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     final roomId = buildRoomId(_currentUid, userId);
     final unreadCount = _unreadCache[roomId] ?? 0;
     final bool hasUnread = !isBlockedRelationship && unreadCount > 0;
-
-    // ✅ Prevent double tap / double push
     final bool isBusy = _resettingRooms.contains(roomId);
 
     Future<void> openChat() async {
@@ -1682,7 +1603,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
       duration: _tileAnim,
       opacity: isActive ? (isBlockedRelationship ? 0.75 : 1.0) : 0.5,
       child: AbsorbPointer(
-        absorbing: isBusy, // ✅ blocks double taps while we reset unread
+        absorbing: isBusy,
         child: Card(
           margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
           color: Colors.white.withOpacity(0.08),
@@ -1746,9 +1667,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     );
   }
 
-  // ----------------------------
-  // FRIENDS ONLY UI
-  // ----------------------------
   int _computeUnseenRequestsCount(List<String> incomingIds) {
     int unseen = 0;
     for (final uid in incomingIds) {
@@ -1849,16 +1767,13 @@ class _MwFriendsTabState extends State<MwFriendsTab>
   }
 
   Widget _userTileFast(String uid) {
-    // ✅ Uses cached user data populated by background subscriptions.
     final friendStatus = _friendStatuses[uid];
     final data = _friendUserDataCache[uid];
 
     if (data == null) {
-      // missing/deleted (or still loading)
       if (_missingUserIds.contains(uid)) {
         return _buildMissingUserTile(context, uid: uid, friendStatus: friendStatus);
       }
-      // ✅ FIX: show a real placeholder tile (not height=0)
       return _buildLoadingUserTile(context, uid);
     }
 
@@ -2085,9 +2000,6 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     );
   }
 
-  // ----------------------------
-  // MW USERS ONLY UI (FAST PAGED LIST)
-  // ----------------------------
   Widget _buildMwUsersOnlyTab(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
 
@@ -2193,7 +2105,11 @@ class _MwFriendsTabState extends State<MwFriendsTab>
                         Text(l10n.loading),
                       ],
                     )
-                        : Text(_mwUsersHasMore ? l10n.loadMore : (l10n.noSearchResults ?? 'No more users')),
+                        : Text(
+                      _mwUsersHasMore
+                          ? l10n.loadMore
+                          : (l10n.noSearchResults ?? 'No more users'),
+                    ),
                   ),
                 ),
               ),
@@ -2228,7 +2144,6 @@ enum _FriendsRowKind { search, requestsBanner, header, subHeader, user }
 
 class _FriendsRow {
   final _FriendsRowKind kind;
-
   final int count;
   final int unseenCount;
   final String? uid;
@@ -2289,4 +2204,22 @@ class _MwUsersRow {
   }) : this._(_MwUsersRowKind.user, doc: doc);
 
   const _MwUsersRow.loadMore() : this._(_MwUsersRowKind.loadMore);
+}
+
+class _ResolvedPresenceState {
+  final bool isActive;
+  final bool canSeePresence;
+  final bool rawIsOnline;
+  final Timestamp? lastActive;
+  final Timestamp? lastSeen;
+  final bool isOnlineForDisplay;
+
+  const _ResolvedPresenceState({
+    required this.isActive,
+    required this.canSeePresence,
+    required this.rawIsOnline,
+    required this.lastActive,
+    required this.lastSeen,
+    required this.isOnlineForDisplay,
+  });
 }

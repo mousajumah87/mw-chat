@@ -1,4 +1,3 @@
-// lib/screens/home/mw_friend_requests_screen.dart
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -7,36 +6,36 @@ import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/ui/mw_avatar.dart';
 import '../../widgets/ui/mw_background.dart';
 import '../../widgets/ui/mw_search_field.dart';
-import '../../widgets/ui/mw_avatar.dart';
 
 class MwFriendRequestsScreen extends StatefulWidget {
   final String currentUserId;
 
-  /// current map uid -> status (accepted/requested/incoming) (used by tile builder)
+  /// Optional compatibility input from MwFriendsTab.
   final Map<String, String> friendStatuses;
 
-  /// Kept for API compatibility, but this screen uses its own MW request tile UI
+  /// Optional external tile builder.
   final Widget Function(
       BuildContext context,
       Map<String, dynamic> data,
       String userId, {
       required String? friendStatus,
       bool hideIncomingActions,
-      }) buildUserTile;
+      })? buildUserTile;
 
-  /// Actions (provided by MwFriendsTab)
-  final Future<void> Function(String uid) acceptFriend;
-  final Future<void> Function(String uid) declineFriend;
+  /// Optional external actions.
+  final Future<void> Function(String uid)? acceptFriend;
+  final Future<void> Function(String uid)? declineFriend;
 
   const MwFriendRequestsScreen({
     super.key,
     required this.currentUserId,
-    required this.friendStatuses,
-    required this.buildUserTile,
-    required this.acceptFriend,
-    required this.declineFriend,
+    this.friendStatuses = const {},
+    this.buildUserTile,
+    this.acceptFriend,
+    this.declineFriend,
   });
 
   @override
@@ -50,18 +49,17 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _incomingSub;
   List<QueryDocumentSnapshot<Map<String, dynamic>>> _incomingDocs = const [];
 
-  /// Optimistic removal so UI updates instantly
   final Set<String> _optimisticallyRemoved = <String>{};
-
-  /// Prevent double-taps / duplicate batch commits
   final Set<String> _actionInFlight = <String>{};
 
-  static const String _fieldFriendRequestsLastSeenAt = 'friendRequestsLastSeenAt';
+  static const String _fieldFriendRequestsLastSeenAt =
+      'friendRequestsLastSeenAt';
 
-  // ✅ NEW: cache user docs so we don't build a StreamBuilder per row
-  final Map<String, StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>> _userSubs =
+  final Map<String, StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>>
+  _userSubs =
   <String, StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>>{};
-  final Map<String, Map<String, dynamic>> _userCache = <String, Map<String, dynamic>>{};
+  final Map<String, Map<String, dynamic>> _userCache =
+  <String, Map<String, dynamic>>{};
   final Set<String> _missingUsers = <String>{};
 
   @override
@@ -74,7 +72,6 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
   void _listenIncomingRequests() {
     _incomingSub?.cancel();
 
-    // ✅ IMPORTANT: No orderBy -> avoids composite index requirement.
     _incomingSub = FirebaseFirestore.instance
         .collection('users')
         .doc(widget.currentUserId)
@@ -87,7 +84,6 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
 
         final docs = snap.docs.toList(growable: false);
 
-        // ✅ Local sort by updatedAt desc (null-safe)
         docs.sort((a, b) {
           final ta = a.data()['updatedAt'];
           final tb = b.data()['updatedAt'];
@@ -106,8 +102,6 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
         });
 
         setState(() => _incomingDocs = docs);
-
-        // ✅ Keep user doc subscriptions in sync with incoming list
         _syncUserSubscriptions(docs.map((d) => d.id).toSet());
       },
       onError: (e, st) {
@@ -122,7 +116,6 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
   void _syncUserSubscriptions(Set<String> targetIds) {
     targetIds.remove(widget.currentUserId);
 
-    // Cancel removed
     final existing = _userSubs.keys.toList(growable: false);
     for (final uid in existing) {
       if (!targetIds.contains(uid)) {
@@ -133,17 +126,19 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
       }
     }
 
-    // Add new
     for (final uid in targetIds) {
       if (_userSubs.containsKey(uid)) continue;
 
-      final sub = FirebaseFirestore.instance.collection('users').doc(uid).snapshots().listen(
+      final sub = FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .snapshots()
+          .listen(
             (snap) {
           if (!mounted) return;
 
           final data = snap.data();
           if (data == null) {
-            // deleted/missing
             final bool wasMissing = _missingUsers.contains(uid);
             _missingUsers.add(uid);
             _userCache.remove(uid);
@@ -154,12 +149,8 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
           final bool wasMissing = _missingUsers.remove(uid);
           _userCache[uid] = data;
 
-          // Only rebuild when needed (missing->available or first time)
-          if (wasMissing || !_userCache.containsKey(uid)) {
-            if (mounted) setState(() {});
-          } else {
-            // small updates: keep it lightweight
-            if (mounted) setState(() {});
+          if (wasMissing || mounted) {
+            setState(() {});
           }
         },
         onError: (e, st) {
@@ -180,9 +171,7 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
         {_fieldFriendRequestsLastSeenAt: FieldValue.serverTimestamp()},
         SetOptions(merge: true),
       );
-    } catch (_) {
-      // ignore
-    }
+    } catch (_) {}
   }
 
   @override
@@ -194,21 +183,11 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
     _userSubs.clear();
     _userCache.clear();
     _missingUsers.clear();
-
     _searchController.dispose();
     super.dispose();
   }
 
-  // ----------------------------
-  // Theme helpers
-  // ----------------------------
-
-  /// ✅ A warmer, more “MW glass” ring (less harsh than solid kPrimaryGold)
   Color _mwRingColorForTheme() => kGoldDeep.withOpacity(0.85);
-
-  // ----------------------------
-  // Search
-  // ----------------------------
 
   Widget _buildSearchBar(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
@@ -236,7 +215,6 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
     final q = _normalizeQ(_searchQuery);
     if (q.isEmpty) return true;
 
-    // ✅ Email removed from search for privacy
     final displayName = (data['displayName'] as String?) ?? '';
     final username = (data['username'] as String?) ?? '';
     final fullName = (data['fullName'] as String?) ?? '';
@@ -255,9 +233,78 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
     return haystack.contains(q);
   }
 
-  // ----------------------------
-  // Actions (optimistic + guarded)
-  // ----------------------------
+  Future<void> _acceptFriendFallback(String uid) async {
+    final db = FirebaseFirestore.instance;
+    final me = widget.currentUserId;
+    if (uid.isEmpty || me.isEmpty) return;
+
+    final myRef = db.collection('users').doc(me).collection('friends').doc(uid);
+    final otherRef =
+    db.collection('users').doc(uid).collection('friends').doc(me);
+
+    await db.runTransaction((tx) async {
+      final mySnap = await tx.get(myRef);
+      final otherSnap = await tx.get(otherRef);
+
+      if (!mySnap.exists || !otherSnap.exists) {
+        throw Exception('Friend request docs missing.');
+      }
+
+      final myStatus =
+      (mySnap.data()?['status'] ?? '').toString().trim().toLowerCase();
+      final otherStatus =
+      (otherSnap.data()?['status'] ?? '').toString().trim().toLowerCase();
+
+      if (myStatus != 'incoming') {
+        throw Exception('My friend doc is not incoming.');
+      }
+
+      if (otherStatus != 'requested') {
+        throw Exception('Other friend doc is not requested.');
+      }
+
+      tx.update(myRef, {
+        'status': 'accepted',
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      tx.update(otherRef, {
+        'status': 'accepted',
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    });
+  }
+
+  Future<void> _declineFriendFallback(String uid) async {
+    final db = FirebaseFirestore.instance;
+    final me = widget.currentUserId;
+    if (uid.isEmpty || me.isEmpty) return;
+
+    final myRef = db.collection('users').doc(me).collection('friends').doc(uid);
+    final otherRef =
+    db.collection('users').doc(uid).collection('friends').doc(me);
+
+    await db.runTransaction((tx) async {
+      final mySnap = await tx.get(myRef);
+      final otherSnap = await tx.get(otherRef);
+
+      if (mySnap.exists) {
+        final myStatus =
+        (mySnap.data()?['status'] ?? '').toString().trim().toLowerCase();
+        if (myStatus == 'incoming' || myStatus == 'requested') {
+          tx.delete(myRef);
+        }
+      }
+
+      if (otherSnap.exists) {
+        final otherStatus =
+        (otherSnap.data()?['status'] ?? '').toString().trim().toLowerCase();
+        if (otherStatus == 'incoming' || otherStatus == 'requested') {
+          tx.delete(otherRef);
+        }
+      }
+    });
+  }
 
   Future<void> _acceptAndRemove(String uid) async {
     if (uid.isEmpty) return;
@@ -271,7 +318,11 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
     });
 
     try {
-      await widget.acceptFriend(uid);
+      if (widget.acceptFriend != null) {
+        await widget.acceptFriend!(uid);
+      } else {
+        await _acceptFriendFallback(uid);
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() => _optimisticallyRemoved.remove(uid));
@@ -293,7 +344,11 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
     });
 
     try {
-      await widget.declineFriend(uid);
+      if (widget.declineFriend != null) {
+        await widget.declineFriend!(uid);
+      } else {
+        await _declineFriendFallback(uid);
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() => _optimisticallyRemoved.remove(uid));
@@ -302,10 +357,6 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
       setState(() => _actionInFlight.remove(uid));
     }
   }
-
-  // ----------------------------
-  // UI bits
-  // ----------------------------
 
   Widget _buildTopPill(BuildContext context, int count) {
     final l10n = AppLocalizations.of(context)!;
@@ -384,7 +435,11 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
     );
   }
 
-  String _primaryLabel(AppLocalizations l10n, Map<String, dynamic> data, String fallback) {
+  String _primaryLabel(
+      AppLocalizations l10n,
+      Map<String, dynamic> data,
+      String fallback,
+      ) {
     String clean(String? v) => (v ?? '').trim();
 
     final first = clean(data['firstName'] as String?);
@@ -406,14 +461,12 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
   }
 
   String _secondaryLabel(Map<String, dynamic> data) {
-    // ✅ Email removed from UI
     final username = (data['username'] as String?)?.trim() ?? '';
     if (username.isNotEmpty) return '@$username';
     return '';
   }
 
   String? _extractProfileUrl(Map<String, dynamic> data) {
-    // Matches your MwAvatar: profileUrl (real photo)
     final candidates = <String>[
       'profileUrl',
       'profileURL',
@@ -526,17 +579,12 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
             avatarType: avatarType,
             profileUrl: profileUrl,
             radius: 22,
-
-            // ✅ MW theme ring
             showRing: true,
             ringColor: _mwRingColorForTheme(),
             ringWidth: 2.2,
-
-            // friend-requests page: keep clean (no presence UI)
             isOnline: false,
             showOnlineDot: false,
             showOnlineGlow: false,
-
             backgroundColor: kSurfaceAltColor.withOpacity(0.85),
           ),
           const SizedBox(width: 12),
@@ -602,7 +650,6 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
       }) {
     final l10n = AppLocalizations.of(context)!;
 
-    // Search: for deleted accounts we can only match uid (no profile data)
     final q = _searchQuery.trim().toLowerCase();
     if (q.isNotEmpty && !uid.toLowerCase().contains(q)) {
       return const SizedBox.shrink();
@@ -639,7 +686,7 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  (l10n.deletedAccount ?? l10n.unknownUser),
+                  l10n.deletedAccount ?? l10n.unknownUser,
                   style: Theme.of(context).textTheme.titleSmall?.copyWith(
                     color: Colors.white,
                     fontWeight: FontWeight.w700,
@@ -649,7 +696,8 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  (l10n.accountUnavailableSubtitle ?? 'This account is no longer available.'),
+                  l10n.accountUnavailableSubtitle ??
+                      'This account is no longer available.',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Colors.white70,
                     height: 1.2,
@@ -664,7 +712,7 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
           _actionCircle(
             context: context,
             icon: Icons.delete_outline_rounded,
-            tooltip: (l10n.removeFriendConfirm ?? 'Remove'),
+            tooltip: l10n.removeFriendConfirm ?? 'Remove',
             onTap: () => _declineAndRemove(uid),
             bg: Colors.white.withOpacity(0.06),
             fg: Colors.redAccent.withOpacity(0.95),
@@ -687,8 +735,7 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
         .where((d) {
       final rawStatus = (d.data()['status'] as String?) ?? '';
       return rawStatus.toLowerCase() == 'incoming';
-    })
-        .toList(growable: false);
+    }).toList(growable: false);
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -732,7 +779,8 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
                       decoration: BoxDecoration(
                         color: Colors.black.withOpacity(0.65),
                         borderRadius: BorderRadius.circular(24),
-                        border: Border.all(color: Colors.white.withOpacity(0.08)),
+                        border:
+                        Border.all(color: Colors.white.withOpacity(0.08)),
                       ),
                       child: Column(
                         children: [
@@ -746,29 +794,41 @@ class _MwFriendRequestsScreenState extends State<MwFriendRequestsScreen> {
                               child: Center(
                                 child: Text(
                                   l10n.friendRequestsEmpty,
-                                  style: const TextStyle(color: Colors.white70),
+                                  style:
+                                  const TextStyle(color: Colors.white70),
                                 ),
                               ),
                             )
                           else
                             Expanded(
                               child: ListView.builder(
-                                padding: const EdgeInsets.fromLTRB(4, 6, 4, 16),
+                                padding:
+                                const EdgeInsets.fromLTRB(4, 6, 4, 16),
                                 physics: const BouncingScrollPhysics(),
                                 itemCount: incoming.length,
                                 itemBuilder: (context, index) {
                                   final doc = incoming[index];
                                   final uid = doc.id;
 
-                                  // ✅ No StreamBuilder here — use cached data from subscriptions
                                   if (_missingUsers.contains(uid)) {
-                                    return _buildDeletedAccountTile(context, uid: uid);
+                                    return _buildDeletedAccountTile(
+                                      context,
+                                      uid: uid,
+                                    );
                                   }
 
                                   final data = _userCache[uid];
                                   if (data == null) {
-                                    // still loading
-                                    return const SizedBox.shrink();
+                                    return const Padding(
+                                      padding: EdgeInsets.symmetric(vertical: 8),
+                                      child: Center(
+                                        child: SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(strokeWidth: 2),
+                                        ),
+                                      ),
+                                    );
                                   }
 
                                   if (!_matchesLocalSearch(data, uid)) {

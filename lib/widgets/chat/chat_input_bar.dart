@@ -416,113 +416,140 @@ class _ChatInputBarState extends State<ChatInputBar> with TickerProviderStateMix
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        AnimatedSize(
+        if (_isUploading)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: LinearProgressIndicator(value: widget.uploadProgress),
+          ),
+
+        AnimatedSwitcher(
           duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOutCubic,
-          alignment: Alignment.topCenter,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (_isUploading)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: LinearProgressIndicator(value: widget.uploadProgress),
-                ),
-              if (_showVoiceBar && _vc != null && widget.onVoiceSend != null)
-                VoiceRecordBar(
-                  controller: _vc!,
-                  onSend: widget.onVoiceSend!,
-                  onRecordStart: widget.onVoiceRecordStart,
-                  onRecordStop: widget.onVoiceRecordStop,
-                ),
-            ],
-          ),
-        ),
-
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-          decoration: BoxDecoration(
-            color: kChatInputBarBg,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: kChatInputBarBorder.withOpacity(0.55)),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              _fixedIconButton(
-                onPressed: _handleAttachPressed,
-                icon: Icons.add_circle_outline,
-                tooltip: l10n.attachFile,
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          transitionBuilder: (child, animation) {
+            return FadeTransition(
+              opacity: animation,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0, 0.06),
+                  end: Offset.zero,
+                ).animate(animation),
+                child: child,
               ),
-              _fixedIconButton(
-                onPressed: widget.onTogglePanel,
-                icon: widget.panelVisible ? Icons.keyboard : Icons.emoji_emotions_outlined,
+            );
+          },
+          child: (_showVoiceBar && _vc != null && widget.onVoiceSend != null)
+              ? KeyedSubtree(
+            key: const ValueKey('voice_bar_mode'),
+            child: VoiceRecordBar(
+              controller: _vc!,
+              onSend: widget.onVoiceSend!,
+              onRecordStart: widget.onVoiceRecordStart,
+              onRecordStop: widget.onVoiceRecordStop,
+            ),
+          )
+              : KeyedSubtree(
+            key: const ValueKey('text_input_mode'),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              decoration: BoxDecoration(
+                color: kChatInputBarBg,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: kChatInputBarBorder.withOpacity(0.55)),
               ),
-              const SizedBox(width: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  _fixedIconButton(
+                    onPressed: _handleAttachPressed,
+                    icon: Icons.add_circle_outline,
+                    tooltip: l10n.attachFile,
+                  ),
+                  _fixedIconButton(
+                    onPressed: widget.onTogglePanel,
+                    icon: widget.panelVisible
+                        ? Icons.keyboard
+                        : Icons.emoji_emotions_outlined,
+                  ),
+                  const SizedBox(width: 6),
 
-              Expanded(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(minHeight: 44),
-                  child: TextField(
-                    controller: widget.controller,
-                    focusNode: _activeFocusNode,
-                    onTap: () {
-                      if (widget.panelVisible) widget.onTogglePanel?.call();
-                    },
-                    onChanged: widget.onTextChanged,
-                    onSubmitted: (_) => _handleSendPressed(),
-                    minLines: 1,
-                    maxLines: 4,
-                    textInputAction: TextInputAction.newline,
-                    textAlignVertical: TextAlignVertical.center,
-                    scrollPadding: EdgeInsets.zero,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: effectiveFont,
-                      height: 1.25,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    decoration: InputDecoration(
-                      hintText: l10n.typeMessageHint,
-                      hintStyle: TextStyle(
-                        color: Colors.white54,
-                        fontSize: effectiveFont,
-                        height: 1.25,
-                        fontWeight: FontWeight.w500,
+                  Expanded(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minHeight: 44),
+                      child: TextField(
+                        controller: widget.controller,
+                        focusNode: _activeFocusNode,
+                        onTap: () {
+                          if (widget.panelVisible) widget.onTogglePanel?.call();
+                        },
+                        onChanged: widget.onTextChanged,
+                        onSubmitted: (_) => _handleSendPressed(),
+                        minLines: 1,
+                        maxLines: 4,
+                        textInputAction: TextInputAction.newline,
+                        textAlignVertical: TextAlignVertical.center,
+                        scrollPadding: EdgeInsets.zero,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: effectiveFont,
+                          height: 1.25,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        decoration: InputDecoration(
+                          hintText: l10n.typeMessageHint,
+                          hintStyle: TextStyle(
+                            color: Colors.white54,
+                            fontSize: effectiveFont,
+                            height: 1.25,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          filled: false,
+                          fillColor: Colors.transparent,
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          border: InputBorder.none,
+                        ),
                       ),
-
-                      // ✅ IMPORTANT: remove the inner “separate pill”
-                      filled: false,
-                      fillColor: Colors.transparent,
-
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      border: InputBorder.none,
                     ),
                   ),
-                ),
-              ),
 
-              const SizedBox(width: 8),
+                  const SizedBox(width: 8),
 
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 140),
-                child: (_hasText || widget.sending || _isUploading)
-                    ? KeyedSubtree(
-                  key: const ValueKey('send_btn'),
-                  child: _circleIconButton(
-                    onTap: _uiLocked ? null : _handleSendPressed,
-                    icon: Icons.send,
-                    size: 44,
-                    iconSize: 20,
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 140),
+                    switchInCurve: Curves.easeOut,
+                    switchOutCurve: Curves.easeIn,
+                    transitionBuilder: (child, animation) {
+                      return FadeTransition(
+                        opacity: animation,
+                        child: ScaleTransition(
+                          scale: Tween<double>(begin: 0.92, end: 1.0)
+                              .animate(animation),
+                          child: child,
+                        ),
+                      );
+                    },
+                    child: (_hasText || widget.sending || _isUploading)
+                        ? KeyedSubtree(
+                      key: const ValueKey('send_btn'),
+                      child: _circleIconButton(
+                        onTap: _uiLocked ? null : _handleSendPressed,
+                        icon: Icons.send,
+                        size: 44,
+                        iconSize: 20,
+                      ),
+                    )
+                        : KeyedSubtree(
+                      key: const ValueKey('mic_btn'),
+                      child: _buildMicButton(),
+                    ),
                   ),
-                )
-                    : KeyedSubtree(
-                  key: const ValueKey('mic_btn'),
-                  child: _buildMicButton(),
-                ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ],

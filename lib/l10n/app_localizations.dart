@@ -1991,13 +1991,13 @@ abstract class AppLocalizations {
   /// No description provided for @presencePrivacyProfileVisTitle.
   ///
   /// In en, this message translates to:
-  /// **'Who can see my profile'**
+  /// **'Profile visibility'**
   String get presencePrivacyProfileVisTitle;
 
   /// No description provided for @presencePrivacyProfileVisSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Choose who can view your profile details.'**
+  /// **'Choose who can see your profile details.'**
   String get presencePrivacyProfileVisSubtitle;
 
   /// No description provided for @presencePrivacyProfileVisSheetHint.
@@ -3385,6 +3385,84 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Add a phone number to secure your account and enable phone login.'**
   String get linkPhoneSubtitle;
+
+  /// No description provided for @presencePrivacyEveryone.
+  ///
+  /// In en, this message translates to:
+  /// **'Everyone'**
+  String get presencePrivacyEveryone;
+
+  /// No description provided for @presencePrivacyFriends.
+  ///
+  /// In en, this message translates to:
+  /// **'Friends'**
+  String get presencePrivacyFriends;
+
+  /// No description provided for @presencePrivacyNobody.
+  ///
+  /// In en, this message translates to:
+  /// **'Nobody'**
+  String get presencePrivacyNobody;
+
+  /// No description provided for @presencePrivacyProfileVisSheetSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'This controls who can view your profile information.'**
+  String get presencePrivacyProfileVisSheetSubtitle;
+
+  /// No description provided for @presencePrivacyProfileEveryone.
+  ///
+  /// In en, this message translates to:
+  /// **'Anyone can see your profile details.'**
+  String get presencePrivacyProfileEveryone;
+
+  /// No description provided for @presencePrivacyProfileFriends.
+  ///
+  /// In en, this message translates to:
+  /// **'Only your friends can see your profile details.'**
+  String get presencePrivacyProfileFriends;
+
+  /// No description provided for @presencePrivacyProfileNobody.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide your profile details from everyone.'**
+  String get presencePrivacyProfileNobody;
+
+  /// No description provided for @presencePrivacyEmailVisTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Email visibility'**
+  String get presencePrivacyEmailVisTitle;
+
+  /// No description provided for @presencePrivacyEmailVisSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose who can see your email on your profile.'**
+  String get presencePrivacyEmailVisSubtitle;
+
+  /// No description provided for @presencePrivacyEmailVisSheetSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'This only affects what other users can see. You will always see your own email.'**
+  String get presencePrivacyEmailVisSheetSubtitle;
+
+  /// No description provided for @presencePrivacyEmailEveryone.
+  ///
+  /// In en, this message translates to:
+  /// **'Anyone can see your email on your profile.'**
+  String get presencePrivacyEmailEveryone;
+
+  /// No description provided for @presencePrivacyEmailFriends.
+  ///
+  /// In en, this message translates to:
+  /// **'Only your friends can see your email.'**
+  String get presencePrivacyEmailFriends;
+
+  /// No description provided for @presencePrivacyEmailNobody.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide your email from everyone.'**
+  String get presencePrivacyEmailNobody;
 }
 
 class _AppLocalizationsDelegate

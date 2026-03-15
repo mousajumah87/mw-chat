@@ -1068,11 +1068,11 @@ class AppLocalizationsAr extends AppLocalizations {
       'تحكّم بمن يمكنه رؤية ملفك الشخصي ومن يمكنه إضافتك كصديق.';
 
   @override
-  String get presencePrivacyProfileVisTitle => 'من يمكنه رؤية ملفي الشخصي';
+  String get presencePrivacyProfileVisTitle => 'إظهار الملف الشخصي';
 
   @override
   String get presencePrivacyProfileVisSubtitle =>
-      'اختر من يمكنه مشاهدة تفاصيل ملفك الشخصي.';
+      'اختر من يمكنه رؤية تفاصيل ملفك الشخصي.';
 
   @override
   String get presencePrivacyProfileVisSheetHint =>
@@ -1850,4 +1850,51 @@ class AppLocalizationsAr extends AppLocalizations {
   @override
   String get linkPhoneSubtitle =>
       'أضف رقم هاتف لتأمين حسابك وتمكين تسجيل الدخول باستخدام الهاتف.';
+
+  @override
+  String get presencePrivacyEveryone => 'الجميع';
+
+  @override
+  String get presencePrivacyFriends => 'الأصدقاء';
+
+  @override
+  String get presencePrivacyNobody => 'لا أحد';
+
+  @override
+  String get presencePrivacyProfileVisSheetSubtitle =>
+      'يتحكم هذا في من يمكنه عرض معلومات ملفك الشخصي.';
+
+  @override
+  String get presencePrivacyProfileEveryone =>
+      'يمكن لأي شخص رؤية تفاصيل ملفك الشخصي.';
+
+  @override
+  String get presencePrivacyProfileFriends =>
+      'يمكن لأصدقائك فقط رؤية تفاصيل ملفك الشخصي.';
+
+  @override
+  String get presencePrivacyProfileNobody =>
+      'إخفاء تفاصيل ملفك الشخصي عن الجميع.';
+
+  @override
+  String get presencePrivacyEmailVisTitle => 'إظهار البريد الإلكتروني';
+
+  @override
+  String get presencePrivacyEmailVisSubtitle =>
+      'اختر من يمكنه رؤية بريدك الإلكتروني في ملفك الشخصي.';
+
+  @override
+  String get presencePrivacyEmailVisSheetSubtitle =>
+      'هذا يؤثر فقط على ما يمكن للمستخدمين الآخرين رؤيته. ستتمكن دائمًا من رؤية بريدك الإلكتروني.';
+
+  @override
+  String get presencePrivacyEmailEveryone =>
+      'يمكن لأي شخص رؤية بريدك الإلكتروني في ملفك الشخصي.';
+
+  @override
+  String get presencePrivacyEmailFriends =>
+      'يمكن لأصدقائك فقط رؤية بريدك الإلكتروني.';
+
+  @override
+  String get presencePrivacyEmailNobody => 'إخفاء بريدك الإلكتروني عن الجميع.';
 }

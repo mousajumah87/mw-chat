@@ -2665,10 +2665,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
               // ✅ IMPORTANT: in manual mode we MUST include keyboardInset in listBottomInset,
               // otherwise messages will sit behind the keyboard + input bar.
+              const double typingSlotHeight = 40.0;
               final double listBottomInset =
                   _composerAreaHeight +
                       (showPanel ? _panelHeight : 0.0) +
-                      (showIndicator ? 72.0 : 0.0) +
+                      (!_isAnyBlock ? typingSlotHeight : 0.0) +
                       keyboardInset +
                       effectiveSafeBottom +
                       8.0;
@@ -2687,25 +2688,25 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         if (!_isAnyBlock)
-                          AnimatedSize(
-                            duration: const Duration(milliseconds: 120),
-                            curve: Curves.easeOut,
-                            alignment: Alignment.bottomCenter,
-                            child: showIndicator
-                                ? Padding(
+                          SizedBox(
+                            height: 40,
+                            child: Padding(
                               padding: const EdgeInsets.only(bottom: 6),
                               child: TypingIndicator(
-                                key: ValueKey('typing:${widget.roomId}:${_otherUserId ?? 'unknown'}'),
-                                isVisible: true,
+                                key: ValueKey(
+                                  'typing:${widget.roomId}:${_otherUserId ?? 'unknown'}:${_typingIndicatorMode.name}',
+                                ),
+                                isVisible: showIndicator,
                                 text: _isOtherRecording
                                     ? '${widget.title} is recording...'
-                                    : l10n.isTyping(widget.title),
+                                    : '${widget.title} is typing...',
                                 gender: _typingIndicatorGender,
                                 avatarType: _typingIndicatorAvatarType,
                                 mode: _typingIndicatorMode,
+                                height: 34,
+                                showTopDivider: false,
                               ),
-                            )
-                                : const SizedBox.shrink(),
+                            ),
                           ),
 
                         if (showPanel)

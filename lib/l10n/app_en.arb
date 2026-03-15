@@ -834,6 +834,23 @@
     "enterSmsCode": "Please enter the SMS code",
     "requestCodeFirst": "Please request a verification code first",
     "somethingWentWrong": "Something went wrong. Please try again.",
-     "linkPhoneSubtitle": "Add a phone number to secure your account and enable phone login."
+    "linkPhoneSubtitle": "Add a phone number to secure your account and enable phone login.",
+    "presencePrivacyEveryone": "Everyone",
+    "presencePrivacyFriends": "Friends",
+    "presencePrivacyNobody": "Nobody",
+
+    "presencePrivacyProfileVisTitle": "Profile visibility",
+    "presencePrivacyProfileVisSubtitle": "Choose who can see your profile details.",
+    "presencePrivacyProfileVisSheetSubtitle": "This controls who can view your profile information.",
+    "presencePrivacyProfileEveryone": "Anyone can see your profile details.",
+    "presencePrivacyProfileFriends": "Only your friends can see your profile details.",
+    "presencePrivacyProfileNobody": "Hide your profile details from everyone.",
+
+    "presencePrivacyEmailVisTitle": "Email visibility",
+    "presencePrivacyEmailVisSubtitle": "Choose who can see your email on your profile.",
+    "presencePrivacyEmailVisSheetSubtitle": "This only affects what other users can see. You will always see your own email.",
+    "presencePrivacyEmailEveryone": "Anyone can see your email on your profile.",
+    "presencePrivacyEmailFriends": "Only your friends can see your email.",
+    "presencePrivacyEmailNobody": "Hide your email from everyone."
 
 }

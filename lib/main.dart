@@ -24,6 +24,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:mw/screens/auth/widgets/sheets/link_email_sheet.dart';
 import 'package:mw/screens/auth/widgets/sheets/link_phone_sheet.dart';
 import 'package:mw/screens/chat/chat_screen.dart';
+import 'package:mw/screens/home/mw_friend_requests_screen.dart';
 import 'package:mw/utils/notification_badge_service.dart';
 import 'package:mw/widgets/ui/mw_swipe_back.dart';
 import 'package:provider/provider.dart';
@@ -49,6 +50,7 @@ const String kMwOnlyPushTitle = 'MW';
 const String kMwCallsChannelId = 'mw_calls_v2';
 const String kMwChatChannelId = 'mw_chat_v2';
 const String kMwAchievementsChannelId = 'mw_achievements_v2';
+const String kMwSocialChannelId = 'mw_social_v1';
 
 /// ✅ Keep null unless the file is really bundled in iOS/macOS app resources.
 /// Example if bundled: 'mw_pop.caf'
@@ -331,7 +333,27 @@ Future<void> setupMwChannels() async {
   await fln.initialize(
     initSettings,
     onDidReceiveNotificationResponse: (NotificationResponse resp) async {
-      debugPrint('🔔 Local notification tapped payload=${resp.payload}');
+      final payload = (resp.payload ?? '').trim();
+      debugPrint('🔔 Local notification tapped payload=$payload');
+
+      if (payload == 'friend_requests') {
+        await _openFriendRequestsFromPushIfPossible();
+        return;
+      }
+
+      if (payload.isNotEmpty) {
+        final nav = rootNavigatorKey.currentState;
+        if (nav == null) return;
+
+        nav.push(
+          MaterialPageRoute(
+            builder: (_) => ChatScreen(
+              roomId: payload,
+              title: 'Chat',
+            ),
+          ),
+        );
+      }
     },
   );
 
@@ -388,6 +410,16 @@ Future<void> setupMwChannels() async {
     enableVibration: true,
   );
 
+  const social = AndroidNotificationChannel(
+    kMwSocialChannelId,
+    'MW Social',
+    description: 'Friend requests and social activity',
+    importance: Importance.high,
+    playSound: true,
+    sound: RawResourceAndroidNotificationSound('mw_pop'),
+    enableVibration: true,
+  );
+
   await fln
       .resolvePlatformSpecificImplementation<
       AndroidFlutterLocalNotificationsPlugin>()
@@ -402,6 +434,11 @@ Future<void> setupMwChannels() async {
       .resolvePlatformSpecificImplementation<
       AndroidFlutterLocalNotificationsPlugin>()
       ?.createNotificationChannel(achievements);
+
+  await fln
+      .resolvePlatformSpecificImplementation<
+      AndroidFlutterLocalNotificationsPlugin>()
+      ?.createNotificationChannel(social);
 
   _localNotificationsReady = true;
   debugPrint('✅ Local notifications initialized');
@@ -436,6 +473,97 @@ NotificationDetails _buildChatNotificationDetails() {
   );
 }
 
+bool _isFriendPush(RemoteMessage m) {
+  final t = _asString(m.data['type']).toLowerCase();
+  return t == 'friend_request' ||
+      t == 'friend_accept' ||
+      t == 'friend' ||
+      t == 'social';
+}
+
+String _extractFriendFromUid(RemoteMessage message) {
+  final data = message.data;
+
+  const keys = <String>[
+    'fromUid',
+    'from_uid',
+    'senderId',
+    'sender_id',
+  ];
+
+  for (final k in keys) {
+    final val = _asString(data[k]);
+    if (val.isNotEmpty) return val;
+  }
+
+  return '';
+}
+
+NotificationDetails _buildSocialNotificationDetails() {
+  return NotificationDetails(
+    android: const AndroidNotificationDetails(
+      kMwSocialChannelId,
+      'MW Social',
+      channelDescription: 'Friend requests and social activity',
+      importance: Importance.high,
+      priority: Priority.high,
+      playSound: true,
+      sound: RawResourceAndroidNotificationSound('mw_pop'),
+      enableVibration: true,
+      ticker: 'MW',
+      icon: '@mipmap/ic_launcher',
+    ),
+    iOS: DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+      sound: kMwAppleChatSound,
+    ),
+    macOS: DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+      sound: kMwAppleChatSound,
+    ),
+  );
+}
+
+Future<void> _showBackgroundSocialNotificationIfNeeded(
+    RemoteMessage message,
+    ) async {
+  if (kIsWeb) return;
+
+  // Keep iOS on APNs/system delivery to avoid duplicate behavior.
+  if (defaultTargetPlatform == TargetPlatform.iOS) return;
+
+  if (!_isFriendPush(message)) return;
+
+  if (_hasSystemNotificationPayload(message)) {
+    debugPrint('ℹ️ BG social push already has notification payload, skip local.');
+    return;
+  }
+
+  try {
+    await setupMwChannels();
+
+    final fromUid = _extractFriendFromUid(message);
+    final int id = fromUid.isNotEmpty
+        ? fromUid.hashCode
+        : DateTime.now().millisecondsSinceEpoch ~/ 1000;
+
+    await fln.show(
+      id,
+      _extractNotificationTitle(message),
+      _extractNotificationBody(message),
+      _buildSocialNotificationDetails(),
+      payload: 'friend_requests',
+    );
+
+    debugPrint('✅ Background local social notification shown. id=$id');
+  } catch (e) {
+    debugPrint('⚠️ background local social notification failed: $e');
+  }
+}
 Future<void> _showBackgroundChatNotificationIfNeeded(
     RemoteMessage message,
     ) async {
@@ -499,6 +627,11 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     }
 
     await MwCallPushUi.showIncomingCallNotificationFromBg(message.data);
+    return;
+  }
+
+  if (_isFriendPush(message)) {
+    await _showBackgroundSocialNotificationIfNeeded(message);
     return;
   }
 
@@ -983,6 +1116,12 @@ Future<void> _initPushNotifications() async {
           return;
         }
 
+        if (_isFriendPush(message)) {
+          debugPrint('👥 FOREGROUND FRIEND PUSH data=${message.data}');
+          _showForegroundBanner(title: _extractNotificationTitle(message));
+          return;
+        }
+
         if (_isChatMessage(message)) {
           _showForegroundBanner(title: _extractNotificationTitle(message));
 
@@ -1012,6 +1151,12 @@ Future<void> _initPushNotifications() async {
           return;
         }
 
+        if (_isFriendPush(message)) {
+          debugPrint('👥 OPENED FRIEND PUSH data=${message.data}');
+          await _openFriendRequestsFromPushIfPossible();
+          return;
+        }
+
         final roomId = _extractRoomId(message);
         debugPrint('💬 Chat notification opened payload roomId=$roomId');
 
@@ -1036,6 +1181,9 @@ Future<void> _initPushNotifications() async {
         } catch (e) {
           debugPrint('⚠️ terminated handleCallPushOnOpen failed: $e');
         }
+      } else if (_isFriendPush(initial)) {
+        debugPrint('👥 TERMINATED FRIEND PUSH data=${initial.data}');
+        await _openFriendRequestsFromPushIfPossible();
       } else {
         final roomId = _extractRoomId(initial);
         debugPrint('💬 Terminated chat notification payload roomId=$roomId');
@@ -1047,6 +1195,37 @@ Future<void> _initPushNotifications() async {
     }
   } catch (e) {
     debugPrint('⚠️ getInitialMessage skipped: $e');
+  }
+}
+
+Future<void> _openFriendRequestsFromPushIfPossible() async {
+  final nav = rootNavigatorKey.currentState;
+  final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+
+  if (nav == null) {
+    debugPrint('⚠️ Push friend open skipped: navigator not ready');
+    return;
+  }
+
+  if (currentUid.isEmpty) {
+    debugPrint('⚠️ Push friend open skipped: no signed-in user');
+    return;
+  }
+
+  try {
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+
+    nav.push(
+      MaterialPageRoute(
+        builder: (_) => MwFriendRequestsScreen(
+          currentUserId: currentUid,
+        ),
+      ),
+    );
+
+    debugPrint('✅ Navigated to friend requests from push');
+  } catch (e) {
+    debugPrint('⚠️ push friend requests navigation failed: $e');
   }
 }
 

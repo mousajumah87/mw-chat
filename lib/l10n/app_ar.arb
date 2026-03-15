@@ -833,7 +833,24 @@
     "enterSmsCode": "يرجى إدخال رمز التحقق",
     "requestCodeFirst": "يرجى طلب رمز التحقق أولاً",
     "somethingWentWrong": "حدث خطأ ما، يرجى المحاولة مرة أخرى",
-    "linkPhoneSubtitle": "أضف رقم هاتف لتأمين حسابك وتمكين تسجيل الدخول باستخدام الهاتف."
+    "linkPhoneSubtitle": "أضف رقم هاتف لتأمين حسابك وتمكين تسجيل الدخول باستخدام الهاتف.",
+    "presencePrivacyEveryone": "الجميع",
+    "presencePrivacyFriends": "الأصدقاء",
+    "presencePrivacyNobody": "لا أحد",
+
+    "presencePrivacyProfileVisTitle": "إظهار الملف الشخصي",
+    "presencePrivacyProfileVisSubtitle": "اختر من يمكنه رؤية تفاصيل ملفك الشخصي.",
+    "presencePrivacyProfileVisSheetSubtitle": "يتحكم هذا في من يمكنه عرض معلومات ملفك الشخصي.",
+    "presencePrivacyProfileEveryone": "يمكن لأي شخص رؤية تفاصيل ملفك الشخصي.",
+    "presencePrivacyProfileFriends": "يمكن لأصدقائك فقط رؤية تفاصيل ملفك الشخصي.",
+    "presencePrivacyProfileNobody": "إخفاء تفاصيل ملفك الشخصي عن الجميع.",
+
+    "presencePrivacyEmailVisTitle": "إظهار البريد الإلكتروني",
+    "presencePrivacyEmailVisSubtitle": "اختر من يمكنه رؤية بريدك الإلكتروني في ملفك الشخصي.",
+    "presencePrivacyEmailVisSheetSubtitle": "هذا يؤثر فقط على ما يمكن للمستخدمين الآخرين رؤيته. ستتمكن دائمًا من رؤية بريدك الإلكتروني.",
+    "presencePrivacyEmailEveryone": "يمكن لأي شخص رؤية بريدك الإلكتروني في ملفك الشخصي.",
+    "presencePrivacyEmailFriends": "يمكن لأصدقائك فقط رؤية بريدك الإلكتروني.",
+    "presencePrivacyEmailNobody": "إخفاء بريدك الإلكتروني عن الجميع."
 
 
 }
