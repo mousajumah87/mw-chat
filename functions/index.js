@@ -13,6 +13,16 @@ const crypto = require("crypto");
 
 admin.initializeApp();
 
+const MW_CHAT_CHANNEL_VERSION = 3;
+const MW_CALLS_CHANNEL_VERSION = 3;
+const MW_ACHIEVEMENTS_CHANNEL_VERSION = 2;
+const MW_SOCIAL_CHANNEL_VERSION = 1;
+
+const MW_CHAT_CHANNEL_ID = `mw_chat_v${MW_CHAT_CHANNEL_VERSION}`;
+const MW_CALLS_CHANNEL_ID = `mw_calls_v${MW_CALLS_CHANNEL_VERSION}`;
+const MW_ACHIEVEMENTS_CHANNEL_ID =
+    `mw_achievements_v${MW_ACHIEVEMENTS_CHANNEL_VERSION}`;
+const MW_SOCIAL_CHANNEL_ID = `mw_social_v${MW_SOCIAL_CHANNEL_VERSION}`;
 // ----------------------------------------------
 // Helpers
 // ----------------------------------------------
@@ -198,7 +208,7 @@ exports.onFriendRequestCreate = functions
                         ttl: 60 * 1000,
                         notification: {
                             tag: socialKey,
-                            channelId: "mw_social_v1",
+                            channelId: MW_SOCIAL_CHANNEL_ID,
                             title,
                             body,
                             sound: "mw_pop",
@@ -724,7 +734,7 @@ exports.onPrivateMessageCreate = functions
                             ttl: 60 * 1000,
                             notification: {
                                 tag: roomKey,
-                                channelId: "mw_chat_v2",
+                                channelId: MW_CHAT_CHANNEL_ID,
                                 title: senderName || "MW",
                                 body: notifBody,
                                 sound: "mw_pop",
@@ -898,7 +908,7 @@ exports.onCallCreate = functions
                             collapseKey: callKey,
                             notification: {
                                 tag: callKey,
-                                channelId: "mw_calls_v2",
+                                channelId: MW_CALLS_CHANNEL_ID,
                                 title,
                                 body,
                                 sound: "mw_ring",

@@ -1897,4 +1897,475 @@ class AppLocalizationsAr extends AppLocalizations {
 
   @override
   String get presencePrivacyEmailNobody => 'إخفاء بريدك الإلكتروني عن الجميع.';
+
+  @override
+  String get storyCreateTitle => 'إنشاء قصة';
+
+  @override
+  String get storyTypeTitle => 'نوع القصة';
+
+  @override
+  String get storyTypeSubtitle => 'اختر كيف تريد مشاركة هذه القصة';
+
+  @override
+  String get storyTypeText => 'نص';
+
+  @override
+  String get storyTypeImage => 'صورة';
+
+  @override
+  String get storyTypeVideo => 'فيديو';
+
+  @override
+  String get storyDetailsTitle => 'التفاصيل';
+
+  @override
+  String get storyDetailsSubtitleText => 'اكتب قصتك وقم بتخصيص شكلها';
+
+  @override
+  String get storyDetailsSubtitleMedia => 'أضف وصفًا ورابطًا اختياريًا لقصتك';
+
+  @override
+  String get storyVisibilityLabel => 'من يمكنه رؤية هذه القصة؟';
+
+  @override
+  String get storyVisibilityPublic => 'عام';
+
+  @override
+  String get storyVisibilityFriends => 'الأصدقاء';
+
+  @override
+  String get storyVisibilityCustom => 'مخصص';
+
+  @override
+  String get storyCustomViewerIdsLabel => 'معرفات المشاهدين';
+
+  @override
+  String get storyCustomViewerIdsHint => 'uid1, uid2, uid3';
+
+  @override
+  String get storyTextLabel => 'نص القصة';
+
+  @override
+  String get storyTextHint => 'اكتب شيئًا...';
+
+  @override
+  String get storyCaptionLabel => 'الوصف';
+
+  @override
+  String get storyCaptionHint => 'أضف وصفًا...';
+
+  @override
+  String get storyLinkLabel => 'رابط';
+
+  @override
+  String get storyLinkHint => 'https://example.com';
+
+  @override
+  String get storyStyleTitle => 'التنسيق';
+
+  @override
+  String get storyStyleSubtitle => 'اختر ألوان قصتك النصية';
+
+  @override
+  String get storyBackgroundColor => 'لون الخلفية';
+
+  @override
+  String get storyTextColor => 'لون النص';
+
+  @override
+  String get storyMediaTitle => 'الوسائط';
+
+  @override
+  String get storyMediaSubtitleImage =>
+      'اختر صورة من المعرض أو التقط واحدة الآن';
+
+  @override
+  String get storyMediaSubtitleVideo => 'اختر فيديو أو قم بتسجيل فيديو قصير';
+
+  @override
+  String get storySelectMedia => 'اختيار وسائط';
+
+  @override
+  String get storyChangeMedia => 'تغيير الوسائط';
+
+  @override
+  String get storyPickerHint => 'افتح المعرض أو الكاميرا';
+
+  @override
+  String get storyPreviewTitle => 'المعاينة';
+
+  @override
+  String get storyPreviewText => 'هكذا ستظهر قصتك النصية';
+
+  @override
+  String get storyPreviewMedia => 'هذه معاينة الوسائط المختارة';
+
+  @override
+  String get storyUploadingTitle => 'جاري الرفع';
+
+  @override
+  String get storyUploadingSubtitle =>
+      'يرجى إبقاء الشاشة مفتوحة أثناء نشر القصة';
+
+  @override
+  String get storyPost => 'نشر القصة';
+
+  @override
+  String get storyPosting => 'جارٍ النشر...';
+
+  @override
+  String get storySuccess => 'تم إنشاء القصة بنجاح';
+
+  @override
+  String get storyErrorEnterText => 'يرجى إدخال نص القصة';
+
+  @override
+  String get storyErrorSelectFile => 'يرجى اختيار ملف أولاً';
+
+  @override
+  String get storyErrorCustomIds => 'يرجى إضافة معرف واحد على الأقل';
+
+  @override
+  String get storyErrorImageCapture => 'تعذر التقاط الصورة';
+
+  @override
+  String get storyErrorVideoRecord => 'تعذر تسجيل الفيديو';
+
+  @override
+  String get storyErrorPickImage => 'تعذر اختيار الصورة';
+
+  @override
+  String get storyErrorPickVideo => 'تعذر اختيار الفيديو';
+
+  @override
+  String get storyErrorUploadBlocked => 'تم حظر الرفع بواسطة إعدادات Firebase';
+
+  @override
+  String get storyErrorPermission => 'تم رفض الإذن أثناء إنشاء القصة';
+
+  @override
+  String get storyErrorCanceled => 'تم إلغاء الرفع';
+
+  @override
+  String get storyErrorGeneric => 'فشل إنشاء القصة';
+
+  @override
+  String get storyYourStory => 'قصتك';
+
+  @override
+  String get storyNow => 'الآن';
+
+  @override
+  String get storyPreviewPlaceholder => 'معاينة القصة';
+
+  @override
+  String get mediaSheetSelectImage => 'اختيار صورة';
+
+  @override
+  String get mediaSheetSelectVideo => 'اختيار فيديو';
+
+  @override
+  String get mediaSheetImageSubtitle => 'اختر من المعرض أو استخدم الكاميرا';
+
+  @override
+  String get mediaSheetVideoSubtitle => 'اختر فيديو أو قم بتسجيل واحد';
+
+  @override
+  String get mediaGallery => 'المعرض';
+
+  @override
+  String get mediaGalleryVideo => 'فيديو من المعرض';
+
+  @override
+  String get mediaGallerySubtitle => 'اختر من جهازك';
+
+  @override
+  String get mediaGalleryVideoSubtitle => 'اختر ملف فيديو';
+
+  @override
+  String get mediaCamera => 'الكاميرا';
+
+  @override
+  String get mediaRecord => 'تسجيل';
+
+  @override
+  String get mediaCameraSubtitle => 'التقط صورة جديدة';
+
+  @override
+  String get mediaRecordSubtitle => 'سجل فيديو قصير';
+
+  @override
+  String get mediaRemove => 'حذف الوسائط';
+
+  @override
+  String get mediaRemoveSubtitle => 'إزالة الملف الحالي والبدء من جديد';
+
+  @override
+  String get storyViewerUserFallback => 'مستخدم';
+
+  @override
+  String get storyViewerDeleteTitle => 'حذف القصة';
+
+  @override
+  String get storyViewerDeleteMessage =>
+      'هل تريد حذف هذه القصة؟ لا يمكن التراجع عن هذا الإجراء.';
+
+  @override
+  String get storyViewerCancel => 'إلغاء';
+
+  @override
+  String get storyViewerDeleteAction => 'حذف';
+
+  @override
+  String get storyViewerDeleted => 'تم حذف القصة';
+
+  @override
+  String get storyViewerDeleteFailed => 'فشل حذف القصة';
+
+  @override
+  String get storyViewerNoViewsYet => 'لا توجد مشاهدات بعد';
+
+  @override
+  String storyViewerStoryCounter(Object current, Object total) {
+    return 'القصة $current/$total';
+  }
+
+  @override
+  String get storyViewerPeopleAppearHere =>
+      'سيظهر هنا الأشخاص الذين يشاهدون هذه القصة';
+
+  @override
+  String storyViewerViewsCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count مشاهدة',
+      many: '$count مشاهدة',
+      few: '$count مشاهدات',
+      two: 'مشاهدتان',
+      one: 'مشاهدة واحدة',
+      zero: '0 مشاهدة',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String storyViewerTotals(int total, int unique) {
+    return 'الإجمالي: $total • الفريد: $unique';
+  }
+
+  @override
+  String get storyViewerViewed => 'تمت المشاهدة';
+
+  @override
+  String get storyViewerNameWillAppearHere =>
+      'عندما يشاهد أحد هذه القصة، سيظهر اسمه هنا.';
+
+  @override
+  String get storyViewerViewedYourStory => 'شاهد قصتك';
+
+  @override
+  String get storyViewerTimeNow => 'الآن';
+
+  @override
+  String storyViewerMinutesAgo(int count) {
+    return 'منذ $count د';
+  }
+
+  @override
+  String storyViewerHoursAgo(int count) {
+    return 'منذ $count س';
+  }
+
+  @override
+  String storyViewerDaysAgo(int count) {
+    return 'منذ $count ي';
+  }
+
+  @override
+  String get storyViewerJustNow => 'الآن';
+
+  @override
+  String storyViewerMinutesShort(int count) {
+    return '$countد';
+  }
+
+  @override
+  String storyViewerHoursShort(int count) {
+    return '$countس';
+  }
+
+  @override
+  String storyViewerDaysShort(int count) {
+    return '$countي';
+  }
+
+  @override
+  String get storyViewerSwipeUpToSeeViewers => 'اسحب للأعلى لرؤية المشاهدين';
+
+  @override
+  String get storyViewerFallbackTitle => 'قصة';
+
+  @override
+  String get storyViewerDeleteTooltip => 'حذف القصة';
+
+  @override
+  String get storyViewerCloseTooltip => 'إغلاق';
+
+  @override
+  String get storyViewerOpenLink => 'فتح الرابط';
+
+  @override
+  String storiesRowNewCount(int count) {
+    return '$count جديد';
+  }
+
+  @override
+  String get storiesRowSeen => 'تمت المشاهدة';
+
+  @override
+  String get storiesRowTapToView => 'اضغط للعرض';
+
+  @override
+  String get storiesRowAddStory => 'أضف قصة';
+
+  @override
+  String get storyValidationInvalidImageType =>
+      'يرجى اختيار صورة صحيحة مثل JPG أو PNG أو WEBP أو HEIC.';
+
+  @override
+  String get storyValidationInvalidVideoType =>
+      'يرجى اختيار فيديو صحيح مثل MP4 أو MOV أو WEBM أو MKV.';
+
+  @override
+  String storyValidationImageTooLarge(Object maxSize) {
+    return 'حجم الصورة كبير جدًا. الحد الأقصى المسموح هو $maxSize.';
+  }
+
+  @override
+  String storyValidationVideoTooLarge(Object maxSize) {
+    return 'حجم الفيديو كبير جدًا. الحد الأقصى المسموح هو $maxSize.';
+  }
+
+  @override
+  String storyValidationVideoTooLong(Object maxSeconds) {
+    return 'يجب أن تكون مدة الفيديو $maxSeconds ثانية أو أقل.';
+  }
+
+  @override
+  String storyValidationTextTooLong(Object maxChars) {
+    return 'يجب ألا يزيد نص الحالة عن $maxChars حرفًا.';
+  }
+
+  @override
+  String storyValidationCaptionTooLong(Object maxChars) {
+    return 'يجب ألا يزيد التعليق عن $maxChars حرفًا.';
+  }
+
+  @override
+  String get storyValidationInvalidLink =>
+      'يرجى إدخال رابط صحيح يبدأ بـ http:// أو https://';
+
+  @override
+  String storyValidationImageRules(Object maxSize) {
+    return 'أنواع الصور المسموحة: JPG و JPEG و PNG و WEBP و HEIC. الحد الأقصى للحجم: $maxSize.';
+  }
+
+  @override
+  String storyValidationVideoRules(Object maxSize, Object maxSeconds) {
+    return 'أنواع الفيديو المسموحة: MP4 و MOV و M4V و WEBM و MKV و AVI. الحد الأقصى للحجم: $maxSize. الحد الأقصى للمدة: $maxSeconds ثانية.';
+  }
+
+  @override
+  String get storyNoImageSelected => 'لم يتم اختيار صورة بعد';
+
+  @override
+  String get storyNoVideoSelected => 'لم يتم اختيار فيديو بعد';
+
+  @override
+  String get storyVideoSelected => 'تم اختيار الفيديو';
+
+  @override
+  String get storyAudienceChoose => 'اختر جمهور مخصص';
+
+  @override
+  String get storyAudienceSearchFriends => 'ابحث عن الأصدقاء';
+
+  @override
+  String get storyAudienceSelectAll => 'تحديد الكل';
+
+  @override
+  String get storyAudienceDeselectAll => 'إلغاء تحديد الكل';
+
+  @override
+  String get storyAudienceFavorites => 'المفضلة';
+
+  @override
+  String get storyAudienceRecent => 'الأحدث';
+
+  @override
+  String get storyAudienceAllFriends => 'كل الأصدقاء';
+
+  @override
+  String get storyAudienceOnline => 'متصلون';
+
+  @override
+  String get storyTextAlignmentTitle => 'محاذاة النص';
+
+  @override
+  String get storyTextAlignmentSubtitle => 'اختر كيفية محاذاة النص';
+
+  @override
+  String get storyBackgroundColorSubtitle =>
+      'اختر بسرعة من الألوان المقترحة أو استخدم المؤشر لتحديد اللون بدقة';
+
+  @override
+  String get storyTextColorSubtitle =>
+      'اختر لون النص من الألوان السريعة أو عدله بدقة مع معاينة مباشرة';
+
+  @override
+  String get storyBackgroundPreviewLabel => 'الخلفية';
+
+  @override
+  String get storyTextPreviewLabel => 'النص';
+
+  @override
+  String get storyMediaRulesTitle => 'المتطلبات';
+
+  @override
+  String get storyTextAlignTitle => 'محاذاة النص';
+
+  @override
+  String get storyTextAlignSubtitle => 'اختر كيف تتم محاذاة النص داخل القصة';
+
+  @override
+  String get storyTextAlignLeft => 'يسار';
+
+  @override
+  String get storyTextAlignRight => 'يمين';
+
+  @override
+  String get storyTextAlignCenter => 'وسط';
+
+  @override
+  String get storyTextAlignStart => 'بداية';
+
+  @override
+  String get storyTextAlignEnd => 'نهاية';
+
+  @override
+  String storySelectedViewersCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count مشاهد',
+      many: '$count مشاهداً',
+      few: '$count مشاهدين',
+      two: 'مشاهدان',
+      one: 'مشاهد واحد',
+      zero: 'لا يوجد مشاهدون',
+    );
+    return '$_temp0';
+  }
 }

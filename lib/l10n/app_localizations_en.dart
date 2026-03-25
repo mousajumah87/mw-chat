@@ -1898,4 +1898,476 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get presencePrivacyEmailNobody => 'Hide your email from everyone.';
+
+  @override
+  String get storyCreateTitle => 'Create Story';
+
+  @override
+  String get storyTypeTitle => 'Story type';
+
+  @override
+  String get storyTypeSubtitle => 'Choose how you want to share this story.';
+
+  @override
+  String get storyTypeText => 'Text';
+
+  @override
+  String get storyTypeImage => 'Image';
+
+  @override
+  String get storyTypeVideo => 'Video';
+
+  @override
+  String get storyDetailsTitle => 'Details';
+
+  @override
+  String get storyDetailsSubtitleText =>
+      'Write your story and customize its look.';
+
+  @override
+  String get storyDetailsSubtitleMedia =>
+      'Add a caption and optional link for your media story.';
+
+  @override
+  String get storyVisibilityLabel => 'Who can see this story?';
+
+  @override
+  String get storyVisibilityPublic => 'Public';
+
+  @override
+  String get storyVisibilityFriends => 'Friends';
+
+  @override
+  String get storyVisibilityCustom => 'Custom';
+
+  @override
+  String get storyCustomViewerIdsLabel => 'Custom viewer IDs';
+
+  @override
+  String get storyCustomViewerIdsHint => 'uid1, uid2, uid3';
+
+  @override
+  String get storyTextLabel => 'Story text';
+
+  @override
+  String get storyTextHint => 'Write something...';
+
+  @override
+  String get storyCaptionLabel => 'Caption';
+
+  @override
+  String get storyCaptionHint => 'Add a caption...';
+
+  @override
+  String get storyLinkLabel => 'Link';
+
+  @override
+  String get storyLinkHint => 'https://example.com';
+
+  @override
+  String get storyStyleTitle => 'Style';
+
+  @override
+  String get storyStyleSubtitle => 'Choose colors for your text story.';
+
+  @override
+  String get storyBackgroundColor => 'Background color';
+
+  @override
+  String get storyTextColor => 'Text color';
+
+  @override
+  String get storyMediaTitle => 'Media';
+
+  @override
+  String get storyMediaSubtitleImage =>
+      'Pick an image from gallery or capture one now.';
+
+  @override
+  String get storyMediaSubtitleVideo => 'Pick a video or record a short one.';
+
+  @override
+  String get storySelectMedia => 'Select media';
+
+  @override
+  String get storyChangeMedia => 'Change selected media';
+
+  @override
+  String get storyPickerHint => 'Open picker for gallery or camera';
+
+  @override
+  String get storyPreviewTitle => 'Preview';
+
+  @override
+  String get storyPreviewText => 'This is how your text story will appear.';
+
+  @override
+  String get storyPreviewMedia => 'This is your selected media preview.';
+
+  @override
+  String get storyUploadingTitle => 'Uploading';
+
+  @override
+  String get storyUploadingSubtitle =>
+      'Please keep this screen open while your story is posting.';
+
+  @override
+  String get storyPost => 'Post Story';
+
+  @override
+  String get storyPosting => 'Posting...';
+
+  @override
+  String get storySuccess => 'Story created successfully';
+
+  @override
+  String get storyErrorEnterText => 'Please enter story text.';
+
+  @override
+  String get storyErrorSelectFile => 'Please select a file first.';
+
+  @override
+  String get storyErrorCustomIds =>
+      'Please add at least one viewer ID for custom stories.';
+
+  @override
+  String get storyErrorImageCapture => 'Unable to capture image.';
+
+  @override
+  String get storyErrorVideoRecord => 'Unable to record video.';
+
+  @override
+  String get storyErrorPickImage => 'Unable to pick image.';
+
+  @override
+  String get storyErrorPickVideo => 'Unable to pick video.';
+
+  @override
+  String get storyErrorUploadBlocked =>
+      'Upload blocked by Firebase Storage rules. Please update storage rules.';
+
+  @override
+  String get storyErrorPermission =>
+      'Permission denied while creating the story.';
+
+  @override
+  String get storyErrorCanceled => 'Upload was canceled.';
+
+  @override
+  String get storyErrorGeneric => 'Failed to create story.';
+
+  @override
+  String get storyYourStory => 'Your Story';
+
+  @override
+  String get storyNow => 'Now';
+
+  @override
+  String get storyPreviewPlaceholder => 'Your story preview';
+
+  @override
+  String get mediaSheetSelectImage => 'Select Image';
+
+  @override
+  String get mediaSheetSelectVideo => 'Select Video';
+
+  @override
+  String get mediaSheetImageSubtitle =>
+      'Choose from your gallery or use the camera.';
+
+  @override
+  String get mediaSheetVideoSubtitle => 'Choose a video or record a short one.';
+
+  @override
+  String get mediaGallery => 'Gallery';
+
+  @override
+  String get mediaGalleryVideo => 'Gallery video';
+
+  @override
+  String get mediaGallerySubtitle => 'Pick media from your device';
+
+  @override
+  String get mediaGalleryVideoSubtitle => 'Choose a video file';
+
+  @override
+  String get mediaCamera => 'Camera';
+
+  @override
+  String get mediaRecord => 'Record';
+
+  @override
+  String get mediaCameraSubtitle => 'Capture a new photo';
+
+  @override
+  String get mediaRecordSubtitle => 'Record a short video';
+
+  @override
+  String get mediaRemove => 'Remove selected media';
+
+  @override
+  String get mediaRemoveSubtitle => 'Clear current file and start again';
+
+  @override
+  String get storyViewerUserFallback => 'User';
+
+  @override
+  String get storyViewerDeleteTitle => 'Delete story';
+
+  @override
+  String get storyViewerDeleteMessage =>
+      'Do you want to delete this story? This action cannot be undone.';
+
+  @override
+  String get storyViewerCancel => 'Cancel';
+
+  @override
+  String get storyViewerDeleteAction => 'Delete';
+
+  @override
+  String get storyViewerDeleted => 'Story deleted';
+
+  @override
+  String get storyViewerDeleteFailed => 'Failed to delete story';
+
+  @override
+  String get storyViewerNoViewsYet => 'No views yet';
+
+  @override
+  String storyViewerStoryCounter(Object current, Object total) {
+    return 'Story $current/$total';
+  }
+
+  @override
+  String get storyViewerPeopleAppearHere =>
+      'People who view this story will appear here';
+
+  @override
+  String storyViewerViewsCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count views',
+      one: '1 view',
+      zero: '0 views',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String storyViewerTotals(int total, int unique) {
+    return 'Total: $total • Unique: $unique';
+  }
+
+  @override
+  String get storyViewerViewed => 'Viewed';
+
+  @override
+  String get storyViewerNameWillAppearHere =>
+      'When someone views this story, their name will appear here.';
+
+  @override
+  String get storyViewerViewedYourStory => 'Viewed your story';
+
+  @override
+  String get storyViewerTimeNow => 'now';
+
+  @override
+  String storyViewerMinutesAgo(int count) {
+    return '${count}m ago';
+  }
+
+  @override
+  String storyViewerHoursAgo(int count) {
+    return '${count}h ago';
+  }
+
+  @override
+  String storyViewerDaysAgo(int count) {
+    return '${count}d ago';
+  }
+
+  @override
+  String get storyViewerJustNow => 'Just now';
+
+  @override
+  String storyViewerMinutesShort(int count) {
+    return '${count}m';
+  }
+
+  @override
+  String storyViewerHoursShort(int count) {
+    return '${count}h';
+  }
+
+  @override
+  String storyViewerDaysShort(int count) {
+    return '${count}d';
+  }
+
+  @override
+  String get storyViewerSwipeUpToSeeViewers => 'Swipe up to see viewers';
+
+  @override
+  String get storyViewerFallbackTitle => 'Story';
+
+  @override
+  String get storyViewerDeleteTooltip => 'Delete story';
+
+  @override
+  String get storyViewerCloseTooltip => 'Close';
+
+  @override
+  String get storyViewerOpenLink => 'Open link';
+
+  @override
+  String storiesRowNewCount(int count) {
+    return '$count new';
+  }
+
+  @override
+  String get storiesRowSeen => 'Seen';
+
+  @override
+  String get storiesRowTapToView => 'Tap to view';
+
+  @override
+  String get storiesRowAddStory => 'Add story';
+
+  @override
+  String get storyValidationInvalidImageType =>
+      'Please select a valid image file like JPG, PNG, WEBP, or HEIC.';
+
+  @override
+  String get storyValidationInvalidVideoType =>
+      'Please select a valid video file like MP4, MOV, WEBM, or MKV.';
+
+  @override
+  String storyValidationImageTooLarge(Object maxSize) {
+    return 'Image is too large. Maximum allowed size is $maxSize.';
+  }
+
+  @override
+  String storyValidationVideoTooLarge(Object maxSize) {
+    return 'Video is too large. Maximum allowed size is $maxSize.';
+  }
+
+  @override
+  String storyValidationVideoTooLong(Object maxSeconds) {
+    return 'Video must be $maxSeconds seconds or less.';
+  }
+
+  @override
+  String storyValidationTextTooLong(Object maxChars) {
+    return 'Text story must be $maxChars characters or less.';
+  }
+
+  @override
+  String storyValidationCaptionTooLong(Object maxChars) {
+    return 'Caption must be $maxChars characters or less.';
+  }
+
+  @override
+  String get storyValidationInvalidLink =>
+      'Please enter a valid link starting with http:// or https://';
+
+  @override
+  String storyValidationImageRules(Object maxSize) {
+    return 'Allowed image types: JPG, JPEG, PNG, WEBP, HEIC. Maximum size: $maxSize.';
+  }
+
+  @override
+  String storyValidationVideoRules(Object maxSize, Object maxSeconds) {
+    return 'Allowed video types: MP4, MOV, M4V, WEBM, MKV, AVI. Maximum size: $maxSize. Maximum duration: $maxSeconds seconds.';
+  }
+
+  @override
+  String get storyNoImageSelected => 'No image selected yet';
+
+  @override
+  String get storyNoVideoSelected => 'No video selected yet';
+
+  @override
+  String get storyVideoSelected => 'Video selected';
+
+  @override
+  String get storyAudienceChoose => 'Choose custom audience';
+
+  @override
+  String get storyAudienceSearchFriends => 'Search friends';
+
+  @override
+  String get storyAudienceSelectAll => 'Select all';
+
+  @override
+  String get storyAudienceDeselectAll => 'Deselect all';
+
+  @override
+  String get storyAudienceFavorites => 'Favorites';
+
+  @override
+  String get storyAudienceRecent => 'Recent';
+
+  @override
+  String get storyAudienceAllFriends => 'All friends';
+
+  @override
+  String get storyAudienceOnline => 'Online';
+
+  @override
+  String get storyTextAlignmentTitle => 'Text Alignment';
+
+  @override
+  String get storyTextAlignmentSubtitle => 'Choose how your text is aligned';
+
+  @override
+  String get storyBackgroundColorSubtitle =>
+      'Choose quickly from presets or use the slider for precise background color';
+
+  @override
+  String get storyTextColorSubtitle =>
+      'Pick a quick text color or fine-tune it with live preview';
+
+  @override
+  String get storyBackgroundPreviewLabel => 'Background';
+
+  @override
+  String get storyTextPreviewLabel => 'Text';
+
+  @override
+  String get storyMediaRulesTitle => 'Requirements';
+
+  @override
+  String get storyTextAlignTitle => 'Text alignment';
+
+  @override
+  String get storyTextAlignSubtitle =>
+      'Choose how your text is aligned in the story';
+
+  @override
+  String get storyTextAlignLeft => 'Left';
+
+  @override
+  String get storyTextAlignRight => 'Right';
+
+  @override
+  String get storyTextAlignCenter => 'Center';
+
+  @override
+  String get storyTextAlignStart => 'Start';
+
+  @override
+  String get storyTextAlignEnd => 'End';
+
+  @override
+  String storySelectedViewersCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count viewers',
+      one: '1 viewer',
+      zero: 'No viewers',
+    );
+    return '$_temp0';
+  }
 }

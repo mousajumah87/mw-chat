@@ -1,6 +1,8 @@
+import 'dart:io' show Platform;
+
+import 'package:app_badge_plus/app_badge_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_app_badger/flutter_app_badger.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 class NotificationBadgeService with WidgetsBindingObserver {
@@ -13,8 +15,7 @@ class NotificationBadgeService with WidgetsBindingObserver {
 
   bool get _supportsNativeBadge {
     if (kIsWeb) return false;
-    return defaultTargetPlatform == TargetPlatform.android ||
-        defaultTargetPlatform == TargetPlatform.iOS;
+    return Platform.isAndroid || Platform.isIOS || Platform.isMacOS;
   }
 
   void start(FlutterLocalNotificationsPlugin fln) {
@@ -28,12 +29,39 @@ class NotificationBadgeService with WidgetsBindingObserver {
     if (!_started) return;
     WidgetsBinding.instance.removeObserver(this);
     _started = false;
+    _fln = null;
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Do NOT blindly clear all badges on resume.
-    // That was causing state fights and hiding real unread logic.
+    // Intentionally do nothing here.
+    // Do NOT blindly clear all badges on resume,
+    // because that can fight with real unread state.
+  }
+
+  Future<bool> _isBadgeSupported() async {
+    if (!_supportsNativeBadge) return false;
+
+    try {
+      // Future.sync keeps this safe whether the plugin method is sync or async.
+      final supported = await Future.sync(() => AppBadgePlus.isSupported());
+      return supported == true;
+    } catch (e) {
+      debugPrint('⚠️ badge support check failed: $e');
+      return false;
+    }
+  }
+
+  Future<void> _applyBadge(int count) async {
+    final safeCount = count < 0 ? 0 : count;
+
+    try {
+      // app_badge_plus uses updateBadge(0) to remove the badge.
+      await Future.sync(() => AppBadgePlus.updateBadge(safeCount));
+      _lastAppliedBadgeCount = safeCount;
+    } catch (e) {
+      debugPrint('⚠️ applyBadge failed: $e');
+    }
   }
 
   Future<void> clearChatBadgeAndNotifications({
@@ -49,15 +77,11 @@ class NotificationBadgeService with WidgetsBindingObserver {
       }
     }
 
-    try {
-      final supported = await FlutterAppBadger.isAppBadgeSupported();
-      if (!supported) return;
+    final supported = await _isBadgeSupported();
+    if (!supported) return;
 
-      FlutterAppBadger.removeBadge();
-      _lastAppliedBadgeCount = 0;
-    } catch (e) {
-      debugPrint('⚠️ removeBadge failed: $e');
-    }
+    if (_lastAppliedBadgeCount == 0) return;
+    await _applyBadge(0);
   }
 
   Future<void> setBadgeCount(int count) async {
@@ -66,19 +90,9 @@ class NotificationBadgeService with WidgetsBindingObserver {
     final safeCount = count < 0 ? 0 : count;
     if (_lastAppliedBadgeCount == safeCount) return;
 
-    try {
-      final supported = await FlutterAppBadger.isAppBadgeSupported();
-      if (!supported) return;
+    final supported = await _isBadgeSupported();
+    if (!supported) return;
 
-      if (safeCount <= 0) {
-        FlutterAppBadger.removeBadge();
-      } else {
-        FlutterAppBadger.updateBadgeCount(safeCount);
-      }
-
-      _lastAppliedBadgeCount = safeCount;
-    } catch (e) {
-      debugPrint('⚠️ setBadgeCount failed: $e');
-    }
+    await _applyBadge(safeCount);
   }
 }

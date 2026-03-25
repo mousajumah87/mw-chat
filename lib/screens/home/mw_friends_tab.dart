@@ -112,6 +112,50 @@ class _MwFriendsTabState extends State<MwFriendsTab>
 
   Duration get _tileAnim => kIsWeb ? Duration.zero : const Duration(milliseconds: 180);
   Duration get _trailingAnim => kIsWeb ? Duration.zero : const Duration(milliseconds: 220);
+  void _listenActiveStories() {
+    _storiesSub?.cancel();
+
+    _storiesSub = FirebaseFirestore.instance
+        .collection('stories')
+        .snapshots()
+        .listen((snapshot) {
+      final now = DateTime.now();
+      final next = <String>{};
+
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+
+        final ownerId = (data['ownerId'] as String?)?.trim();
+        if (ownerId == null || ownerId.isEmpty) continue;
+
+        final isExpired = data['isExpired'] == true;
+        if (isExpired) continue;
+
+        final expiresAtRaw = data['expiresAt'];
+        DateTime? expiresAt;
+        if (expiresAtRaw is Timestamp) {
+          expiresAt = expiresAtRaw.toDate();
+        } else if (expiresAtRaw is DateTime) {
+          expiresAt = expiresAtRaw;
+        }
+
+        if (expiresAt != null && expiresAt.isBefore(now)) {
+          continue;
+        }
+
+        next.add(ownerId);
+      }
+
+      if (!mounted) return;
+      if (setEquals(next, _usersWithActiveStories)) return;
+
+      setState(() {
+        _usersWithActiveStories
+          ..clear()
+          ..addAll(next);
+      });
+    });
+  }
 
   // ============================================================
   // ZERO-MOVEMENT FRIENDS LIST (NO FLASH / NO JUMP)
@@ -139,6 +183,9 @@ class _MwFriendsTabState extends State<MwFriendsTab>
   Timer? _friendsPeriodicTimer;
 
   bool _friendsListRepaintQueued = false;
+
+  final Set<String> _usersWithActiveStories = <String>{};
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _storiesSub;
 
   void _onFriendsScroll() {
     if (!_isFriendsOnly) return;
@@ -381,6 +428,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     _listenUnreadCounts();
     _listenBlockedUsers();
     _listenFriends();
+    _listenActiveStories();
 
     _scrollController.addListener(_onScroll);
     _friendsScrollController.addListener(_onFriendsScroll);
@@ -680,6 +728,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     _friendsScrollIdleTimer?.cancel();
     _friendsApplyDebounce?.cancel();
     _friendsPeriodicTimer?.cancel();
+    _storiesSub?.cancel();
 
     _scrollController.dispose();
     _friendsScrollController.dispose();
@@ -1068,6 +1117,8 @@ class _MwFriendsTabState extends State<MwFriendsTab>
           isOnline: false,
           showOnlineDot: false,
           showOnlineGlow: false,
+          hasStory: false,
+          showStoryGlow: false,
           backgroundColor: kSurfaceAltColor.withOpacity(0.85),
         ),
         title: Text(
@@ -1292,26 +1343,43 @@ class _MwFriendsTabState extends State<MwFriendsTab>
   }
 
   Widget _buildAvatar({
+    required String userId,
     required String? profileUrl,
     required String? avatarType,
     required bool isOnline,
     required bool hideRealAvatar,
   }) {
     final String? effectiveProfileUrl = hideRealAvatar ? null : profileUrl;
-    final String effectiveAvatarType = hideRealAvatar ? 'bear' : (avatarType ?? 'bear');
-    final ring = isOnline ? kAccentColor.withOpacity(0.85) : kGoldDeep.withOpacity(0.70);
+    final String effectiveAvatarType =
+    hideRealAvatar ? 'bear' : (avatarType ?? 'bear');
+
+    final bool hasStory = _usersWithActiveStories.contains(userId);
+
+    final ring = isOnline
+        ? kAccentColor.withOpacity(0.85)
+        : kGoldDeep.withOpacity(0.70);
 
     return MwAvatar(
       radius: 26,
       avatarType: effectiveAvatarType,
       profileUrl: effectiveProfileUrl,
       hideRealAvatar: hideRealAvatar,
-      showRing: true,
+
+      // Friends list: subtle story indicator only
+      hasStory: hasStory,
+      storySeen: false,
+      showStoryGlow: false,
+      showStoryRing: hasStory,
+      useGradientStoryRing: true,
+      dimSeenStoryRing: true,
+
+      // Keep current presence behavior
+      showRing: !hasStory,
       ringColor: ring,
       ringWidth: 2.0,
       isOnline: isOnline,
       showOnlineDot: true,
-      showOnlineGlow: isOnline,
+      showOnlineGlow: isOnline && !hasStory,
       onlineGlowColor: kAccentColor.withOpacity(0.55),
       onlineDotColor: kAccentColor,
       offlineDotColor: Colors.white24,
@@ -1620,6 +1688,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
             child: ListTile(
               enabled: canOpenChat,
               leading: _buildAvatar(
+                userId: userId,
                 profileUrl: profileUrl,
                 avatarType: avatarType,
                 isOnline: isOnlineForDisplay,

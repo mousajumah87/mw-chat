@@ -481,6 +481,7 @@ class _LinkPhoneSheetState extends State<_LinkPhoneSheet> {
                 labelText: widget.l10n.phoneNumberLabel,
                 hintText: widget.l10n.phoneHintExample,
                 prefixIcon: const Icon(Icons.phone_rounded),
+                isDense: true,
               ),
               enabled: !_loading,
               onChanged: (_) {

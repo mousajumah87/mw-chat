@@ -12,7 +12,7 @@ class MwCallPushUi {
   FlutterLocalNotificationsPlugin();
 
   // Keep aligned with main.dart / server payloads.
-  static const String _callChannelId = 'mw_calls_v2';
+  static const String _callChannelId = app.kMwCallsChannelId;
   static const String _callChannelName = 'MW Calls';
 
   static bool _inited = false;

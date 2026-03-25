@@ -46,13 +46,24 @@ import 'utils/web/recaptcha_container.dart';
 /// ✅ All push UI must show ONLY this title when we build local notifications.
 const String kMwOnlyPushTitle = 'MW';
 
-/// ✅ Android channel IDs MUST change when sound/settings change.
-const String kMwCallsChannelId = 'mw_calls_v2';
-const String kMwChatChannelId = 'mw_chat_v2';
-const String kMwAchievementsChannelId = 'mw_achievements_v2';
-const String kMwSocialChannelId = 'mw_social_v1';
 
-/// ✅ Keep null unless the file is really bundled in iOS/macOS app resources.
+/// Android channel versions.
+/// Bump ONLY when channel behavior changes on Android:
+/// - sound
+/// - importance
+/// - vibration pattern / silence behavior
+const int kMwCallsChannelVersion = 3;
+const int kMwChatChannelVersion = 3;
+const int kMwAchievementsChannelVersion = 2;
+const int kMwSocialChannelVersion = 1;
+
+/// Stable derived Android channel IDs.
+const String kMwCallsChannelId = 'mw_calls_v$kMwCallsChannelVersion';
+const String kMwChatChannelId = 'mw_chat_v$kMwChatChannelVersion';
+const String kMwAchievementsChannelId =
+    'mw_achievements_v$kMwAchievementsChannelVersion';
+const String kMwSocialChannelId = 'mw_social_v$kMwSocialChannelVersion';
+
 /// Example if bundled: 'mw_pop.caf'
 /// ✅ Keep null unless the file is really bundled in iOS/macOS app resources.
 const String? kMwAppleChatSound = 'mw_pop.caf';

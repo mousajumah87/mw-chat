@@ -1,16 +1,18 @@
 // lib/widgets/ui/mw_avatar.dart
 
 import 'dart:collection';
+import 'dart:math' as math;
 
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 
 /// MW Avatar (single pattern everywhere):
 /// - Network profile photo if allowed + available
+/// - Fallback to initials when provided
 /// - Fallback to local asset (bear/girl)
 /// - Fallback to icon if asset missing
-/// - Optional gold ring, online glow + dot, Hero animation
+/// - Optional gold ring, story ring/glow, online glow + dot, Hero animation
 /// - Optional cache control via URL cache-busting and custom headers
 ///
 /// ✅ BEST PRACTICE (iOS/Android/Web):
@@ -26,7 +28,28 @@ class MwAvatar extends StatefulWidget {
     this.radius = 18,
     this.backgroundColor,
 
-    // Ring + Online UX
+    /// Optional initials fallback, like "MA" or "YD".
+    /// Used when network image is unavailable or hidden.
+    this.initials,
+
+    // ===== Story UX =====
+    this.hasStory = false,
+    this.isOwnStory = false,
+    this.storySeen = false,
+    this.showStoryGlow = true,
+    this.storyGlowColor,
+    this.storyGlowBlur = 12,
+    this.storyGlowSpread = 1.0,
+
+    /// v2 polish:
+    this.showStoryRing = true,
+    this.useGradientStoryRing = true,
+    this.dimSeenStoryRing = true,
+    this.showStoryInnerStroke = true,
+    this.storyRingWidth,
+    this.storyGradientColors,
+
+    // ===== Ring + Online UX =====
     this.showRing = false,
     this.ringColor,
     this.ringWidth = 2.0,
@@ -40,10 +63,10 @@ class MwAvatar extends StatefulWidget {
     this.dotSize = 11,
     this.dotBorderWidth = 2,
 
-    // Hero animation
+    // ===== Hero =====
     this.heroTag,
 
-    // Cache control
+    // ===== Cache control =====
     this.cachePolicy = MwAvatarCachePolicy.normal,
     this.cacheBustKey,
     this.networkHeaders,
@@ -67,6 +90,50 @@ class MwAvatar extends StatefulWidget {
 
   final double radius;
   final Color? backgroundColor;
+
+  /// Optional initials fallback when real avatar is not available.
+  final String? initials;
+
+  // ===== Story UX =====
+
+  /// Whether this avatar represents a user/story with an active story.
+  final bool hasStory;
+
+  /// Stronger highlight for "Your Story".
+  final bool isOwnStory;
+
+  /// Seen story styling can be dimmed.
+  final bool storySeen;
+
+  /// Enables soft outer glow for story state.
+  final bool showStoryGlow;
+
+  /// Optional story glow color override.
+  final Color? storyGlowColor;
+
+  /// Blur radius for story glow.
+  final double storyGlowBlur;
+
+  /// Spread for story glow.
+  final double storyGlowSpread;
+
+  /// Whether to draw a dedicated story ring.
+  final bool showStoryRing;
+
+  /// Enables warm gold gradient ring for active story state.
+  final bool useGradientStoryRing;
+
+  /// Dims seen stories for a cleaner, calmer look.
+  final bool dimSeenStoryRing;
+
+  /// Adds a subtle inner white stroke between ring and avatar content.
+  final bool showStoryInnerStroke;
+
+  /// Optional story ring width override.
+  final double? storyRingWidth;
+
+  /// Optional gradient colors override for story ring.
+  final List<Color>? storyGradientColors;
 
   // ===== Ring + online glow + dot =====
   final bool showRing;
@@ -109,6 +176,8 @@ class _MwAvatarState extends State<MwAvatar> {
   static const String _girlAsset = 'assets/images/smurf.png';
 
   static const Color _defaultGold = Color(0xFFD6B25E);
+  static const Color _defaultGoldDeep = Color(0xFFB88A2E);
+  static const Color _defaultGoldLight = Color(0xFFFFE29A);
 
   /// Cache resolved download URLs for Firebase refs/paths
   static final _downloadUrlCache = _LruStringCache(maxEntries: 250);
@@ -121,10 +190,15 @@ class _MwAvatarState extends State<MwAvatar> {
   bool _isGirlType(String? raw) {
     final t = _norm(raw);
     if (t.isEmpty) return false;
-    return t == 'girl' || t == 'smurf' || t == 'female' || t == 'woman' || t == 'f';
+    return t == 'girl' ||
+        t == 'smurf' ||
+        t == 'female' ||
+        t == 'woman' ||
+        t == 'f';
   }
 
-  String get _assetPath => _isGirlType(widget.avatarType) ? _girlAsset : _bearAsset;
+  String get _assetPath =>
+      _isGirlType(widget.avatarType) ? _girlAsset : _bearAsset;
   bool get _isGirl => _isGirlType(widget.avatarType);
 
   String? _effectiveRaw(MwAvatar w) {
@@ -143,8 +217,6 @@ class _MwAvatarState extends State<MwAvatar> {
   bool _isDirectMediaUrl(String raw) {
     final u = raw.trim();
     if (!_isHttpUrl(u)) return false;
-    // ✅ Your DB values look exactly like this:
-    // .../o/profile_pics%2F<id>?alt=media&token=...
     return u.contains('alt=media');
   }
 
@@ -175,17 +247,21 @@ class _MwAvatarState extends State<MwAvatar> {
       return '$url${sep}v=$key';
     }
 
-    // noCache: rely on headers; keep url unchanged.
     return url;
   }
 
   Map<String, String>? _headersForPolicy() {
-    if (widget.cachePolicy != MwAvatarCachePolicy.noCache) return widget.networkHeaders;
+    if (widget.cachePolicy != MwAvatarCachePolicy.noCache) {
+      return widget.networkHeaders;
+    }
 
     final merged = <String, String>{};
     if (widget.networkHeaders != null) merged.addAll(widget.networkHeaders!);
 
-    merged.putIfAbsent('Cache-Control', () => 'no-cache, no-store, must-revalidate');
+    merged.putIfAbsent(
+      'Cache-Control',
+          () => 'no-cache, no-store, must-revalidate',
+    );
     merged.putIfAbsent('Pragma', () => 'no-cache');
     merged.putIfAbsent('Expires', () => '0');
     return merged;
@@ -194,17 +270,14 @@ class _MwAvatarState extends State<MwAvatar> {
   Future<String?> _resolveToRenderableUrl(String raw) async {
     final trimmed = raw.trim();
 
-    // ✅ If it's already a direct downloadable URL, DO NOT resolve.
     if (_isDirectMediaUrl(trimmed)) {
       return _applyCachePolicyToUrl(trimmed);
     }
 
-    // Non-firebase normal web URL: show directly.
     if (_isHttpUrl(trimmed) && !trimmed.contains('firebasestorage')) {
       return _applyCachePolicyToUrl(trimmed);
     }
 
-    // Cached result for firebase ref/path
     final cached = _downloadUrlCache.get(trimmed);
     if (cached != null && cached.isNotEmpty) {
       return _applyCachePolicyToUrl(cached);
@@ -214,16 +287,12 @@ class _MwAvatarState extends State<MwAvatar> {
       Reference ref;
 
       if (_looksLikeStoragePath(trimmed)) {
-        // e.g. "profile_pics/uid.jpg"
         ref = FirebaseStorage.instance.ref().child(trimmed);
       } else if (_isGsUrl(trimmed) || _isFirebaseRestUrlNeedingResolve(trimmed)) {
-        // gs://... OR Firebase REST url without alt=media
         ref = FirebaseStorage.instance.refFromURL(trimmed);
       } else if (_isHttpUrl(trimmed)) {
-        // Some other http(s): try showing directly as last resort.
         return _applyCachePolicyToUrl(trimmed);
       } else {
-        // Unknown format
         return null;
       }
 
@@ -234,7 +303,6 @@ class _MwAvatarState extends State<MwAvatar> {
       }
       return null;
     } catch (e) {
-      // If file truly missing or permission denied, we fall back gracefully.
       debugPrint('MwAvatar resolveToDownloadUrl error: $e');
       return null;
     }
@@ -249,7 +317,8 @@ class _MwAvatarState extends State<MwAvatar> {
       return;
     }
 
-    final key = '${raw.trim()}|${widget.cachePolicy.name}|${widget.cacheBustKey ?? ''}';
+    final key =
+        '${raw.trim()}|${widget.cachePolicy.name}|${widget.cacheBustKey ?? ''}';
     if (_resolvedKey == key) return;
 
     _resolvedKey = key;
@@ -273,7 +342,9 @@ class _MwAvatarState extends State<MwAvatar> {
         oldWidget.cacheBustKey != widget.cacheBustKey ||
         !_mapEquals(oldWidget.networkHeaders, widget.networkHeaders);
 
-    if (oldRaw != newRaw || policyChanged || oldWidget.hideRealAvatar != widget.hideRealAvatar) {
+    if (oldRaw != newRaw ||
+        policyChanged ||
+        oldWidget.hideRealAvatar != widget.hideRealAvatar) {
       _prepareMemoized();
     }
   }
@@ -288,6 +359,27 @@ class _MwAvatarState extends State<MwAvatar> {
     return true;
   }
 
+  List<Color> _resolvedStoryGradientColors(Color fallbackRingColor) {
+    final custom = widget.storyGradientColors;
+    if (custom != null && custom.length >= 2) {
+      return custom;
+    }
+
+    if (widget.storySeen && widget.dimSeenStoryRing) {
+      return <Color>[
+        Colors.white.withValues(alpha: 0.24),
+        Colors.white.withValues(alpha: 0.18),
+        fallbackRingColor.withValues(alpha: 0.18),
+      ];
+    }
+
+    return <Color>[
+      _defaultGold,
+      _defaultGoldDeep,
+      _defaultGoldLight,
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final bg = widget.backgroundColor ?? Colors.white10;
@@ -298,11 +390,49 @@ class _MwAvatarState extends State<MwAvatar> {
         width: size,
         height: size,
         alignment: Alignment.center,
-        decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
+        decoration: BoxDecoration(
+          color: bg,
+          shape: BoxShape.circle,
+        ),
         child: Icon(
           _isGirl ? Icons.face_retouching_natural : Icons.pets,
           size: widget.radius,
           color: Colors.white70,
+        ),
+      );
+    }
+
+    Widget buildInitialsAvatar() {
+      final text = (widget.initials ?? '').trim();
+      if (text.isEmpty) {
+        return buildFallbackIcon();
+      }
+
+      return Container(
+        width: size,
+        height: size,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: bg,
+          shape: BoxShape.circle,
+        ),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: math.max(4, widget.radius * 0.18)),
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.clip,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+                fontSize: widget.radius * 0.72,
+                height: 1,
+              ),
+            ),
+          ),
         ),
       );
     }
@@ -322,11 +452,16 @@ class _MwAvatarState extends State<MwAvatar> {
       );
     }
 
+    Widget buildDefaultFallbackAvatar() {
+      final hasInitials = (widget.initials ?? '').trim().isNotEmpty;
+      return hasInitials ? buildInitialsAvatar() : buildAssetAvatar();
+    }
+
     Widget buildLoadingStack() {
       return Stack(
         fit: StackFit.expand,
         children: [
-          buildAssetAvatar(),
+          buildDefaultFallbackAvatar(),
           Center(
             child: SizedBox(
               width: widget.radius * 0.9,
@@ -356,7 +491,7 @@ class _MwAvatarState extends State<MwAvatar> {
               if (progress == null) return child;
               return buildLoadingStack();
             },
-            errorBuilder: (_, __, ___) => buildAssetAvatar(),
+            errorBuilder: (_, __, ___) => buildDefaultFallbackAvatar(),
           ),
         ),
       );
@@ -366,52 +501,142 @@ class _MwAvatarState extends State<MwAvatar> {
 
     final Widget innerAvatar;
     if (raw == null) {
-      innerAvatar = buildAssetAvatar();
+      innerAvatar = buildDefaultFallbackAvatar();
     } else {
       innerAvatar = FutureBuilder<String?>(
         future: _resolvedUrlFuture,
         builder: (context, snap) {
           if (snap.connectionState == ConnectionState.waiting) {
             return ClipOval(
-              child: SizedBox(width: size, height: size, child: buildLoadingStack()),
+              child: SizedBox(
+                width: size,
+                height: size,
+                child: buildLoadingStack(),
+              ),
             );
           }
+
           final resolvedUrl = (snap.data ?? '').trim();
-          if (resolvedUrl.isEmpty) return buildAssetAvatar();
+          if (resolvedUrl.isEmpty) return buildDefaultFallbackAvatar();
           return buildNetworkAvatar(resolvedUrl);
         },
       );
     }
 
     final resolvedRingColor = widget.ringColor ?? _defaultGold;
-    final resolvedGlowColor = widget.onlineGlowColor ?? Colors.greenAccent.withOpacity(0.55);
+    final resolvedGlowColor =
+        widget.onlineGlowColor ?? Colors.greenAccent.withValues(alpha: 0.55);
 
-    final bool shouldGlow = widget.isOnline && widget.showOnlineGlow;
-    final bool shouldRing = widget.showRing;
+    final resolvedStoryGlowColor = widget.storyGlowColor ??
+        (widget.storySeen
+            ? resolvedRingColor.withValues(alpha: widget.dimSeenStoryRing ? 0.10 : 0.16)
+            : resolvedRingColor.withValues(alpha: widget.isOwnStory ? 0.22 : 0.14));
+
+    final bool shouldOnlineGlow = widget.isOnline && widget.showOnlineGlow;
+    final bool shouldStoryGlow = widget.hasStory && widget.showStoryGlow;
+    final bool shouldStoryRing = widget.hasStory && widget.showStoryRing;
+    final bool shouldBaseRing = widget.showRing && !shouldStoryRing;
+
+    final double storyRingWidth = widget.storyRingWidth ??
+        (widget.isOwnStory ? math.max(2.6, widget.ringWidth) : math.max(2.2, widget.ringWidth));
+
+    final double effectiveOuterRingWidth = shouldStoryRing
+        ? storyRingWidth
+        : (shouldBaseRing ? widget.ringWidth : 0);
+
+    final double outerSize = size + (effectiveOuterRingWidth * 2);
+
+    final double effectiveStoryGlowBlur = widget.storySeen && widget.dimSeenStoryRing
+        ? math.max(0, widget.storyGlowBlur - 3)
+        : (widget.isOwnStory ? widget.storyGlowBlur + 3 : widget.storyGlowBlur);
+
+    final double effectiveStoryGlowSpread = widget.storySeen && widget.dimSeenStoryRing
+        ? math.max(0, widget.storyGlowSpread - 0.5)
+        : (widget.isOwnStory ? widget.storyGlowSpread + 0.6 : widget.storyGlowSpread);
+
+    final List<Color> storyGradientColors =
+    _resolvedStoryGradientColors(resolvedRingColor);
 
     Widget avatarWithDecor = Container(
-      width: shouldRing ? (size + widget.ringWidth * 2) : size,
-      height: shouldRing ? (size + widget.ringWidth * 2) : size,
-      padding: shouldRing ? EdgeInsets.all(widget.ringWidth) : EdgeInsets.zero,
+      width: outerSize > 0 ? outerSize : size,
+      height: outerSize > 0 ? outerSize : size,
       decoration: BoxDecoration(
-        color: shouldRing ? resolvedRingColor.withOpacity(0.22) : Colors.transparent,
         shape: BoxShape.circle,
-        border: shouldRing ? Border.all(color: resolvedRingColor, width: widget.ringWidth) : null,
-        boxShadow: shouldGlow
-            ? [
-          BoxShadow(
-            color: resolvedGlowColor,
-            blurRadius: widget.onlineGlowBlur,
-            spreadRadius: 1.5,
-          ),
-        ]
-            : null,
+        boxShadow: [
+          if (shouldStoryGlow)
+            BoxShadow(
+              color: resolvedStoryGlowColor,
+              blurRadius: effectiveStoryGlowBlur,
+              spreadRadius: effectiveStoryGlowSpread,
+            ),
+          if (shouldOnlineGlow)
+            BoxShadow(
+              color: resolvedGlowColor,
+              blurRadius: widget.onlineGlowBlur,
+              spreadRadius: 1.4,
+            ),
+        ],
       ),
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
-        child: innerAvatar,
+      child: Padding(
+        padding: EdgeInsets.all(effectiveOuterRingWidth),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: shouldStoryRing && widget.useGradientStoryRing
+                ? LinearGradient(
+              colors: storyGradientColors,
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            )
+                : null,
+            color: shouldStoryRing
+                ? (widget.storySeen && widget.dimSeenStoryRing
+                ? Colors.white.withValues(alpha: 0.18)
+                : resolvedRingColor)
+                : shouldBaseRing
+                ? resolvedRingColor.withValues(alpha: widget.hasStory && !widget.storySeen ? 0.26 : 0.22)
+                : Colors.transparent,
+            border: shouldStoryRing
+                ? (!widget.useGradientStoryRing
+                ? Border.all(
+              color: widget.storySeen && widget.dimSeenStoryRing
+                  ? Colors.white.withValues(alpha: 0.26)
+                  : resolvedRingColor,
+              width: storyRingWidth,
+            )
+                : null)
+                : shouldBaseRing
+                ? Border.all(
+              color: resolvedRingColor,
+              width: widget.ringWidth,
+            )
+                : null,
+          ),
+          child: Padding(
+            padding: EdgeInsets.all(widget.showStoryInnerStroke && (shouldStoryRing || shouldBaseRing) ? 1.6 : 0),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: bg,
+                shape: BoxShape.circle,
+                border: widget.showStoryInnerStroke && (shouldStoryRing || shouldBaseRing)
+                    ? Border.all(
+                  color: Colors.white.withValues(
+                    alpha: widget.storySeen && widget.dimSeenStoryRing ? 0.08 : 0.14,
+                  ),
+                  width: 1.0,
+                )
+                    : null,
+              ),
+              child: ClipOval(
+                child: SizedBox(
+                  width: size,
+                  height: size,
+                  child: innerAvatar,
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
 
@@ -419,8 +644,6 @@ class _MwAvatarState extends State<MwAvatar> {
       final dotColor = widget.isOnline
           ? (widget.onlineDotColor ?? Colors.greenAccent)
           : (widget.offlineDotColor ?? Colors.grey);
-
-      final outerSize = shouldRing ? (size + widget.ringWidth * 2) : size;
 
       avatarWithDecor = Stack(
         clipBehavior: Clip.none,
@@ -435,22 +658,42 @@ class _MwAvatarState extends State<MwAvatar> {
               decoration: BoxDecoration(
                 color: dotColor,
                 shape: BoxShape.circle,
-                border: Border.all(color: Colors.black, width: widget.dotBorderWidth),
+                border: Border.all(
+                  color: Colors.black,
+                  width: widget.dotBorderWidth,
+                ),
+                boxShadow: widget.isOnline
+                    ? [
+                  BoxShadow(
+                    color: dotColor.withValues(alpha: 0.35),
+                    blurRadius: 6,
+                    spreadRadius: 0.5,
+                  ),
+                ]
+                    : null,
               ),
             ),
           ),
         ],
       );
 
-      avatarWithDecor = SizedBox(width: outerSize, height: outerSize, child: avatarWithDecor);
+      avatarWithDecor = SizedBox(
+        width: outerSize,
+        height: outerSize,
+        child: avatarWithDecor,
+      );
     }
 
     if (widget.heroTag != null) {
       avatarWithDecor = Hero(
         tag: widget.heroTag!,
-        flightShuttleBuilder: (flightContext, animation, flightDirection, fromContext, toContext) {
+        flightShuttleBuilder:
+            (flightContext, animation, flightDirection, fromContext, toContext) {
           return ScaleTransition(
-            scale: CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+            scale: CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOutCubic,
+            ),
             child: toContext.widget,
           );
         },
@@ -472,7 +715,7 @@ class _LruStringCache {
   String? get(String key) {
     final v = _map.remove(key);
     if (v == null) return null;
-    _map[key] = v; // most-recent
+    _map[key] = v;
     return v;
   }
 

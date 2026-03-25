@@ -1,13 +1,16 @@
+// lib/theme/mw_text_theme.dart
+
 import 'package:flutter/material.dart';
 
-/// ✅ DEFAULTS (Back to the original look like your screenshot)
+/// ✅ DEFAULTS
+/// Kept aligned with your current look, with only light readability improvements.
 const _kEnglishFont = 'Poppins';
 const _kArabicFont = 'NotoSansArabic';
 
 bool _isArabicFamily(String family) {
   final f = family.trim();
   return f == 'Noto Sans Arabic' ||
-      f == 'NotoSansArabic' || // backward compatibility
+      f == 'NotoSansArabic' ||
       f == 'Cairo' ||
       f == 'Tajawal' ||
       f == 'Almarai' ||
@@ -46,7 +49,7 @@ TextTheme buildMwTextTheme({
   // ✅ Arabic fonts typically need slightly more line height
   double h(double value) => familyIsArabic ? (value + 0.06) : value;
 
-  // Scale helper
+  // ✅ Safe scale helper
   double s(double v) => (v * fontScale).clamp(11.0, 72.0);
 
   return base.copyWith(
@@ -101,59 +104,59 @@ TextTheme buildMwTextTheme({
     ),
     titleMedium: base.titleMedium?.copyWith(
       fontFamily: resolvedFamily,
-      fontSize: s(16),
+      fontSize: s(16.5), // slight bump for readability
       fontWeight: FontWeight.w500,
-      height: h(1.35),
-      letterSpacing: ls(0.05),
+      height: h(1.36),
+      letterSpacing: ls(0.04),
     ),
     titleSmall: base.titleSmall?.copyWith(
       fontFamily: resolvedFamily,
-      fontSize: s(14),
+      fontSize: s(14.5), // slight bump
       fontWeight: FontWeight.w500,
-      height: h(1.35),
-      letterSpacing: ls(0.05),
+      height: h(1.36),
+      letterSpacing: ls(0.04),
     ),
     bodyLarge: base.bodyLarge?.copyWith(
       fontFamily: resolvedFamily,
-      fontSize: s(16),
+      fontSize: s(16.5), // slight bump
       fontWeight: FontWeight.w400,
-      height: h(1.45),
-      letterSpacing: ls(0.05),
+      height: h(1.5),
+      letterSpacing: ls(0.04),
     ),
     bodyMedium: base.bodyMedium?.copyWith(
       fontFamily: resolvedFamily,
-      fontSize: s(14),
+      fontSize: s(14.5), // most commonly used text, improved carefully
       fontWeight: FontWeight.w400,
-      height: h(1.45),
-      letterSpacing: ls(0.03),
+      height: h(1.5),
+      letterSpacing: ls(0.02),
     ),
     bodySmall: base.bodySmall?.copyWith(
       fontFamily: resolvedFamily,
-      fontSize: s(12),
+      fontSize: s(12.5), // small but clearer
       fontWeight: FontWeight.w400,
-      height: h(1.4),
-      letterSpacing: ls(0.02),
+      height: h(1.42),
+      letterSpacing: ls(0.01),
     ),
     labelLarge: base.labelLarge?.copyWith(
       fontFamily: resolvedFamily,
-      fontSize: s(13),
+      fontSize: s(13.5),
       fontWeight: FontWeight.w600,
-      height: h(1.3),
-      letterSpacing: ls(0.1),
+      height: h(1.32),
+      letterSpacing: ls(0.08),
     ),
     labelMedium: base.labelMedium?.copyWith(
       fontFamily: resolvedFamily,
-      fontSize: s(12),
+      fontSize: s(12.5),
       fontWeight: FontWeight.w500,
-      height: h(1.3),
-      letterSpacing: ls(0.05),
+      height: h(1.32),
+      letterSpacing: ls(0.04),
     ),
     labelSmall: base.labelSmall?.copyWith(
       fontFamily: resolvedFamily,
-      fontSize: s(11),
+      fontSize: s(11.5),
       fontWeight: FontWeight.w500,
-      height: h(1.2),
-      letterSpacing: ls(0.03),
+      height: h(1.24),
+      letterSpacing: ls(0.02),
     ),
   );
 }

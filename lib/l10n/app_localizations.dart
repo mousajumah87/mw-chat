@@ -3463,6 +3463,816 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Hide your email from everyone.'**
   String get presencePrivacyEmailNobody;
+
+  /// No description provided for @storyCreateTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Create Story'**
+  String get storyCreateTitle;
+
+  /// No description provided for @storyTypeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Story type'**
+  String get storyTypeTitle;
+
+  /// No description provided for @storyTypeSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose how you want to share this story.'**
+  String get storyTypeSubtitle;
+
+  /// No description provided for @storyTypeText.
+  ///
+  /// In en, this message translates to:
+  /// **'Text'**
+  String get storyTypeText;
+
+  /// No description provided for @storyTypeImage.
+  ///
+  /// In en, this message translates to:
+  /// **'Image'**
+  String get storyTypeImage;
+
+  /// No description provided for @storyTypeVideo.
+  ///
+  /// In en, this message translates to:
+  /// **'Video'**
+  String get storyTypeVideo;
+
+  /// No description provided for @storyDetailsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Details'**
+  String get storyDetailsTitle;
+
+  /// No description provided for @storyDetailsSubtitleText.
+  ///
+  /// In en, this message translates to:
+  /// **'Write your story and customize its look.'**
+  String get storyDetailsSubtitleText;
+
+  /// No description provided for @storyDetailsSubtitleMedia.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a caption and optional link for your media story.'**
+  String get storyDetailsSubtitleMedia;
+
+  /// No description provided for @storyVisibilityLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Who can see this story?'**
+  String get storyVisibilityLabel;
+
+  /// No description provided for @storyVisibilityPublic.
+  ///
+  /// In en, this message translates to:
+  /// **'Public'**
+  String get storyVisibilityPublic;
+
+  /// No description provided for @storyVisibilityFriends.
+  ///
+  /// In en, this message translates to:
+  /// **'Friends'**
+  String get storyVisibilityFriends;
+
+  /// No description provided for @storyVisibilityCustom.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom'**
+  String get storyVisibilityCustom;
+
+  /// No description provided for @storyCustomViewerIdsLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom viewer IDs'**
+  String get storyCustomViewerIdsLabel;
+
+  /// No description provided for @storyCustomViewerIdsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'uid1, uid2, uid3'**
+  String get storyCustomViewerIdsHint;
+
+  /// No description provided for @storyTextLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Story text'**
+  String get storyTextLabel;
+
+  /// No description provided for @storyTextHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Write something...'**
+  String get storyTextHint;
+
+  /// No description provided for @storyCaptionLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Caption'**
+  String get storyCaptionLabel;
+
+  /// No description provided for @storyCaptionHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a caption...'**
+  String get storyCaptionHint;
+
+  /// No description provided for @storyLinkLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Link'**
+  String get storyLinkLabel;
+
+  /// No description provided for @storyLinkHint.
+  ///
+  /// In en, this message translates to:
+  /// **'https://example.com'**
+  String get storyLinkHint;
+
+  /// No description provided for @storyStyleTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Style'**
+  String get storyStyleTitle;
+
+  /// No description provided for @storyStyleSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose colors for your text story.'**
+  String get storyStyleSubtitle;
+
+  /// No description provided for @storyBackgroundColor.
+  ///
+  /// In en, this message translates to:
+  /// **'Background color'**
+  String get storyBackgroundColor;
+
+  /// No description provided for @storyTextColor.
+  ///
+  /// In en, this message translates to:
+  /// **'Text color'**
+  String get storyTextColor;
+
+  /// No description provided for @storyMediaTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Media'**
+  String get storyMediaTitle;
+
+  /// No description provided for @storyMediaSubtitleImage.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick an image from gallery or capture one now.'**
+  String get storyMediaSubtitleImage;
+
+  /// No description provided for @storyMediaSubtitleVideo.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick a video or record a short one.'**
+  String get storyMediaSubtitleVideo;
+
+  /// No description provided for @storySelectMedia.
+  ///
+  /// In en, this message translates to:
+  /// **'Select media'**
+  String get storySelectMedia;
+
+  /// No description provided for @storyChangeMedia.
+  ///
+  /// In en, this message translates to:
+  /// **'Change selected media'**
+  String get storyChangeMedia;
+
+  /// No description provided for @storyPickerHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Open picker for gallery or camera'**
+  String get storyPickerHint;
+
+  /// No description provided for @storyPreviewTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Preview'**
+  String get storyPreviewTitle;
+
+  /// No description provided for @storyPreviewText.
+  ///
+  /// In en, this message translates to:
+  /// **'This is how your text story will appear.'**
+  String get storyPreviewText;
+
+  /// No description provided for @storyPreviewMedia.
+  ///
+  /// In en, this message translates to:
+  /// **'This is your selected media preview.'**
+  String get storyPreviewMedia;
+
+  /// No description provided for @storyUploadingTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Uploading'**
+  String get storyUploadingTitle;
+
+  /// No description provided for @storyUploadingSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Please keep this screen open while your story is posting.'**
+  String get storyUploadingSubtitle;
+
+  /// No description provided for @storyPost.
+  ///
+  /// In en, this message translates to:
+  /// **'Post Story'**
+  String get storyPost;
+
+  /// No description provided for @storyPosting.
+  ///
+  /// In en, this message translates to:
+  /// **'Posting...'**
+  String get storyPosting;
+
+  /// No description provided for @storySuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Story created successfully'**
+  String get storySuccess;
+
+  /// No description provided for @storyErrorEnterText.
+  ///
+  /// In en, this message translates to:
+  /// **'Please enter story text.'**
+  String get storyErrorEnterText;
+
+  /// No description provided for @storyErrorSelectFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Please select a file first.'**
+  String get storyErrorSelectFile;
+
+  /// No description provided for @storyErrorCustomIds.
+  ///
+  /// In en, this message translates to:
+  /// **'Please add at least one viewer ID for custom stories.'**
+  String get storyErrorCustomIds;
+
+  /// No description provided for @storyErrorImageCapture.
+  ///
+  /// In en, this message translates to:
+  /// **'Unable to capture image.'**
+  String get storyErrorImageCapture;
+
+  /// No description provided for @storyErrorVideoRecord.
+  ///
+  /// In en, this message translates to:
+  /// **'Unable to record video.'**
+  String get storyErrorVideoRecord;
+
+  /// No description provided for @storyErrorPickImage.
+  ///
+  /// In en, this message translates to:
+  /// **'Unable to pick image.'**
+  String get storyErrorPickImage;
+
+  /// No description provided for @storyErrorPickVideo.
+  ///
+  /// In en, this message translates to:
+  /// **'Unable to pick video.'**
+  String get storyErrorPickVideo;
+
+  /// No description provided for @storyErrorUploadBlocked.
+  ///
+  /// In en, this message translates to:
+  /// **'Upload blocked by Firebase Storage rules. Please update storage rules.'**
+  String get storyErrorUploadBlocked;
+
+  /// No description provided for @storyErrorPermission.
+  ///
+  /// In en, this message translates to:
+  /// **'Permission denied while creating the story.'**
+  String get storyErrorPermission;
+
+  /// No description provided for @storyErrorCanceled.
+  ///
+  /// In en, this message translates to:
+  /// **'Upload was canceled.'**
+  String get storyErrorCanceled;
+
+  /// No description provided for @storyErrorGeneric.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to create story.'**
+  String get storyErrorGeneric;
+
+  /// No description provided for @storyYourStory.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Story'**
+  String get storyYourStory;
+
+  /// No description provided for @storyNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Now'**
+  String get storyNow;
+
+  /// No description provided for @storyPreviewPlaceholder.
+  ///
+  /// In en, this message translates to:
+  /// **'Your story preview'**
+  String get storyPreviewPlaceholder;
+
+  /// No description provided for @mediaSheetSelectImage.
+  ///
+  /// In en, this message translates to:
+  /// **'Select Image'**
+  String get mediaSheetSelectImage;
+
+  /// No description provided for @mediaSheetSelectVideo.
+  ///
+  /// In en, this message translates to:
+  /// **'Select Video'**
+  String get mediaSheetSelectVideo;
+
+  /// No description provided for @mediaSheetImageSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose from your gallery or use the camera.'**
+  String get mediaSheetImageSubtitle;
+
+  /// No description provided for @mediaSheetVideoSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a video or record a short one.'**
+  String get mediaSheetVideoSubtitle;
+
+  /// No description provided for @mediaGallery.
+  ///
+  /// In en, this message translates to:
+  /// **'Gallery'**
+  String get mediaGallery;
+
+  /// No description provided for @mediaGalleryVideo.
+  ///
+  /// In en, this message translates to:
+  /// **'Gallery video'**
+  String get mediaGalleryVideo;
+
+  /// No description provided for @mediaGallerySubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick media from your device'**
+  String get mediaGallerySubtitle;
+
+  /// No description provided for @mediaGalleryVideoSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a video file'**
+  String get mediaGalleryVideoSubtitle;
+
+  /// No description provided for @mediaCamera.
+  ///
+  /// In en, this message translates to:
+  /// **'Camera'**
+  String get mediaCamera;
+
+  /// No description provided for @mediaRecord.
+  ///
+  /// In en, this message translates to:
+  /// **'Record'**
+  String get mediaRecord;
+
+  /// No description provided for @mediaCameraSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Capture a new photo'**
+  String get mediaCameraSubtitle;
+
+  /// No description provided for @mediaRecordSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Record a short video'**
+  String get mediaRecordSubtitle;
+
+  /// No description provided for @mediaRemove.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove selected media'**
+  String get mediaRemove;
+
+  /// No description provided for @mediaRemoveSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear current file and start again'**
+  String get mediaRemoveSubtitle;
+
+  /// No description provided for @storyViewerUserFallback.
+  ///
+  /// In en, this message translates to:
+  /// **'User'**
+  String get storyViewerUserFallback;
+
+  /// No description provided for @storyViewerDeleteTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete story'**
+  String get storyViewerDeleteTitle;
+
+  /// No description provided for @storyViewerDeleteMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Do you want to delete this story? This action cannot be undone.'**
+  String get storyViewerDeleteMessage;
+
+  /// No description provided for @storyViewerCancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get storyViewerCancel;
+
+  /// No description provided for @storyViewerDeleteAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete'**
+  String get storyViewerDeleteAction;
+
+  /// No description provided for @storyViewerDeleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Story deleted'**
+  String get storyViewerDeleted;
+
+  /// No description provided for @storyViewerDeleteFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to delete story'**
+  String get storyViewerDeleteFailed;
+
+  /// No description provided for @storyViewerNoViewsYet.
+  ///
+  /// In en, this message translates to:
+  /// **'No views yet'**
+  String get storyViewerNoViewsYet;
+
+  /// No description provided for @storyViewerStoryCounter.
+  ///
+  /// In en, this message translates to:
+  /// **'Story {current}/{total}'**
+  String storyViewerStoryCounter(Object current, Object total);
+
+  /// No description provided for @storyViewerPeopleAppearHere.
+  ///
+  /// In en, this message translates to:
+  /// **'People who view this story will appear here'**
+  String get storyViewerPeopleAppearHere;
+
+  /// No description provided for @storyViewerViewsCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{0 views} =1{1 view} other{{count} views}}'**
+  String storyViewerViewsCount(int count);
+
+  /// No description provided for @storyViewerTotals.
+  ///
+  /// In en, this message translates to:
+  /// **'Total: {total} • Unique: {unique}'**
+  String storyViewerTotals(int total, int unique);
+
+  /// No description provided for @storyViewerViewed.
+  ///
+  /// In en, this message translates to:
+  /// **'Viewed'**
+  String get storyViewerViewed;
+
+  /// No description provided for @storyViewerNameWillAppearHere.
+  ///
+  /// In en, this message translates to:
+  /// **'When someone views this story, their name will appear here.'**
+  String get storyViewerNameWillAppearHere;
+
+  /// No description provided for @storyViewerViewedYourStory.
+  ///
+  /// In en, this message translates to:
+  /// **'Viewed your story'**
+  String get storyViewerViewedYourStory;
+
+  /// No description provided for @storyViewerTimeNow.
+  ///
+  /// In en, this message translates to:
+  /// **'now'**
+  String get storyViewerTimeNow;
+
+  /// No description provided for @storyViewerMinutesAgo.
+  ///
+  /// In en, this message translates to:
+  /// **'{count}m ago'**
+  String storyViewerMinutesAgo(int count);
+
+  /// No description provided for @storyViewerHoursAgo.
+  ///
+  /// In en, this message translates to:
+  /// **'{count}h ago'**
+  String storyViewerHoursAgo(int count);
+
+  /// No description provided for @storyViewerDaysAgo.
+  ///
+  /// In en, this message translates to:
+  /// **'{count}d ago'**
+  String storyViewerDaysAgo(int count);
+
+  /// No description provided for @storyViewerJustNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Just now'**
+  String get storyViewerJustNow;
+
+  /// No description provided for @storyViewerMinutesShort.
+  ///
+  /// In en, this message translates to:
+  /// **'{count}m'**
+  String storyViewerMinutesShort(int count);
+
+  /// No description provided for @storyViewerHoursShort.
+  ///
+  /// In en, this message translates to:
+  /// **'{count}h'**
+  String storyViewerHoursShort(int count);
+
+  /// No description provided for @storyViewerDaysShort.
+  ///
+  /// In en, this message translates to:
+  /// **'{count}d'**
+  String storyViewerDaysShort(int count);
+
+  /// No description provided for @storyViewerSwipeUpToSeeViewers.
+  ///
+  /// In en, this message translates to:
+  /// **'Swipe up to see viewers'**
+  String get storyViewerSwipeUpToSeeViewers;
+
+  /// No description provided for @storyViewerFallbackTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Story'**
+  String get storyViewerFallbackTitle;
+
+  /// No description provided for @storyViewerDeleteTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete story'**
+  String get storyViewerDeleteTooltip;
+
+  /// No description provided for @storyViewerCloseTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Close'**
+  String get storyViewerCloseTooltip;
+
+  /// No description provided for @storyViewerOpenLink.
+  ///
+  /// In en, this message translates to:
+  /// **'Open link'**
+  String get storyViewerOpenLink;
+
+  /// No description provided for @storiesRowNewCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} new'**
+  String storiesRowNewCount(int count);
+
+  /// No description provided for @storiesRowSeen.
+  ///
+  /// In en, this message translates to:
+  /// **'Seen'**
+  String get storiesRowSeen;
+
+  /// No description provided for @storiesRowTapToView.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap to view'**
+  String get storiesRowTapToView;
+
+  /// No description provided for @storiesRowAddStory.
+  ///
+  /// In en, this message translates to:
+  /// **'Add story'**
+  String get storiesRowAddStory;
+
+  /// No description provided for @storyValidationInvalidImageType.
+  ///
+  /// In en, this message translates to:
+  /// **'Please select a valid image file like JPG, PNG, WEBP, or HEIC.'**
+  String get storyValidationInvalidImageType;
+
+  /// No description provided for @storyValidationInvalidVideoType.
+  ///
+  /// In en, this message translates to:
+  /// **'Please select a valid video file like MP4, MOV, WEBM, or MKV.'**
+  String get storyValidationInvalidVideoType;
+
+  /// No description provided for @storyValidationImageTooLarge.
+  ///
+  /// In en, this message translates to:
+  /// **'Image is too large. Maximum allowed size is {maxSize}.'**
+  String storyValidationImageTooLarge(Object maxSize);
+
+  /// No description provided for @storyValidationVideoTooLarge.
+  ///
+  /// In en, this message translates to:
+  /// **'Video is too large. Maximum allowed size is {maxSize}.'**
+  String storyValidationVideoTooLarge(Object maxSize);
+
+  /// No description provided for @storyValidationVideoTooLong.
+  ///
+  /// In en, this message translates to:
+  /// **'Video must be {maxSeconds} seconds or less.'**
+  String storyValidationVideoTooLong(Object maxSeconds);
+
+  /// No description provided for @storyValidationTextTooLong.
+  ///
+  /// In en, this message translates to:
+  /// **'Text story must be {maxChars} characters or less.'**
+  String storyValidationTextTooLong(Object maxChars);
+
+  /// No description provided for @storyValidationCaptionTooLong.
+  ///
+  /// In en, this message translates to:
+  /// **'Caption must be {maxChars} characters or less.'**
+  String storyValidationCaptionTooLong(Object maxChars);
+
+  /// No description provided for @storyValidationInvalidLink.
+  ///
+  /// In en, this message translates to:
+  /// **'Please enter a valid link starting with http:// or https://'**
+  String get storyValidationInvalidLink;
+
+  /// No description provided for @storyValidationImageRules.
+  ///
+  /// In en, this message translates to:
+  /// **'Allowed image types: JPG, JPEG, PNG, WEBP, HEIC. Maximum size: {maxSize}.'**
+  String storyValidationImageRules(Object maxSize);
+
+  /// No description provided for @storyValidationVideoRules.
+  ///
+  /// In en, this message translates to:
+  /// **'Allowed video types: MP4, MOV, M4V, WEBM, MKV, AVI. Maximum size: {maxSize}. Maximum duration: {maxSeconds} seconds.'**
+  String storyValidationVideoRules(Object maxSize, Object maxSeconds);
+
+  /// No description provided for @storyNoImageSelected.
+  ///
+  /// In en, this message translates to:
+  /// **'No image selected yet'**
+  String get storyNoImageSelected;
+
+  /// No description provided for @storyNoVideoSelected.
+  ///
+  /// In en, this message translates to:
+  /// **'No video selected yet'**
+  String get storyNoVideoSelected;
+
+  /// No description provided for @storyVideoSelected.
+  ///
+  /// In en, this message translates to:
+  /// **'Video selected'**
+  String get storyVideoSelected;
+
+  /// No description provided for @storyAudienceChoose.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose custom audience'**
+  String get storyAudienceChoose;
+
+  /// No description provided for @storyAudienceSearchFriends.
+  ///
+  /// In en, this message translates to:
+  /// **'Search friends'**
+  String get storyAudienceSearchFriends;
+
+  /// No description provided for @storyAudienceSelectAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Select all'**
+  String get storyAudienceSelectAll;
+
+  /// No description provided for @storyAudienceDeselectAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Deselect all'**
+  String get storyAudienceDeselectAll;
+
+  /// No description provided for @storyAudienceFavorites.
+  ///
+  /// In en, this message translates to:
+  /// **'Favorites'**
+  String get storyAudienceFavorites;
+
+  /// No description provided for @storyAudienceRecent.
+  ///
+  /// In en, this message translates to:
+  /// **'Recent'**
+  String get storyAudienceRecent;
+
+  /// No description provided for @storyAudienceAllFriends.
+  ///
+  /// In en, this message translates to:
+  /// **'All friends'**
+  String get storyAudienceAllFriends;
+
+  /// No description provided for @storyAudienceOnline.
+  ///
+  /// In en, this message translates to:
+  /// **'Online'**
+  String get storyAudienceOnline;
+
+  /// No description provided for @storyTextAlignmentTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Text Alignment'**
+  String get storyTextAlignmentTitle;
+
+  /// No description provided for @storyTextAlignmentSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose how your text is aligned'**
+  String get storyTextAlignmentSubtitle;
+
+  /// No description provided for @storyBackgroundColorSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose quickly from presets or use the slider for precise background color'**
+  String get storyBackgroundColorSubtitle;
+
+  /// No description provided for @storyTextColorSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick a quick text color or fine-tune it with live preview'**
+  String get storyTextColorSubtitle;
+
+  /// No description provided for @storyBackgroundPreviewLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Background'**
+  String get storyBackgroundPreviewLabel;
+
+  /// No description provided for @storyTextPreviewLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Text'**
+  String get storyTextPreviewLabel;
+
+  /// No description provided for @storyMediaRulesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Requirements'**
+  String get storyMediaRulesTitle;
+
+  /// No description provided for @storyTextAlignTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Text alignment'**
+  String get storyTextAlignTitle;
+
+  /// No description provided for @storyTextAlignSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose how your text is aligned in the story'**
+  String get storyTextAlignSubtitle;
+
+  /// No description provided for @storyTextAlignLeft.
+  ///
+  /// In en, this message translates to:
+  /// **'Left'**
+  String get storyTextAlignLeft;
+
+  /// No description provided for @storyTextAlignRight.
+  ///
+  /// In en, this message translates to:
+  /// **'Right'**
+  String get storyTextAlignRight;
+
+  /// No description provided for @storyTextAlignCenter.
+  ///
+  /// In en, this message translates to:
+  /// **'Center'**
+  String get storyTextAlignCenter;
+
+  /// No description provided for @storyTextAlignStart.
+  ///
+  /// In en, this message translates to:
+  /// **'Start'**
+  String get storyTextAlignStart;
+
+  /// No description provided for @storyTextAlignEnd.
+  ///
+  /// In en, this message translates to:
+  /// **'End'**
+  String get storyTextAlignEnd;
+
+  /// No description provided for @storySelectedViewersCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0 {No viewers} =1 {1 viewer} other {{count} viewers}}'**
+  String storySelectedViewersCount(int count);
 }
 
 class _AppLocalizationsDelegate

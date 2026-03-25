@@ -850,7 +850,288 @@
     "presencePrivacyEmailVisSheetSubtitle": "هذا يؤثر فقط على ما يمكن للمستخدمين الآخرين رؤيته. ستتمكن دائمًا من رؤية بريدك الإلكتروني.",
     "presencePrivacyEmailEveryone": "يمكن لأي شخص رؤية بريدك الإلكتروني في ملفك الشخصي.",
     "presencePrivacyEmailFriends": "يمكن لأصدقائك فقط رؤية بريدك الإلكتروني.",
-    "presencePrivacyEmailNobody": "إخفاء بريدك الإلكتروني عن الجميع."
+    "presencePrivacyEmailNobody": "إخفاء بريدك الإلكتروني عن الجميع.",
 
+    "storyCreateTitle": "إنشاء قصة",
+    "storyTypeTitle": "نوع القصة",
+    "storyTypeSubtitle": "اختر كيف تريد مشاركة هذه القصة",
+
+    "storyTypeText": "نص",
+    "storyTypeImage": "صورة",
+    "storyTypeVideo": "فيديو",
+
+    "storyDetailsTitle": "التفاصيل",
+    "storyDetailsSubtitleText": "اكتب قصتك وقم بتخصيص شكلها",
+    "storyDetailsSubtitleMedia": "أضف وصفًا ورابطًا اختياريًا لقصتك",
+
+    "storyVisibilityLabel": "من يمكنه رؤية هذه القصة؟",
+    "storyVisibilityPublic": "عام",
+    "storyVisibilityFriends": "الأصدقاء",
+    "storyVisibilityCustom": "مخصص",
+
+    "storyCustomViewerIdsLabel": "معرفات المشاهدين",
+    "storyCustomViewerIdsHint": "uid1, uid2, uid3",
+
+    "storyTextLabel": "نص القصة",
+    "storyTextHint": "اكتب شيئًا...",
+    "storyCaptionLabel": "الوصف",
+    "storyCaptionHint": "أضف وصفًا...",
+
+    "storyLinkLabel": "رابط",
+    "storyLinkHint": "https://example.com",
+
+    "storyStyleTitle": "التنسيق",
+    "storyStyleSubtitle": "اختر ألوان قصتك النصية",
+    "storyBackgroundColor": "لون الخلفية",
+    "storyTextColor": "لون النص",
+
+    "storyMediaTitle": "الوسائط",
+    "storyMediaSubtitleImage": "اختر صورة من المعرض أو التقط واحدة الآن",
+    "storyMediaSubtitleVideo": "اختر فيديو أو قم بتسجيل فيديو قصير",
+
+    "storySelectMedia": "اختيار وسائط",
+    "storyChangeMedia": "تغيير الوسائط",
+    "storyPickerHint": "افتح المعرض أو الكاميرا",
+
+    "storyPreviewTitle": "المعاينة",
+    "storyPreviewText": "هكذا ستظهر قصتك النصية",
+    "storyPreviewMedia": "هذه معاينة الوسائط المختارة",
+
+    "storyUploadingTitle": "جاري الرفع",
+    "storyUploadingSubtitle": "يرجى إبقاء الشاشة مفتوحة أثناء نشر القصة",
+
+    "storyPost": "نشر القصة",
+    "storyPosting": "جارٍ النشر...",
+
+    "storySuccess": "تم إنشاء القصة بنجاح",
+
+    "storyErrorEnterText": "يرجى إدخال نص القصة",
+    "storyErrorSelectFile": "يرجى اختيار ملف أولاً",
+    "storyErrorCustomIds": "يرجى إضافة معرف واحد على الأقل",
+
+    "storyErrorImageCapture": "تعذر التقاط الصورة",
+    "storyErrorVideoRecord": "تعذر تسجيل الفيديو",
+    "storyErrorPickImage": "تعذر اختيار الصورة",
+    "storyErrorPickVideo": "تعذر اختيار الفيديو",
+
+    "storyErrorUploadBlocked": "تم حظر الرفع بواسطة إعدادات Firebase",
+    "storyErrorPermission": "تم رفض الإذن أثناء إنشاء القصة",
+    "storyErrorCanceled": "تم إلغاء الرفع",
+    "storyErrorGeneric": "فشل إنشاء القصة",
+
+    "storyYourStory": "قصتك",
+    "storyNow": "الآن",
+    "storyPreviewPlaceholder": "معاينة القصة",
+
+    "mediaSheetSelectImage": "اختيار صورة",
+    "mediaSheetSelectVideo": "اختيار فيديو",
+
+    "mediaSheetImageSubtitle": "اختر من المعرض أو استخدم الكاميرا",
+    "mediaSheetVideoSubtitle": "اختر فيديو أو قم بتسجيل واحد",
+
+    "mediaGallery": "المعرض",
+    "mediaGalleryVideo": "فيديو من المعرض",
+    "mediaGallerySubtitle": "اختر من جهازك",
+    "mediaGalleryVideoSubtitle": "اختر ملف فيديو",
+
+    "mediaCamera": "الكاميرا",
+    "mediaRecord": "تسجيل",
+    "mediaCameraSubtitle": "التقط صورة جديدة",
+    "mediaRecordSubtitle": "سجل فيديو قصير",
+
+    "mediaRemove": "حذف الوسائط",
+    "mediaRemoveSubtitle": "إزالة الملف الحالي والبدء من جديد",
+
+    "storyViewerUserFallback": "مستخدم",
+    "storyViewerDeleteTitle": "حذف القصة",
+    "storyViewerDeleteMessage": "هل تريد حذف هذه القصة؟ لا يمكن التراجع عن هذا الإجراء.",
+    "storyViewerCancel": "إلغاء",
+    "storyViewerDeleteAction": "حذف",
+    "storyViewerDeleted": "تم حذف القصة",
+    "storyViewerDeleteFailed": "فشل حذف القصة",
+    "storyViewerNoViewsYet": "لا توجد مشاهدات بعد",
+    "storyViewerStoryCounter": "القصة {current}/{total}",
+    "@storyViewerStoryCounter": {
+    "placeholders": {
+      "current": {},
+      "total": {}
+    }
+    },
+    "storyViewerPeopleAppearHere": "سيظهر هنا الأشخاص الذين يشاهدون هذه القصة",
+    "storyViewerViewsCount": "{count, plural, =0{0 مشاهدة} =1{مشاهدة واحدة} =2{مشاهدتان} few{{count} مشاهدات} many{{count} مشاهدة} other{{count} مشاهدة}}",
+    "@storyViewerViewsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+    },
+    "storyViewerTotals": "الإجمالي: {total} • الفريد: {unique}",
+    "@storyViewerTotals": {
+    "placeholders": {
+      "total": {
+        "type": "int"
+      },
+      "unique": {
+        "type": "int"
+      }
+    }
+    },
+    "storyViewerViewed": "تمت المشاهدة",
+    "storyViewerNameWillAppearHere": "عندما يشاهد أحد هذه القصة، سيظهر اسمه هنا.",
+    "storyViewerViewedYourStory": "شاهد قصتك",
+    "storyViewerTimeNow": "الآن",
+    "storyViewerMinutesAgo": "منذ {count} د",
+    "@storyViewerMinutesAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+    },
+    "storyViewerHoursAgo": "منذ {count} س",
+    "@storyViewerHoursAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+    },
+    "storyViewerDaysAgo": "منذ {count} ي",
+    "@storyViewerDaysAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+    },
+    "storyViewerJustNow": "الآن",
+    "storyViewerMinutesShort": "{count}د",
+    "@storyViewerMinutesShort": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+    },
+    "storyViewerHoursShort": "{count}س",
+    "@storyViewerHoursShort": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+    },
+    "storyViewerDaysShort": "{count}ي",
+    "@storyViewerDaysShort": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+    },
+    "storyViewerSwipeUpToSeeViewers": "اسحب للأعلى لرؤية المشاهدين",
+    "storyViewerFallbackTitle": "قصة",
+    "storyViewerDeleteTooltip": "حذف القصة",
+    "storyViewerCloseTooltip": "إغلاق",
+    "storyViewerOpenLink": "فتح الرابط",
+
+    "storiesRowNewCount": "{count} جديد",
+    "@storiesRowNewCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+    },
+    "storiesRowSeen": "تمت المشاهدة",
+    "storiesRowTapToView": "اضغط للعرض",
+    "storiesRowAddStory": "أضف قصة",
+
+
+    "storyValidationInvalidImageType": "يرجى اختيار صورة صحيحة مثل JPG أو PNG أو WEBP أو HEIC.",
+    "storyValidationInvalidVideoType": "يرجى اختيار فيديو صحيح مثل MP4 أو MOV أو WEBM أو MKV.",
+    "storyValidationImageTooLarge": "حجم الصورة كبير جدًا. الحد الأقصى المسموح هو {maxSize}.",
+    "@storyValidationImageTooLarge": {
+    "placeholders": {
+      "maxSize": {}
+    }
+    },
+    "storyValidationVideoTooLarge": "حجم الفيديو كبير جدًا. الحد الأقصى المسموح هو {maxSize}.",
+    "@storyValidationVideoTooLarge": {
+    "placeholders": {
+      "maxSize": {}
+    }
+    },
+    "storyValidationVideoTooLong": "يجب أن تكون مدة الفيديو {maxSeconds} ثانية أو أقل.",
+    "@storyValidationVideoTooLong": {
+    "placeholders": {
+      "maxSeconds": {}
+    }
+    },
+    "storyValidationTextTooLong": "يجب ألا يزيد نص الحالة عن {maxChars} حرفًا.",
+    "@storyValidationTextTooLong": {
+    "placeholders": {
+      "maxChars": {}
+    }
+    },
+    "storyValidationCaptionTooLong": "يجب ألا يزيد التعليق عن {maxChars} حرفًا.",
+    "@storyValidationCaptionTooLong": {
+    "placeholders": {
+      "maxChars": {}
+    }
+    },
+    "storyValidationInvalidLink": "يرجى إدخال رابط صحيح يبدأ بـ http:// أو https://",
+    "storyValidationImageRules": "أنواع الصور المسموحة: JPG و JPEG و PNG و WEBP و HEIC. الحد الأقصى للحجم: {maxSize}.",
+    "@storyValidationImageRules": {
+    "placeholders": {
+      "maxSize": {}
+    }
+    },
+    "storyValidationVideoRules": "أنواع الفيديو المسموحة: MP4 و MOV و M4V و WEBM و MKV و AVI. الحد الأقصى للحجم: {maxSize}. الحد الأقصى للمدة: {maxSeconds} ثانية.",
+    "@storyValidationVideoRules": {
+    "placeholders": {
+      "maxSize": {},
+      "maxSeconds": {}
+    }
+    },
+    "storyNoImageSelected": "لم يتم اختيار صورة بعد",
+    "storyNoVideoSelected": "لم يتم اختيار فيديو بعد",
+    "storyVideoSelected": "تم اختيار الفيديو",
+    "storyAudienceChoose": "اختر جمهور مخصص",
+    "storyAudienceSearchFriends": "ابحث عن الأصدقاء",
+    "storyAudienceSelectAll": "تحديد الكل",
+    "storyAudienceDeselectAll": "إلغاء تحديد الكل",
+    "storyAudienceFavorites": "المفضلة",
+    "storyAudienceRecent": "الأحدث",
+    "storyAudienceAllFriends": "كل الأصدقاء",
+    "storyAudienceOnline": "متصلون",
+    "storyTextAlignmentTitle": "محاذاة النص",
+    "storyTextAlignmentSubtitle": "اختر كيفية محاذاة النص",
+    "storyBackgroundColorSubtitle": "اختر بسرعة من الألوان المقترحة أو استخدم المؤشر لتحديد اللون بدقة",
+    "storyTextColorSubtitle": "اختر لون النص من الألوان السريعة أو عدله بدقة مع معاينة مباشرة",
+    "storyBackgroundPreviewLabel": "الخلفية",
+    "storyTextPreviewLabel": "النص",
+    "storyMediaRulesTitle": "المتطلبات",
+    "storyTextAlignTitle": "محاذاة النص",
+    "storyTextAlignSubtitle": "اختر كيف تتم محاذاة النص داخل القصة",
+    "storyTextAlignLeft": "يسار",
+    "storyTextAlignRight": "يمين",
+    "storyTextAlignCenter": "وسط",
+    "storyTextAlignStart": "بداية",
+    "storyTextAlignEnd": "نهاية",
+    "storySelectedViewersCount": "{count, plural, =0 {لا يوجد مشاهدون} =1 {مشاهد واحد} =2 {مشاهدان} few {{count} مشاهدين} many {{count} مشاهداً} other {{count} مشاهد}}",
+    "@storySelectedViewersCount": {
+      "placeholders": {
+        "count": {
+          "type": "int"
+        }
+      }
+    },
+    "storyBackgroundColorSubtitle": "اختر بسرعة من الألوان المقترحة أو استخدم المؤشر لتحديد اللون بدقة",
+    "storyTextColorSubtitle": "اختر لون النص من الألوان السريعة أو عدله بدقة مع معاينة مباشرة",
+    "storyBackgroundPreviewLabel": "الخلفية",
+    "storyTextPreviewLabel": "النص",
+    "storyMediaRulesTitle": "المتطلبات"
 
 }

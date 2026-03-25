@@ -10,12 +10,12 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../calls/call_screen.dart';
 import '../../calls/call_signaling_service.dart';
 import '../../calls/outgoing_call_screen.dart';
+import '../../features/stories/widgets/stories_row.dart';
 import '../../l10n/app_localizations.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ui/app_info.dart';
 import '../../widgets/ui/mw_background.dart';
 import '../../widgets/ui/mw_app_header.dart';
-import '../chat/chat_screen.dart';
 import '../legal/terms_of_use_screen.dart';
 import 'call_logs_screen.dart';
 import 'mw_friends_tab.dart';
@@ -227,30 +227,6 @@ class _HomeScreenState extends State<HomeScreen>
         s.contains('missing or insufficient permissions');
   }
 
-  Future<void> _openChatFromLogs({
-    required String peerId,
-    required String displayName,
-  }) async {
-    final me = FirebaseAuth.instance.currentUser;
-    if (me == null) return;
-
-    final other = peerId.trim();
-    if (other.isEmpty || other == me.uid) return;
-
-    final ids = [me.uid, other]..sort();
-    final roomId = '${ids[0]}_${ids[1]}';
-
-    if (!mounted) return;
-
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ChatScreen(
-          roomId: roomId,
-          title: displayName.trim().isEmpty ? 'Chat' : displayName.trim(),
-        ),
-      ),
-    );
-  }
   // Start-call handler used by CallLogsScreen
   Future<void> _startCallFromLogs({
     required String peerId,
@@ -341,10 +317,7 @@ class _HomeScreenState extends State<HomeScreen>
                       builder: (_) => CallLogsScreen(
                         onStartCall: _startCallFromLogs,
                         onOpenChat: ({required peerId, required displayName}) {
-                          _openChatFromLogs(
-                            peerId: peerId,
-                            displayName: displayName,
-                          );
+                          // navigate to your chat screen here
                         },
                         enableVideoButton: false,
                       ),
@@ -355,7 +328,7 @@ class _HomeScreenState extends State<HomeScreen>
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(999),
-                    color: Colors.orangeAccent.withOpacity(0.14),
+                    color: Colors.orangeAccent.withValues(alpha: 0.14),
                     border: Border.all(
                       color: Colors.orangeAccent.withOpacity(0.45),
                     ),
@@ -420,10 +393,7 @@ class _HomeScreenState extends State<HomeScreen>
                     builder: (_) => CallLogsScreen(
                       onStartCall: _startCallFromLogs,
                       onOpenChat: ({required peerId, required displayName}) {
-                        _openChatFromLogs(
-                          peerId: peerId,
-                          displayName: displayName,
-                        );
+                        // navigate to your chat screen here
                       },
                       enableVideoButton: false,
                     ),
@@ -490,6 +460,33 @@ class _HomeScreenState extends State<HomeScreen>
       },
     );
   }
+
+
+///////////////
+  Future<String?> _currentUserProfileUrl() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return null;
+
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+
+      final data = snap.data() ?? const <String, dynamic>{};
+      final url = (data['profileUrl'] ?? '').toString().trim();
+      return url.isEmpty ? null : url;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _refreshAfterStoryCreated() async {
+    if (!mounted) return;
+    setState(() {});
+  }
+
+
 
   // ----------------------------
   // Terms gate
@@ -650,6 +647,44 @@ class _HomeScreenState extends State<HomeScreen>
                     ),
                   ),
                   const SizedBox(height: 12),
+                  FutureBuilder<String?>(
+                    future: _currentUserProfileUrl(),
+                    builder: (context, snap) {
+                      return Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isWide ? 16 : 12,
+                        ),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          decoration: BoxDecoration(
+                            color: kSurfaceAltColor.withValues(alpha: 0.26),
+                            borderRadius: BorderRadius.circular(22),
+                            border: Border.all(
+                              color: kBorderColor.withValues(alpha: 0.38),
+                              width: 1,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.20),
+                                blurRadius: 16,
+                                offset: const Offset(0, 8),
+                              ),
+                              BoxShadow(
+                                color: kPrimaryGold.withValues(alpha: 0.04),
+                                blurRadius: 12,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: StoriesRow(
+                            currentUserImageUrl: snap.data,
+                            onStoryCreated: _refreshAfterStoryCreated,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 10),
                   _buildCallLogsChip(uid: currentUser.uid),
                   const SizedBox(height: 10),
                   Expanded(
@@ -659,22 +694,22 @@ class _HomeScreenState extends State<HomeScreen>
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: kSurfaceAltColor.withOpacity(0.55),
+                        color: kSurfaceAltColor.withValues(alpha: 0.50),
                         borderRadius: BorderRadius.circular(24),
                         border: Border.all(
-                          color: kBorderColor.withOpacity(0.70),
+                          color: kBorderColor.withValues(alpha: 0.58),
                           width: 1,
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.55),
-                            blurRadius: 30,
-                            offset: const Offset(0, 16),
+                            color: Colors.black.withValues(alpha: 0.46),
+                            blurRadius: 26,
+                            offset: const Offset(0, 14),
                           ),
                           BoxShadow(
-                            color: kGoldDeep.withOpacity(0.08),
-                            blurRadius: 20,
-                            offset: const Offset(0, 10),
+                            color: kGoldDeep.withValues(alpha: 0.05),
+                            blurRadius: 16,
+                            offset: const Offset(0, 8),
                           ),
                         ],
                       ),
@@ -735,13 +770,14 @@ class _HomeScreenState extends State<HomeScreen>
         required bool isWide,
       }) {
     final textStyle = theme.textTheme.bodySmall?.copyWith(
-      color: kTextSecondary.withOpacity(0.85),
-      fontSize: 11,
+      color: kTextSecondary.withValues(alpha: 0.88),
+      fontSize: 11.5,
       fontWeight: FontWeight.w600,
+      letterSpacing: 0.08,
     );
 
     final versionStyle = textStyle?.copyWith(
-      color: kTextSecondary.withOpacity(0.55),
+      color: kTextSecondary.withValues(alpha: 0.58),
       fontWeight: FontWeight.w500,
     );
 
@@ -768,7 +804,7 @@ class _HomeScreenState extends State<HomeScreen>
                 style: textStyle?.copyWith(
                   decoration: TextDecoration.underline,
                   fontWeight: FontWeight.w800,
-                  color: kPrimaryGold.withOpacity(0.90),
+                  color: kPrimaryGold.withValues(alpha: 0.90),
                 ),
               ),
             ),
@@ -786,22 +822,22 @@ class _HomeScreenState extends State<HomeScreen>
       isScrollable: false,
       indicatorAnimation: TabIndicatorAnimation.linear,
       labelColor: Colors.black,
-      unselectedLabelColor: kOffWhite.withOpacity(0.82),
+      unselectedLabelColor: kOffWhite.withValues(alpha: 0.84),
       indicator: BoxDecoration(
         borderRadius: radius,
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            kPrimaryGold.withOpacity(0.98),
-            kGoldDeep.withOpacity(0.92),
+            kPrimaryGold.withValues(alpha: 0.98),
+            kGoldDeep.withValues(alpha: 0.92),
           ],
         ),
         boxShadow: [
           BoxShadow(
-            color: kGoldDeep.withOpacity(0.18),
-            blurRadius: 16,
-            offset: const Offset(0, 10),
+            color: kGoldDeep.withValues(alpha: 0.12),
+            blurRadius: 10,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
@@ -809,10 +845,10 @@ class _HomeScreenState extends State<HomeScreen>
       dividerColor: Colors.transparent,
       overlayColor: MaterialStateProperty.resolveWith((states) {
         if (states.contains(MaterialState.pressed)) {
-          return kPrimaryGold.withOpacity(0.10);
+          return kPrimaryGold.withValues(alpha: 0.08);
         }
         if (states.contains(MaterialState.hovered)) {
-          return kPrimaryGold.withOpacity(0.06);
+          return kPrimaryGold.withValues(alpha: 0.05);
         }
         return Colors.transparent;
       }),

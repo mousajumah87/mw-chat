@@ -144,7 +144,7 @@ class _TypingIndicatorState extends State<TypingIndicator>
             border: widget.showTopDivider
                 ? Border(
               top: BorderSide(
-                color: Colors.white.withOpacity(0.05),
+                color: Colors.white.withValues(alpha: 0.05),
                 width: 0.8,
               ),
             )
@@ -179,10 +179,17 @@ class _TypingIndicatorState extends State<TypingIndicator>
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: kTextSecondary.withOpacity(0.92),
-                          fontSize: 12.8,
+                          color: Colors.white.withValues(alpha: 0.96),
+                          fontSize: 13.4,
                           fontWeight: FontWeight.w500,
                           height: 1.1,
+                          shadows: [
+                            Shadow(
+                              color: Colors.black.withValues(alpha: 0.28),
+                              blurRadius: 2.5,
+                              offset: const Offset(0, 0.6),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -219,9 +226,9 @@ class _CompactAvatar extends StatelessWidget {
       height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: Colors.black.withOpacity(0.12),
+        color: Colors.black.withValues(alpha: 0.12),
         border: Border.all(
-          color: kPrimaryGold.withOpacity(0.22),
+          color: kPrimaryGold.withValues(alpha: 0.22),
           width: 0.8,
         ),
       ),
@@ -281,11 +288,11 @@ class _TypingDots extends StatelessWidget {
                   height: 4,
                   margin: const EdgeInsets.symmetric(horizontal: 1),
                   decoration: BoxDecoration(
-                    color: kPrimaryGold.withOpacity(0.95),
+                    color: kPrimaryGold.withValues(alpha: 0.95),
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: kGoldDeep.withOpacity(0.10),
+                        color: kGoldDeep.withValues(alpha: 0.10),
                         blurRadius: 5,
                         spreadRadius: 0.2,
                       ),
@@ -324,7 +331,7 @@ class _RecordingWaves extends StatelessWidget {
 
           Widget bar(double phase) {
             final a = (math.sin(t + phase) * 0.5 + 0.5).clamp(0.0, 1.0);
-            final h = 4.0 + (a * 7.0); // 4..11
+            final h = 4.0 + (a * 7.0);
             final opacity = 0.35 + (a * 0.65);
 
             return Align(
@@ -336,11 +343,11 @@ class _RecordingWaves extends StatelessWidget {
                   height: h,
                   margin: const EdgeInsets.symmetric(horizontal: 1),
                   decoration: BoxDecoration(
-                    color: kPrimaryGold.withOpacity(0.95),
+                    color: kPrimaryGold.withValues(alpha: 0.95),
                     borderRadius: BorderRadius.circular(99),
                     boxShadow: [
                       BoxShadow(
-                        color: kGoldDeep.withOpacity(0.10),
+                        color: kGoldDeep.withValues(alpha: 0.10),
                         blurRadius: 5,
                         spreadRadius: 0.2,
                       ),

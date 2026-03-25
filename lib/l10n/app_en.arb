@@ -851,6 +851,287 @@
     "presencePrivacyEmailVisSheetSubtitle": "This only affects what other users can see. You will always see your own email.",
     "presencePrivacyEmailEveryone": "Anyone can see your email on your profile.",
     "presencePrivacyEmailFriends": "Only your friends can see your email.",
-    "presencePrivacyEmailNobody": "Hide your email from everyone."
+    "presencePrivacyEmailNobody": "Hide your email from everyone.",
+
+    "storyCreateTitle": "Create Story",
+    "storyTypeTitle": "Story type",
+    "storyTypeSubtitle": "Choose how you want to share this story.",
+
+    "storyTypeText": "Text",
+    "storyTypeImage": "Image",
+    "storyTypeVideo": "Video",
+
+    "storyDetailsTitle": "Details",
+    "storyDetailsSubtitleText": "Write your story and customize its look.",
+    "storyDetailsSubtitleMedia": "Add a caption and optional link for your media story.",
+
+    "storyVisibilityLabel": "Who can see this story?",
+    "storyVisibilityPublic": "Public",
+    "storyVisibilityFriends": "Friends",
+    "storyVisibilityCustom": "Custom",
+
+    "storyCustomViewerIdsLabel": "Custom viewer IDs",
+    "storyCustomViewerIdsHint": "uid1, uid2, uid3",
+
+    "storyTextLabel": "Story text",
+    "storyTextHint": "Write something...",
+    "storyCaptionLabel": "Caption",
+    "storyCaptionHint": "Add a caption...",
+
+    "storyLinkLabel": "Link",
+    "storyLinkHint": "https://example.com",
+
+    "storyStyleTitle": "Style",
+    "storyStyleSubtitle": "Choose colors for your text story.",
+    "storyBackgroundColor": "Background color",
+    "storyTextColor": "Text color",
+
+    "storyMediaTitle": "Media",
+    "storyMediaSubtitleImage": "Pick an image from gallery or capture one now.",
+    "storyMediaSubtitleVideo": "Pick a video or record a short one.",
+
+    "storySelectMedia": "Select media",
+    "storyChangeMedia": "Change selected media",
+    "storyPickerHint": "Open picker for gallery or camera",
+
+    "storyPreviewTitle": "Preview",
+    "storyPreviewText": "This is how your text story will appear.",
+    "storyPreviewMedia": "This is your selected media preview.",
+
+    "storyUploadingTitle": "Uploading",
+    "storyUploadingSubtitle": "Please keep this screen open while your story is posting.",
+
+    "storyPost": "Post Story",
+    "storyPosting": "Posting...",
+
+    "storySuccess": "Story created successfully",
+
+    "storyErrorEnterText": "Please enter story text.",
+    "storyErrorSelectFile": "Please select a file first.",
+    "storyErrorCustomIds": "Please add at least one viewer ID for custom stories.",
+
+    "storyErrorImageCapture": "Unable to capture image.",
+    "storyErrorVideoRecord": "Unable to record video.",
+    "storyErrorPickImage": "Unable to pick image.",
+    "storyErrorPickVideo": "Unable to pick video.",
+
+    "storyErrorUploadBlocked": "Upload blocked by Firebase Storage rules. Please update storage rules.",
+    "storyErrorPermission": "Permission denied while creating the story.",
+    "storyErrorCanceled": "Upload was canceled.",
+    "storyErrorGeneric": "Failed to create story.",
+
+    "storyYourStory": "Your Story",
+    "storyNow": "Now",
+    "storyPreviewPlaceholder": "Your story preview",
+
+    "mediaSheetSelectImage": "Select Image",
+    "mediaSheetSelectVideo": "Select Video",
+
+    "mediaSheetImageSubtitle": "Choose from your gallery or use the camera.",
+    "mediaSheetVideoSubtitle": "Choose a video or record a short one.",
+
+    "mediaGallery": "Gallery",
+    "mediaGalleryVideo": "Gallery video",
+    "mediaGallerySubtitle": "Pick media from your device",
+    "mediaGalleryVideoSubtitle": "Choose a video file",
+
+    "mediaCamera": "Camera",
+    "mediaRecord": "Record",
+    "mediaCameraSubtitle": "Capture a new photo",
+    "mediaRecordSubtitle": "Record a short video",
+
+    "mediaRemove": "Remove selected media",
+    "mediaRemoveSubtitle": "Clear current file and start again",
+
+    "storyViewerUserFallback": "User",
+    "storyViewerDeleteTitle": "Delete story",
+    "storyViewerDeleteMessage": "Do you want to delete this story? This action cannot be undone.",
+    "storyViewerCancel": "Cancel",
+    "storyViewerDeleteAction": "Delete",
+    "storyViewerDeleted": "Story deleted",
+    "storyViewerDeleteFailed": "Failed to delete story",
+    "storyViewerNoViewsYet": "No views yet",
+    "storyViewerStoryCounter": "Story {current}/{total}",
+    "@storyViewerStoryCounter": {
+    "placeholders": {
+      "current": {},
+      "total": {}
+    }
+    },
+    "storyViewerPeopleAppearHere": "People who view this story will appear here",
+    "storyViewerViewsCount": "{count, plural, =0{0 views} =1{1 view} other{{count} views}}",
+    "@storyViewerViewsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+    },
+    "storyViewerTotals": "Total: {total} • Unique: {unique}",
+    "@storyViewerTotals": {
+    "placeholders": {
+      "total": {
+        "type": "int"
+      },
+      "unique": {
+        "type": "int"
+      }
+    }
+    },
+    "storyViewerViewed": "Viewed",
+    "storyViewerNameWillAppearHere": "When someone views this story, their name will appear here.",
+    "storyViewerViewedYourStory": "Viewed your story",
+    "storyViewerTimeNow": "now",
+    "storyViewerMinutesAgo": "{count}m ago",
+    "@storyViewerMinutesAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+    },
+    "storyViewerHoursAgo": "{count}h ago",
+    "@storyViewerHoursAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+    },
+    "storyViewerDaysAgo": "{count}d ago",
+    "@storyViewerDaysAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+    },
+    "storyViewerJustNow": "Just now",
+    "storyViewerMinutesShort": "{count}m",
+    "@storyViewerMinutesShort": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+    },
+    "storyViewerHoursShort": "{count}h",
+    "@storyViewerHoursShort": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+    },
+    "storyViewerDaysShort": "{count}d",
+    "@storyViewerDaysShort": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+    },
+    "storyViewerSwipeUpToSeeViewers": "Swipe up to see viewers",
+    "storyViewerFallbackTitle": "Story",
+    "storyViewerDeleteTooltip": "Delete story",
+    "storyViewerCloseTooltip": "Close",
+    "storyViewerOpenLink": "Open link",
+
+    "storiesRowNewCount": "{count} new",
+    "@storiesRowNewCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+    },
+    "storiesRowSeen": "Seen",
+    "storiesRowTapToView": "Tap to view",
+    "storiesRowAddStory": "Add story",
+
+    "storyValidationInvalidImageType": "Please select a valid image file like JPG, PNG, WEBP, or HEIC.",
+    "storyValidationInvalidVideoType": "Please select a valid video file like MP4, MOV, WEBM, or MKV.",
+    "storyValidationImageTooLarge": "Image is too large. Maximum allowed size is {maxSize}.",
+    "@storyValidationImageTooLarge": {
+    "placeholders": {
+      "maxSize": {}
+    }
+    },
+    "storyValidationVideoTooLarge": "Video is too large. Maximum allowed size is {maxSize}.",
+    "@storyValidationVideoTooLarge": {
+    "placeholders": {
+      "maxSize": {}
+    }
+    },
+    "storyValidationVideoTooLong": "Video must be {maxSeconds} seconds or less.",
+    "@storyValidationVideoTooLong": {
+    "placeholders": {
+      "maxSeconds": {}
+    }
+    },
+    "storyValidationTextTooLong": "Text story must be {maxChars} characters or less.",
+    "@storyValidationTextTooLong": {
+    "placeholders": {
+      "maxChars": {}
+    }
+    },
+    "storyValidationCaptionTooLong": "Caption must be {maxChars} characters or less.",
+    "@storyValidationCaptionTooLong": {
+    "placeholders": {
+      "maxChars": {}
+    }
+    },
+    "storyValidationInvalidLink": "Please enter a valid link starting with http:// or https://",
+    "storyValidationImageRules": "Allowed image types: JPG, JPEG, PNG, WEBP, HEIC. Maximum size: {maxSize}.",
+    "@storyValidationImageRules": {
+    "placeholders": {
+      "maxSize": {}
+    }
+    },
+    "storyValidationVideoRules": "Allowed video types: MP4, MOV, M4V, WEBM, MKV, AVI. Maximum size: {maxSize}. Maximum duration: {maxSeconds} seconds.",
+    "@storyValidationVideoRules": {
+    "placeholders": {
+      "maxSize": {},
+      "maxSeconds": {}
+    }
+    },
+    "storyNoImageSelected": "No image selected yet",
+    "storyNoVideoSelected": "No video selected yet",
+    "storyVideoSelected": "Video selected",
+    "storyAudienceChoose": "Choose custom audience",
+    "storyAudienceSearchFriends": "Search friends",
+    "storyAudienceSelectAll": "Select all",
+    "storyAudienceDeselectAll": "Deselect all",
+    "storyAudienceFavorites": "Favorites",
+    "storyAudienceRecent": "Recent",
+    "storyAudienceAllFriends": "All friends",
+    "storyAudienceOnline": "Online",
+    "storyTextAlignmentTitle": "Text Alignment",
+    "storyTextAlignmentSubtitle": "Choose how your text is aligned",
+    "storyBackgroundColorSubtitle": "Choose quickly from presets or use the slider for precise background color",
+    "storyTextColorSubtitle": "Pick a quick text color or fine-tune it with live preview",
+    "storyBackgroundPreviewLabel": "Background",
+    "storyTextPreviewLabel": "Text",
+    "storyMediaRulesTitle": "Requirements",
+    "storyTextAlignTitle": "Text alignment",
+    "storyTextAlignSubtitle": "Choose how your text is aligned in the story",
+    "storyTextAlignLeft": "Left",
+    "storyTextAlignRight": "Right",
+    "storyTextAlignCenter": "Center",
+    "storyTextAlignStart": "Start",
+    "storyTextAlignEnd": "End",
+    "storySelectedViewersCount": "{count, plural, =0 {No viewers} =1 {1 viewer} other {{count} viewers}}",
+    "@storySelectedViewersCount": {
+      "placeholders": {
+        "count": {
+          "type": "int"
+        }
+      }
+    },
+    "storyBackgroundColorSubtitle": "Choose quickly from presets or use the slider for precise background color",
+    "storyTextColorSubtitle": "Pick a quick text color or fine-tune it with live preview",
+    "storyBackgroundPreviewLabel": "Background",
+    "storyTextPreviewLabel": "Text",
+    "storyMediaRulesTitle": "Requirements"
 
 }

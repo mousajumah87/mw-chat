@@ -490,18 +490,27 @@ class _ChatInputBarState extends State<ChatInputBar> with TickerProviderStateMix
                         textAlignVertical: TextAlignVertical.center,
                         scrollPadding: EdgeInsets.zero,
                         style: TextStyle(
-                          color: Colors.white,
+                          color: Colors.white.withValues(alpha: 0.96), // clearer white
                           fontSize: effectiveFont,
-                          height: 1.25,
+                          height: 1.28, // tiny improvement for readability
                           fontWeight: FontWeight.w500,
+                          letterSpacing: 0.1,
+                          shadows: [
+                            Shadow(
+                              color: Colors.black.withValues(alpha: 0.35),
+                              blurRadius: 2,
+                              offset: const Offset(0, 1),
+                            ),
+                          ],
                         ),
                         decoration: InputDecoration(
                           hintText: l10n.typeMessageHint,
                           hintStyle: TextStyle(
-                            color: Colors.white54,
+                            color: Colors.white.withValues(alpha: 0.55), // slightly clearer than 54
                             fontSize: effectiveFont,
-                            height: 1.25,
-                            fontWeight: FontWeight.w500,
+                            height: 1.28,
+                            fontWeight: FontWeight.w400, // lighter than input text
+                            letterSpacing: 0.05,
                           ),
                           filled: false,
                           fillColor: Colors.transparent,

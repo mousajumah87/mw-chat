@@ -664,37 +664,55 @@ class _AuthScreenState extends State<AuthScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildCountryPrefixChip() {
+  Widget _buildCountryPrefixChip({bool compact = false}) {
     final c = _selectedCountry;
     final flag = c?.flagEmoji ?? '🇺🇸';
     final dial = _dialCode;
 
-    return InkWell(
-      onTap: _openCountryPicker,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-        decoration: BoxDecoration(
-          color: kSurfaceAltColor.withOpacity(0.55),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white.withOpacity(0.18)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(flag, style: const TextStyle(fontSize: 18)),
-            const SizedBox(width: 8),
-            Text(
-              dial,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w800,
-                fontSize: 13.5,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: _openCountryPicker,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          height: double.infinity,
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 8 : 10,
+            vertical: 10,
+          ),
+          decoration: BoxDecoration(
+            color: kSurfaceAltColor.withOpacity(0.55),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white.withOpacity(0.18)),
+          ),
+          child: Center(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(flag, style: const TextStyle(fontSize: 18)),
+                  SizedBox(width: compact ? 4 : 6),
+                  Text(
+                    dial,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13.5,
+                    ),
+                  ),
+                  const SizedBox(width: 2),
+                  Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    size: 18,
+                    color: Colors.white.withOpacity(0.85),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(width: 4),
-            Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white.withOpacity(0.85)),
-          ],
+          ),
         ),
       ),
     );
@@ -1890,43 +1908,106 @@ class _AuthScreenState extends State<AuthScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildPhoneRow(AppLocalizations l10n) {
-    return Row(
-      children: [
-        _buildCountryPrefixChip(),
-        const SizedBox(width: 10),
-        Expanded(
-          child: TextFormField(
-            controller: _identifierCtrl,
-            keyboardType: TextInputType.phone,
-            autofillHints: const [AutofillHints.telephoneNumber],
-            decoration: InputDecoration(
-              labelText: l10n.phoneNumberLabel,
-              hintText: l10n.phoneHintExample,
-              prefixIcon: const Icon(Icons.phone_outlined),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final bool verySmall = constraints.maxWidth < 340;
+        final double chipWidth = verySmall ? 88 : 102;
+
+        if (verySmall) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                height: 56,
+                child: _buildCountryPrefixChip(compact: true),
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _identifierCtrl,
+                keyboardType: TextInputType.phone,
+                textInputAction: TextInputAction.next,
+                autofillHints: const [AutofillHints.telephoneNumber],
+                decoration: InputDecoration(
+                  labelText: l10n.phoneNumberLabel,
+                  hintText: l10n.phoneHintExample,
+                  prefixIcon: const Icon(Icons.phone_outlined),
+                  isDense: true,
+                ),
+                onChanged: (_) {
+                  if (_errorText != null) _safeSetState(() => _errorText = null);
+                  if (_codeSent) _smsCtrl.clear();
+
+                  if (kIsWeb) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (_alive && _loginMode == _IdentifierMode.phone) {
+                        _initWebRecaptcha();
+                      }
+                    });
+                  }
+                },
+                validator: (v) {
+                  final s = (v ?? '').trim();
+                  if (s.isEmpty) return l10n.requiredField;
+
+                  final digits = pf.digitsOnly(s);
+                  if (digits.isNotEmpty && digits.length < 7) return null;
+
+                  if (pf.tryParsePhone(s, dialIso2: _dialIso2) != null) return null;
+                  return l10n.invalidPhoneNumber;
+                },
+              ),
+            ],
+          );
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: chipWidth,
+              height: 56,
+              child: _buildCountryPrefixChip(),
             ),
-            onChanged: (_) {
-              if (_errorText != null) _safeSetState(() => _errorText = null);
-              if (_codeSent) _smsCtrl.clear();
+            const SizedBox(width: 8),
+            Expanded(
+              child: TextFormField(
+                controller: _identifierCtrl,
+                keyboardType: TextInputType.phone,
+                textInputAction: TextInputAction.next,
+                autofillHints: const [AutofillHints.telephoneNumber],
+                decoration: InputDecoration(
+                  labelText: l10n.phoneNumberLabel,
+                  hintText: l10n.phoneHintExample,
+                  prefixIcon: const Icon(Icons.phone_outlined),
+                  isDense: true,
+                ),
+                onChanged: (_) {
+                  if (_errorText != null) _safeSetState(() => _errorText = null);
+                  if (_codeSent) _smsCtrl.clear();
 
-              if (kIsWeb) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (_alive && _loginMode == _IdentifierMode.phone) _initWebRecaptcha();
-                });
-              }
-            },
-            validator: (v) {
-              final s = (v ?? '').trim();
-              if (s.isEmpty) return l10n.requiredField;
+                  if (kIsWeb) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (_alive && _loginMode == _IdentifierMode.phone) {
+                        _initWebRecaptcha();
+                      }
+                    });
+                  }
+                },
+                validator: (v) {
+                  final s = (v ?? '').trim();
+                  if (s.isEmpty) return l10n.requiredField;
 
-              final digits = pf.digitsOnly(s);
-              if (digits.isNotEmpty && digits.length < 7) return null;
+                  final digits = pf.digitsOnly(s);
+                  if (digits.isNotEmpty && digits.length < 7) return null;
 
-              if (pf.tryParsePhone(s, dialIso2: _dialIso2) != null) return null;
-              return l10n.invalidPhoneNumber;
-            },
-          ),
-        ),
-      ],
+                  if (pf.tryParsePhone(s, dialIso2: _dialIso2) != null) return null;
+                  return l10n.invalidPhoneNumber;
+                },
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
