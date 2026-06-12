@@ -2370,4 +2370,67 @@ class AppLocalizationsEn extends AppLocalizations {
     );
     return '$_temp0';
   }
+
+  @override
+  String get home_tab_chats => 'Chats';
+
+  @override
+  String get home_tab_people => 'People';
+
+  @override
+  String get home_tab_stories => 'Stories';
+
+  @override
+  String get home_tab_groups => 'Groups';
+
+  @override
+  String get home_tab_calls => 'Calls';
+
+  @override
+  String get home_groups_subtitle => 'Create and manage your groups';
+
+  @override
+  String get home_groups_new => 'New';
+
+  @override
+  String get home_calls_subtitle => 'Recent and missed calls';
+
+  @override
+  String get home_invalid_peer => 'Invalid peer';
+
+  @override
+  String get home_default_chat_title => 'Chat';
+
+  @override
+  String get groupDetailsTitle => 'Group Details';
+
+  @override
+  String groupImagePickFailed(Object error) {
+    return 'Failed to pick group image: $error';
+  }
+
+  @override
+  String groupCreateFailed(Object error) {
+    return 'Failed to create group: $error';
+  }
+
+  @override
+  String get groupPhotoChange => 'Change group photo';
+
+  @override
+  String get groupPhotoAdd => 'Add group photo';
+
+  @override
+  String get groupNameLabel => 'Group name';
+
+  @override
+  String get groupNameHint => 'Enter group name';
+
+  @override
+  String groupMembersCount(Object count) {
+    return 'Members ($count)';
+  }
+
+  @override
+  String get groupCreateButton => 'Create Group';
 }

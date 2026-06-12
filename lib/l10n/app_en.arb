@@ -1132,6 +1132,27 @@
     "storyTextColorSubtitle": "Pick a quick text color or fine-tune it with live preview",
     "storyBackgroundPreviewLabel": "Background",
     "storyTextPreviewLabel": "Text",
-    "storyMediaRulesTitle": "Requirements"
+    "storyMediaRulesTitle": "Requirements",
+    "home_tab_chats": "Chats",
+    "home_tab_people": "People",
+    "home_tab_stories": "Stories",
+    "home_tab_groups": "Groups",
+    "home_tab_calls": "Calls",
+    "home_groups_subtitle": "Create and manage your groups",
+    "home_groups_new": "New",
+    "home_calls_subtitle": "Recent and missed calls",
+    "home_invalid_peer": "Invalid peer",
+    "home_default_chat_title": "Chat",
+
+    "groupDetailsTitle": "Group Details",
+    "groupImagePickFailed": "Failed to pick group image: {error}",
+    "groupCreateFailed": "Failed to create group: {error}",
+    "groupPhotoChange": "Change group photo",
+    "groupPhotoAdd": "Add group photo",
+    "groupNameLabel": "Group name",
+    "groupNameHint": "Enter group name",
+    "groupMembersCount": "Members ({count})",
+    "groupCreateButton": "Create Group"
+
 
 }

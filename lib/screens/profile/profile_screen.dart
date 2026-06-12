@@ -449,20 +449,24 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Future<void> _deleteUserData(FirebaseFirestore db, String uid) async {
-    await db.collection('users').doc(uid).delete();
+    debugPrint('[DeleteAccount] Start deleting Firestore data for uid=$uid');
 
     final chatsSnap = await db
         .collection('privateChats')
         .where('participants', arrayContains: uid)
         .get();
 
+    debugPrint('[DeleteAccount] privateChats found=${chatsSnap.docs.length}');
+
     for (final chatDoc in chatsSnap.docs) {
       final messagesRef = chatDoc.reference.collection('messages');
 
       const batchSize = 50;
       while (true) {
-        final msgSnap =
-        await messagesRef.where('senderId', isEqualTo: uid).limit(batchSize).get();
+        final msgSnap = await messagesRef
+            .where('senderId', isEqualTo: uid)
+            .limit(batchSize)
+            .get();
 
         if (msgSnap.docs.isEmpty) break;
 
@@ -475,8 +479,13 @@ class _ProfileScreenState extends State<ProfileScreen>
 
       await chatDoc.reference.update({
         'participants': FieldValue.arrayRemove([uid]),
+        'updatedAt': FieldValue.serverTimestamp(),
       });
     }
+
+    await db.collection('users').doc(uid).delete();
+
+    debugPrint('[DeleteAccount] Firestore user data deleted for uid=$uid');
   }
 
   void _openAvatarFullScreen(ImageProvider provider, String heroTag) {

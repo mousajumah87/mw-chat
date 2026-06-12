@@ -1132,6 +1132,30 @@
     "storyTextColorSubtitle": "اختر لون النص من الألوان السريعة أو عدله بدقة مع معاينة مباشرة",
     "storyBackgroundPreviewLabel": "الخلفية",
     "storyTextPreviewLabel": "النص",
-    "storyMediaRulesTitle": "المتطلبات"
+    "storyMediaRulesTitle": "المتطلبات",
+
+    "home_tab_chats": "الدردشات",
+    "home_tab_people": "الأشخاص",
+    "home_tab_stories": "القصص",
+    "home_tab_groups": "المجموعات",
+    "home_tab_calls": "المكالمات",
+
+    "home_groups_subtitle": "أنشئ وادِر مجموعاتك",
+    "home_groups_new": "جديد",
+
+    "home_calls_subtitle": "المكالمات الأخيرة والفائتة",
+
+    "home_invalid_peer": "مستخدم غير صالح",
+    "home_default_chat_title": "دردشة",
+    "groupDetailsTitle": "تفاصيل المجموعة",
+    "groupImagePickFailed": "فشل في اختيار صورة المجموعة: {error}",
+    "groupCreateFailed": "فشل في إنشاء المجموعة: {error}",
+    "groupPhotoChange": "تغيير صورة المجموعة",
+    "groupPhotoAdd": "إضافة صورة للمجموعة",
+    "groupNameLabel": "اسم المجموعة",
+    "groupNameHint": "أدخل اسم المجموعة",
+    "groupMembersCount": "الأعضاء ({count})",
+    "groupCreateButton": "إنشاء المجموعة"
+
 
 }

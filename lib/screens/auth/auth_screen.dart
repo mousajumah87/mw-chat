@@ -1695,31 +1695,33 @@ class _AuthScreenState extends State<AuthScreen> with WidgetsBindingObserver {
         await user.sendEmailVerification();
       } catch (_) {}
 
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).set(
-        {
-          'email': user.email ?? '',
-          'phoneNumber': user.phoneNumber ?? '',
-          'firstName': _regFirstName,
-          'lastName': _regLastName,
-          'profileUrl': '',
-          'avatarType': 'bear',
-          'isOnline': false,
+      final userPayload = {
+        'email': (user.email ?? '').trim().toLowerCase(),
+        'phoneNumber': user.phoneNumber ?? '',
+        'firstName': _regFirstName.trim(),
+        'lastName': _regLastName.trim(),
+        'profileUrl': '',
+        'avatarType': 'bear',
+        'isOnline': false,
+        'isActive': false,
+        'emailVerified': user.emailVerified,
+        'emailVerifiedAt': null,
+        'emailVerifySkippedAt': null,
+        'lastSeen': FieldValue.serverTimestamp(),
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+        'blockedUserIds': <String>[],
+        'hasAcceptedTerms': true,
+        'termsAcceptedAt': FieldValue.serverTimestamp(),
+      };
 
-          // ✅ IMPORTANT: explicit field like old
-          'isActive': false,
+      debugPrint('🔥 creating user doc uid=${user.uid}');
+      debugPrint('🔥 userPayload keys=${userPayload.keys.toList()}');
 
-          'emailVerified': user.emailVerified,
-          'emailVerifiedAt': null,
-          'emailVerifySkippedAt': null,
-          'lastSeen': FieldValue.serverTimestamp(),
-          'createdAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
-          'blockedUserIds': <String>[],
-          'hasAcceptedTerms': true,
-          'termsAcceptedAt': FieldValue.serverTimestamp(),
-        },
-        SetOptions(merge: true),
-      );
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .set(userPayload, SetOptions(merge: true));
 
       await _ensureUserDocAfterAuth(user, fallbackError: l10n.authError);
       await _warmUserDocFromServer(user.uid);

@@ -1368,7 +1368,10 @@ class _CreateStoryScreenState extends State<CreateStoryScreen> {
   }
 
   Widget _buildTextField(BuildContext context) {
+    final theme = Theme.of(context);
+    final media = MediaQuery.of(context);
     final maxChars = _isTextStory ? _maxTextStoryChars : _maxCaptionChars;
+    final keyboardInset = media.viewInsets.bottom;
 
     return TextField(
       controller: _textController,
@@ -1379,7 +1382,15 @@ class _CreateStoryScreenState extends State<CreateStoryScreen> {
       textAlign: _isTextStory ? _selectedTextAlign : TextAlign.start,
       textInputAction:
       _isTextStory ? TextInputAction.newline : TextInputAction.done,
-      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+      textCapitalization: TextCapitalization.sentences,
+      keyboardAppearance: Brightness.dark,
+      scrollPadding: EdgeInsets.fromLTRB(
+        20,
+        24,
+        20,
+        keyboardInset + 140,
+      ),
+      style: theme.textTheme.bodyLarge?.copyWith(
         color: Colors.white,
         height: 1.42,
       ),
@@ -1388,7 +1399,8 @@ class _CreateStoryScreenState extends State<CreateStoryScreen> {
         label: _isTextStory ? l10n.storyTextLabel : l10n.storyCaptionLabel,
         hint: _isTextStory ? l10n.storyTextHint : l10n.storyCaptionHint,
       ).copyWith(
-        counterStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
+        alignLabelWithHint: true,
+        counterStyle: theme.textTheme.bodySmall?.copyWith(
           color: Colors.white54,
         ),
       ),
@@ -1396,6 +1408,9 @@ class _CreateStoryScreenState extends State<CreateStoryScreen> {
   }
 
   Widget _buildLinkField(BuildContext context) {
+    final theme = Theme.of(context);
+    final keyboardInset = MediaQuery.of(context).viewInsets.bottom;
+
     return TextField(
       controller: _linkController,
       enabled: !_submitting,
@@ -1403,7 +1418,14 @@ class _CreateStoryScreenState extends State<CreateStoryScreen> {
       textInputAction: TextInputAction.done,
       autocorrect: false,
       enableSuggestions: false,
-      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+      keyboardAppearance: Brightness.dark,
+      scrollPadding: EdgeInsets.fromLTRB(
+        20,
+        24,
+        20,
+        keyboardInset + 120,
+      ),
+      style: theme.textTheme.bodyMedium?.copyWith(
         color: Colors.white,
         height: 1.35,
       ),
@@ -2628,9 +2650,8 @@ class _CreateStoryScreenState extends State<CreateStoryScreen> {
   @override
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
-    final width = media.size.width;
-    final bottomInset = media.viewInsets.bottom;
-    final topInset = media.padding.top + kToolbarHeight + 12;
+    final size = media.size;
+    final width = size.width;
     final theme = Theme.of(context);
 
     final showSidePreview = _showDesktopSidePreview(width);
@@ -2732,124 +2753,177 @@ class _CreateStoryScreenState extends State<CreateStoryScreen> {
         )
             : null,
       ),
-      body: MwBackground(
-        reduceEffects: true,
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: IgnorePointer(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.black.withValues(alpha: 0.54),
-                        Colors.black.withValues(alpha: 0.32),
-                        Colors.black.withValues(alpha: 0.74),
-                      ],
-                      stops: const [0.0, 0.34, 1.0],
+      body: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => FocusScope.of(context).unfocus(),
+        child: MwBackground(
+          reduceEffects: true,
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.black.withValues(alpha: 0.54),
+                          Colors.black.withValues(alpha: 0.32),
+                          Colors.black.withValues(alpha: 0.74),
+                        ],
+                        stops: const [0.0, 0.34, 1.0],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-            Positioned.fill(
-              child: IgnorePointer(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: RadialGradient(
-                      center: Alignment.center,
-                      radius: 0.95,
-                      colors: [
-                        Colors.transparent,
-                        Colors.black.withValues(alpha: 0.34),
-                        Colors.black.withValues(alpha: 0.58),
-                      ],
-                      stops: const [0.0, 0.68, 1.0],
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: RadialGradient(
+                        center: Alignment.center,
+                        radius: 0.95,
+                        colors: [
+                          Colors.transparent,
+                          Colors.black.withValues(alpha: 0.34),
+                          Colors.black.withValues(alpha: 0.58),
+                        ],
+                        stops: const [0.0, 0.68, 1.0],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-            SafeArea(
-              top: false,
-              child: AbsorbPointer(
-                absorbing: _submitting,
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    return Center(
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxWidth: maxWidth,
-                          minHeight: constraints.maxHeight,
-                        ),
-                        child: AnimatedPadding(
-                          duration: const Duration(milliseconds: 180),
-                          curve: Curves.easeOut,
-                          padding: EdgeInsets.fromLTRB(
-                            horizontalPadding,
-                            kToolbarHeight + MediaQuery.of(context).padding.top + 12,
-                            horizontalPadding,
-                            24 + bottomInset,
-                          ),
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(showSidePreview ? 34 : 28),
-                              color: Colors.black.withValues(alpha: showSidePreview ? 0.28 : 0.18),
-                              border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.05),
-                              ),
+              SafeArea(
+                top: false,
+                bottom: false,
+                child: AbsorbPointer(
+                  absorbing: _submitting,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final media = MediaQuery.of(context);
+                      final keyboardInset = media.viewInsets.bottom;
+                      final safeBottom = media.padding.bottom;
+                      final topSpacing =
+                          kToolbarHeight + media.padding.top + 12;
+
+                      return AnimatedPadding(
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeOutCubic,
+                        padding: EdgeInsets.only(bottom: keyboardInset),
+                        child: Align(
+                          alignment: Alignment.topCenter,
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth: maxWidth,
+                              minHeight: 0,
                             ),
                             child: Padding(
-                              padding: EdgeInsets.all(showSidePreview ? 14 : 0),
-                              child: showSidePreview
-                                  ? Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(
-                                    flex: 12,
-                                    child: SingleChildScrollView(
-                                      physics: const BouncingScrollPhysics(),
-                                      keyboardDismissBehavior:
-                                      ScrollViewKeyboardDismissBehavior.onDrag,
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                                        children: formColumn,
+                              padding: EdgeInsets.fromLTRB(
+                                horizontalPadding,
+                                topSpacing,
+                                horizontalPadding,
+                                keyboardInset > 0 ? 12 : (safeBottom + 12),
+                              ),
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  borderRadius:
+                                  BorderRadius.circular(showSidePreview ? 34 : 28),
+                                  color: Colors.black.withValues(
+                                    alpha: showSidePreview ? 0.28 : 0.18,
+                                  ),
+                                  border: Border.all(
+                                    color: Colors.white.withValues(alpha: 0.05),
+                                  ),
+                                ),
+                                child: Padding(
+                                  padding: EdgeInsets.all(showSidePreview ? 14 : 0),
+                                  child: showSidePreview
+                                      ? Row(
+                                    crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                    children: [
+                                      Expanded(
+                                        flex: 12,
+                                        child: SingleChildScrollView(
+                                          physics:
+                                          const BouncingScrollPhysics(
+                                            parent:
+                                            AlwaysScrollableScrollPhysics(),
+                                          ),
+                                          keyboardDismissBehavior:
+                                          ScrollViewKeyboardDismissBehavior
+                                              .onDrag,
+                                          padding: EdgeInsets.only(
+                                            bottom: keyboardInset > 0
+                                                ? 24
+                                                : (safeBottom + 12),
+                                          ),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                            CrossAxisAlignment.stretch,
+                                            children: formColumn,
+                                          ),
+                                        ),
                                       ),
+                                      const SizedBox(width: 20),
+                                      Expanded(
+                                        flex: 8,
+                                        child: SingleChildScrollView(
+                                          physics:
+                                          const BouncingScrollPhysics(
+                                            parent:
+                                            AlwaysScrollableScrollPhysics(),
+                                          ),
+                                          keyboardDismissBehavior:
+                                          ScrollViewKeyboardDismissBehavior
+                                              .onDrag,
+                                          padding: EdgeInsets.only(
+                                            bottom: safeBottom + 12,
+                                          ),
+                                          child: _buildDesktopPreviewColumn(
+                                            theme,
+                                            width,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  )
+                                      : ListView(
+                                    physics:
+                                    const BouncingScrollPhysics(
+                                      parent:
+                                      AlwaysScrollableScrollPhysics(),
                                     ),
-                                  ),
-                                  const SizedBox(width: 20),
-                                  Expanded(
-                                    flex: 8,
-                                    child: SingleChildScrollView(
-                                      physics: const BouncingScrollPhysics(),
-                                      keyboardDismissBehavior:
-                                      ScrollViewKeyboardDismissBehavior.onDrag,
-                                      child: _buildDesktopPreviewColumn(theme, width),
+                                    keyboardDismissBehavior:
+                                    ScrollViewKeyboardDismissBehavior
+                                        .onDrag,
+                                    padding: EdgeInsets.fromLTRB(
+                                      0,
+                                      0,
+                                      0,
+                                      keyboardInset > 0
+                                          ? 28
+                                          : (safeBottom + 16),
                                     ),
+                                    children: [
+                                      ...formColumn,
+                                    ],
                                   ),
-                                ],
-                              )
-                                  : ListView(
-                                physics: const BouncingScrollPhysics(),
-                                keyboardDismissBehavior:
-                                ScrollViewKeyboardDismissBehavior.onDrag,
-                                children: [
-                                  ...formColumn,
-                                  SizedBox(height: bottomInset > 0 ? 12 : 0),
-                                ],
+                                ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

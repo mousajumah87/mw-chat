@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -58,6 +59,11 @@ class _StoryViewerScreenState extends State<StoryViewerScreen>
   static const Duration _textDuration = Duration(seconds: 6);
   static const Duration _videoFallbackDuration = Duration(seconds: 8);
 
+  void _dismissKeyboard() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+  }
+
   AppLocalizations get l10n => AppLocalizations.of(context)!;
 
   bool get _canUseState => mounted && !_isDisposed;
@@ -70,6 +76,105 @@ class _StoryViewerScreenState extends State<StoryViewerScreen>
       Color.lerp(kSurfaceAltColor, Colors.black, 0.10)!.withValues(alpha: alpha);
 
   Color get _mwBorder => Colors.white.withValues(alpha: 0.08);
+
+  double _storyMediaInset(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final shortest = size.shortestSide;
+    final height = size.height;
+
+    if (height < 700 || shortest < 360) return 6;
+    if (height < 820 || shortest < 390) return 8;
+    return 10;
+  }
+
+  double _storyMediaRadius(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final shortest = size.shortestSide;
+    final height = size.height;
+
+    if (height < 700 || shortest < 360) return 18;
+    if (height < 820 || shortest < 390) return 22;
+    return 26;
+  }
+
+  double _storyMediaHorizontalPadding(BuildContext context) {
+    final width = MediaQuery.of(context).size.width;
+
+    if (width >= 1400) return 28;
+    if (width >= 1000) return 22;
+    if (width >= 700) return 16;
+    return 10;
+  }
+
+  Size _storyMediaMaxSize(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final isLandscape = size.width > size.height;
+
+    final double maxWidth = isLandscape
+        ? math.min(size.width * 0.76, 980)
+        : math.min(size.width - (_storyMediaHorizontalPadding(context) * 2), 560);
+
+    final double maxHeight = isLandscape
+        ? math.min(size.height * 0.74, 720)
+        : math.min(size.height * 0.70, 780);
+
+    return Size(maxWidth, maxHeight);
+  }
+
+  Widget _buildMediaStage({
+    required Widget child,
+    EdgeInsetsGeometry? margin,
+  }) {
+    final radius = _storyMediaRadius(context);
+    final maxSize = _storyMediaMaxSize(context);
+
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      color: Colors.black,
+      child: Center(
+        child: Padding(
+          padding: margin ??
+              EdgeInsets.symmetric(
+                horizontal: _storyMediaHorizontalPadding(context),
+                vertical: 8,
+              ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: maxSize.width,
+              maxHeight: maxSize.height,
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(radius),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.black,
+                  borderRadius: BorderRadius.circular(radius),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.05),
+                    width: 1,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.20),
+                      blurRadius: 18,
+                      offset: const Offset(0, 8),
+                    ),
+                    BoxShadow(
+                      color: kGoldDeep.withValues(alpha: 0.025),
+                      blurRadius: 14,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: child,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   BoxDecoration _mwPanelDecoration({
     double radius = 24,
@@ -138,7 +243,11 @@ class _StoryViewerScreenState extends State<StoryViewerScreen>
     );
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_canUseState || _stories.isEmpty) return;
+      if (!_canUseState) return;
+
+      _dismissKeyboard();
+
+      if (_stories.isEmpty) return;
       unawaited(_prepareCurrentStory());
       unawaited(_markCurrentSeen());
       unawaited(_primeViewerMetaForCurrentStory());
@@ -671,6 +780,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen>
   Future<void> _deleteCurrentStory() async {
     if (_deleting || !_isMine || !_hasStories) return;
 
+    _dismissKeyboard();
     _pauseStory();
 
     final messenger = ScaffoldMessenger.of(context);
@@ -767,6 +877,8 @@ class _StoryViewerScreenState extends State<StoryViewerScreen>
 
   Future<void> _showViewersSheet() async {
     if (!_isMine || !_hasStories) return;
+
+    _dismissKeyboard();
 
     final story = _currentStory;
     final viewerIds = story.viewerIds
@@ -2210,31 +2322,40 @@ class _StoryViewerScreenState extends State<StoryViewerScreen>
     return Stack(
       fit: StackFit.expand,
       children: [
-        Container(color: Colors.black),
-        Image.network(
-          url,
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) {
-            return const Center(
-              child: Icon(
-                Icons.broken_image_outlined,
-                color: Colors.white,
-                size: 56,
+        _buildMediaStage(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Image.network(
+                url,
+                fit: BoxFit.contain,
+                alignment: Alignment.center,
+                errorBuilder: (context, error, stackTrace) {
+                  return const Center(
+                    child: Icon(
+                      Icons.broken_image_outlined,
+                      color: Colors.white,
+                      size: 56,
+                    ),
+                  );
+                },
+                loadingBuilder: (context, child, progress) {
+                  if (progress == null) return child;
+                  return const Center(
+                    child: CircularProgressIndicator(color: kPrimaryGold),
+                  );
+                },
               ),
-            );
-          },
-          loadingBuilder: (context, child, progress) {
-            if (progress == null) return child;
-            return const Center(
-              child: CircularProgressIndicator(color: kPrimaryGold),
-            );
-          },
-        ),
-        Positioned.fill(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: _mwScreenOverlay,
-            ),
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: _mwScreenOverlay,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
         _buildBottomCaption(story),
@@ -2246,74 +2367,77 @@ class _StoryViewerScreenState extends State<StoryViewerScreen>
     final controller = _videoController;
 
     if (controller == null || !controller.value.isInitialized) {
-      return Container(
-        width: double.infinity,
-        height: double.infinity,
-        color: Colors.black,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            const Center(
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          _buildMediaStage(
+            child: const Center(
               child: CircularProgressIndicator(color: kPrimaryGold),
             ),
-            _buildBottomCaption(story),
-          ],
-        ),
+          ),
+          _buildBottomCaption(story),
+        ],
       );
     }
 
-    final size = controller.value.size;
-    final safeWidth = size.width <= 0 ? 1.0 : size.width;
-    final safeHeight = size.height <= 0 ? 1.0 : size.height;
+    final videoSize = controller.value.size;
+    final safeWidth = videoSize.width <= 0 ? 1.0 : videoSize.width;
+    final safeHeight = videoSize.height <= 0 ? 1.0 : videoSize.height;
 
-    return Container(
-      width: double.infinity,
-      height: double.infinity,
-      color: Colors.black,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          FittedBox(
-            fit: BoxFit.cover,
-            child: SizedBox(
-              width: safeWidth,
-              height: safeHeight,
-              child: VideoPlayer(controller),
-            ),
-          ),
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: _mwScreenOverlay,
-              ),
-            ),
-          ),
-          if (!_videoReady)
-            const Center(
-              child: CircularProgressIndicator(color: kPrimaryGold),
-            ),
-          if (_holding)
-            Center(
-              child: Container(
-                width: 70,
-                height: 70,
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.54),
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.14),
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        _buildMediaStage(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Center(
+                child: FittedBox(
+                  fit: BoxFit.contain,
+                  child: SizedBox(
+                    width: safeWidth,
+                    height: safeHeight,
+                    child: VideoPlayer(controller),
                   ),
                 ),
-                child: const Icon(
-                  Icons.pause_rounded,
-                  color: Colors.white,
-                  size: 32,
+              ),
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: _mwScreenOverlay,
+                    ),
+                  ),
                 ),
               ),
-            ),
-          _buildBottomCaption(story),
-        ],
-      ),
+              if (!_videoReady)
+                const Center(
+                  child: CircularProgressIndicator(color: kPrimaryGold),
+                ),
+              if (_holding)
+                Center(
+                  child: Container(
+                    width: 70,
+                    height: 70,
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.54),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.14),
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.pause_rounded,
+                      color: Colors.white,
+                      size: 32,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        _buildBottomCaption(story),
+      ],
     );
   }
 
@@ -2332,7 +2456,13 @@ class _StoryViewerScreenState extends State<StoryViewerScreen>
   Widget _buildTapZones() {
     return Positioned.fill(
       child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: _dismissKeyboard,
+        onHorizontalDragStart: (_) => _dismissKeyboard(),
+        onVerticalDragStart: (_) => _dismissKeyboard(),
         onHorizontalDragEnd: (details) {
+          _dismissKeyboard();
+
           final velocity = details.primaryVelocity ?? 0;
 
           if (velocity < -200) {
@@ -2343,10 +2473,14 @@ class _StoryViewerScreenState extends State<StoryViewerScreen>
             unawaited(_goPrevious());
           }
         },
-        behavior: HitTestBehavior.translucent,
-        onLongPressStart: (_) => _pauseStory(),
+        onLongPressStart: (_) {
+          _dismissKeyboard();
+          _pauseStory();
+        },
         onLongPressEnd: (_) => _resumeStory(),
         onVerticalDragEnd: (details) {
+          _dismissKeyboard();
+
           final velocity = details.primaryVelocity ?? 0;
           if (velocity > 260) {
             unawaited(_closeViewer());
@@ -2368,6 +2502,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen>
                       child: GestureDetector(
                         behavior: HitTestBehavior.opaque,
                         onTap: () {
+                          _dismissKeyboard();
                           HapticFeedback.lightImpact();
                           unawaited(_goPrevious());
                         },
@@ -2375,7 +2510,9 @@ class _StoryViewerScreenState extends State<StoryViewerScreen>
                       ),
                     ),
                     Expanded(
-                      child: IgnorePointer(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onTap: _dismissKeyboard,
                         child: const SizedBox.expand(),
                       ),
                     ),
@@ -2383,6 +2520,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen>
                       child: GestureDetector(
                         behavior: HitTestBehavior.opaque,
                         onTap: () {
+                          _dismissKeyboard();
                           HapticFeedback.lightImpact();
                           unawaited(_goNext());
                         },
@@ -2404,6 +2542,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen>
     if (_stories.isEmpty) {
       return const Scaffold(
         backgroundColor: kBgColor,
+        resizeToAvoidBottomInset: false,
         body: Center(
           child: CircularProgressIndicator(color: kPrimaryGold),
         ),
@@ -2412,31 +2551,36 @@ class _StoryViewerScreenState extends State<StoryViewerScreen>
 
     return Scaffold(
       backgroundColor: kBgColor,
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 260),
-            switchInCurve: Curves.easeOutCubic,
-            switchOutCurve: Curves.easeInCubic,
-            transitionBuilder: (child, animation) {
-              return ScaleTransition(
-                scale: Tween<double>(begin: 0.985, end: 1.0).animate(animation),
-                child: FadeTransition(
-                  opacity: animation,
-                  child: child,
-                ),
-              );
-            },
-            child: KeyedSubtree(
-              key: ValueKey(_currentStory.id),
-              child: _buildStoryBody(),
+      resizeToAvoidBottomInset: false,
+      body: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: _dismissKeyboard,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 260),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (child, animation) {
+                return ScaleTransition(
+                  scale: Tween<double>(begin: 0.985, end: 1.0).animate(animation),
+                  child: FadeTransition(
+                    opacity: animation,
+                    child: child,
+                  ),
+                );
+              },
+              child: KeyedSubtree(
+                key: ValueKey(_currentStory.id),
+                child: _buildStoryBody(),
+              ),
             ),
-          ),
-          _buildTapZones(),
-          _buildHeader(),
-          _buildOwnerSwipeUpHint(),
-        ],
+            _buildTapZones(),
+            _buildHeader(),
+            _buildOwnerSwipeUpHint(),
+          ],
+        ),
       ),
     );
   }

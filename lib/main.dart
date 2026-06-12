@@ -696,14 +696,19 @@ Future<void> _storeTokenForUserIfChanged({
   if (_lastStoredUid == uid && _lastStoredFcmToken == token) return;
 
   try {
-    await FirebaseFirestore.instance.collection('users').doc(uid).set(
-      {
-        'fcmToken': token,
-        'fcmUpdatedAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
+    final ref = FirebaseFirestore.instance.collection('users').doc(uid);
+
+    final snap = await ref.get();
+    if (!snap.exists) {
+      debugPrint('⏳ Skip FCM token store: user profile doc does not exist yet. uid=$uid');
+      return;
+    }
+
+    await ref.update({
+      'fcmToken': token,
+      'fcmUpdatedAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
 
     _lastStoredUid = uid;
     _lastStoredFcmToken = token;
@@ -1982,7 +1987,9 @@ class _AuthGateState extends State<AuthGate> {
                 final fsActive = (data['isActive'] == true);
 
                 final hasPhoneAuth = (user.phoneNumber ?? '').trim().isNotEmpty;
-                final effectiveActive = fsActive || hasPhoneAuth;
+                final hasVerifiedEmail = user.emailVerified == true;
+
+                final effectiveActive = fsActive || hasPhoneAuth || hasVerifiedEmail;
 
                 if (effectiveActive) {
                   final needsNames = _needsNamesFromFirestore(data);

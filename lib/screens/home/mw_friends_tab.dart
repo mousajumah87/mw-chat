@@ -1095,128 +1095,140 @@ class _MwFriendsTabState extends State<MwFriendsTab>
 
     final showUid = kDebugMode;
     final titleText = (l10n.deletedAccount ?? l10n.unknownUser);
-    final subtitleText = (l10n.accountUnavailableSubtitle ?? 'This account is no longer available.');
+    final subtitleText =
+    (l10n.accountUnavailableSubtitle ?? 'This account is no longer available.');
 
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-      color: Colors.white.withOpacity(0.08),
-      elevation: 1,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: Colors.white24),
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withOpacity(0.10)),
       ),
-      child: ListTile(
-        leading: MwAvatar(
-          radius: 26,
-          avatarType: 'bear',
-          profileUrl: null,
-          hideRealAvatar: true,
-          showRing: true,
-          ringColor: kGoldDeep.withOpacity(0.70),
-          ringWidth: 2.0,
-          isOnline: false,
-          showOnlineDot: false,
-          showOnlineGlow: false,
-          hasStory: false,
-          showStoryGlow: false,
-          backgroundColor: kSurfaceAltColor.withOpacity(0.85),
-        ),
-        title: Text(
-          titleText,
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
+      child: Row(
+        children: [
+          MwAvatar(
+            radius: 26,
+            avatarType: 'bear',
+            profileUrl: null,
+            hideRealAvatar: true,
+            showRing: true,
+            ringColor: kGoldDeep.withOpacity(0.70),
+            ringWidth: 2.0,
+            isOnline: false,
+            showOnlineDot: false,
+            showOnlineGlow: false,
+            hasStory: false,
+            showStoryGlow: false,
+            backgroundColor: kSurfaceAltColor.withOpacity(0.85),
           ),
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: Text(
-          showUid ? uid : subtitleText,
-          style: const TextStyle(color: Colors.white70, fontSize: 12),
-          overflow: TextOverflow.ellipsis,
-          maxLines: 2,
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (isRequested)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.white10,
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: Colors.white24),
-                ),
-                child: Text(
-                  l10n.friendRequestedChip,
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  titleText,
                   style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 11,
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 14.5,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  showUid ? uid : subtitleText,
+                  style: const TextStyle(
+                    color: Colors.white60,
+                    fontSize: 12,
                     fontWeight: FontWeight.w500,
                   ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 2,
                 ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          if (isRequested)
+            _buildTinyPill(l10n.friendRequestedChip)
+          else if (canRemove)
+            IconButton(
+              tooltip: (l10n.remove ?? l10n.friendDeclineTooltip),
+              icon: const Icon(
+                Icons.delete_outline_rounded,
+                color: Colors.redAccent,
               ),
-            if (canRemove) ...[
-              const SizedBox(width: 6),
-              IconButton(
-                tooltip: (l10n.remove ?? l10n.friendDeclineTooltip),
-                icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
-                onPressed: () => _declineFriend(uid),
-              ),
-            ],
-            if (!canRemove) const Icon(Icons.help_outline_rounded, color: Colors.white38),
-          ],
-        ),
+              onPressed: () => _declineFriend(uid),
+            )
+          else
+            const Icon(Icons.help_outline_rounded, color: Colors.white38),
+        ],
       ),
     );
   }
 
   Widget _buildLoadingUserTile(BuildContext context, String uid) {
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-      color: Colors.white.withOpacity(0.06),
-      elevation: 1,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: Colors.white24),
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.045),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withOpacity(0.08)),
       ),
-      child: ListTile(
-        leading: MwAvatar(
-          radius: 26,
-          avatarType: 'bear',
-          profileUrl: null,
-          hideRealAvatar: true,
-          showRing: true,
-          ringColor: Colors.white24,
-          ringWidth: 2.0,
-          isOnline: false,
-          showOnlineDot: false,
-          showOnlineGlow: false,
-          backgroundColor: kSurfaceAltColor.withOpacity(0.85),
-        ),
-        title: Container(
-          height: 12,
-          width: 140,
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.10),
-            borderRadius: BorderRadius.circular(999),
+      child: Row(
+        children: [
+          MwAvatar(
+            radius: 26,
+            avatarType: 'bear',
+            profileUrl: null,
+            hideRealAvatar: true,
+            showRing: true,
+            ringColor: Colors.white24,
+            ringWidth: 2,
+            isOnline: false,
+            showOnlineDot: false,
+            showOnlineGlow: false,
+            backgroundColor: kSurfaceAltColor.withOpacity(0.85),
           ),
-        ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: Container(
-            height: 10,
-            width: 200,
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(999),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  height: 12,
+                  width: 140,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.10),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  height: 10,
+                  width: 180,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.07),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+              ],
             ),
           ),
-        ),
-        trailing: const SizedBox(
-          width: 18,
-          height: 18,
-          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white24),
-        ),
+          const SizedBox(width: 10),
+          const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Colors.white24,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1393,19 +1405,18 @@ class _MwFriendsTabState extends State<MwFriendsTab>
 
     _resettingRooms.add(roomId);
 
+    final nextCache = {
+      ..._unreadCache,
+      roomId: 0,
+    };
+
     if (mounted) {
-      setState(() {
-        _unreadCache = {
-          ..._unreadCache,
-          roomId: 0,
-        };
-      });
+      setState(() => _unreadCache = nextCache);
     }
 
     try {
-      final totalUnread = _unreadCache.values.fold<int>(0, (sum, v) => sum + v);
+      final totalUnread = nextCache.values.fold<int>(0, (sum, v) => sum + v);
       await NotificationBadgeService.instance.setBadgeCount(totalUnread);
-
       if (totalUnread <= 0) {
         await FirebaseFunctions.instance
             .httpsCallable('resetMyUnreadBadgeCount')
@@ -1449,6 +1460,108 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     return ChatFriendshipService.isFriends(status) ||
         ChatFriendshipService.isIncoming(status) ||
         ChatFriendshipService.isRequested(status);
+  }
+
+  Color _tileBg({
+    required bool hasUnread,
+    required bool isBlockedRelationship,
+    required bool isActive,
+  }) {
+    if (!isActive) return Colors.white.withOpacity(0.035);
+    if (isBlockedRelationship) return Colors.white.withOpacity(0.045);
+    if (hasUnread) return kPrimaryGold.withOpacity(0.10);
+    return Colors.white.withOpacity(0.055);
+  }
+
+  Color _tileBorder({
+    required bool hasUnread,
+    required bool isBlockedRelationship,
+  }) {
+    if (isBlockedRelationship) return Colors.white.withOpacity(0.10);
+    if (hasUnread) return kPrimaryGold.withOpacity(0.28);
+    return Colors.white.withOpacity(0.10);
+  }
+
+  Widget _buildUnreadBadge(int unreadCount) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 22),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+      decoration: BoxDecoration(
+        color: kPrimaryGold,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        unreadCount > 99 ? '99+' : '$unreadCount',
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          color: Colors.black,
+          fontSize: 11,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSoftActionChip({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback? onTap,
+  }) {
+    return Material(
+      color: color.withOpacity(0.12),
+      borderRadius: BorderRadius.circular(999),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: color),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTinyPill(String text, {Color? color}) {
+    final effective = color ?? Colors.white70;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: effective.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: effective.withOpacity(0.16)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: effective,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRowChevron({required bool enabled}) {
+    return Icon(
+      Icons.chevron_right_rounded,
+      color: enabled ? Colors.white38 : Colors.white24,
+      size: 22,
+    );
   }
 
   Widget _buildUserTile(
@@ -1510,8 +1623,9 @@ class _MwFriendsTabState extends State<MwFriendsTab>
         ChatFriendshipService.isRequested(friendStatus) ||
         ChatFriendshipService.isIncoming(friendStatus);
 
-    final bool canOpenChat =
-        isActive && !isBlockedRelationship && (hasRelationship || profileVisibility == _privacyEveryone);
+    final bool canOpenChat = isActive &&
+        !isBlockedRelationship &&
+        (hasRelationship || profileVisibility == _privacyEveryone);
 
     final bool isOnlineForDisplay =
     (_isFriendsOnly && _friendOnlineDisplayCache.containsKey(userId))
@@ -1533,7 +1647,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     final subtitleColor = !isActive
         ? Colors.grey
         : (blockedMe || blockedByMe)
-        ? Colors.redAccent.withOpacity(0.85)
+        ? Colors.redAccent.withOpacity(0.90)
         : (isOnlineForDisplay ? Colors.greenAccent : Colors.white70);
 
     final roomId = buildRoomId(_currentUid, userId);
@@ -1566,25 +1680,23 @@ class _MwFriendsTabState extends State<MwFriendsTab>
       }
     }
 
-    Widget buildTrailing() {
+    Widget trailingWidget() {
       if (blockedByMe) {
-        return TextButton.icon(
-          onPressed: () => _unblockUser(userId),
-          icon: const Icon(Icons.lock_open_rounded, color: Colors.greenAccent),
-          label: Text(
-            l10n.unblockUserTitle ?? 'Unblock',
-            style: const TextStyle(color: Colors.greenAccent),
-          ),
+        return _buildSoftActionChip(
+          icon: Icons.lock_open_rounded,
+          label: l10n.unblockUserConfirm ?? 'Unblock',
+          color: Colors.greenAccent,
+          onTap: () => _unblockUser(userId),
         );
       }
 
       if (blockedMe) {
-        return const Icon(Icons.block, color: Colors.redAccent);
+        return const Icon(Icons.block_rounded, color: Colors.redAccent, size: 20);
       }
 
       if (ChatFriendshipService.isIncoming(friendStatus)) {
         if (hideIncomingActions) {
-          return const Icon(Icons.chevron_right, color: Colors.white38);
+          return _buildRowChevron(enabled: true);
         }
 
         return Row(
@@ -1592,12 +1704,18 @@ class _MwFriendsTabState extends State<MwFriendsTab>
           children: [
             IconButton(
               tooltip: l10n.friendAcceptTooltip,
-              icon: Icon(Icons.check_circle, color: kPrimaryGold.withOpacity(0.95)),
+              icon: Icon(
+                Icons.check_circle_rounded,
+                color: kPrimaryGold.withOpacity(0.98),
+              ),
               onPressed: isActive ? () => _acceptFriend(userId) : null,
             ),
             IconButton(
               tooltip: l10n.friendDeclineTooltip,
-              icon: const Icon(Icons.cancel, color: Colors.redAccent),
+              icon: const Icon(
+                Icons.cancel_rounded,
+                color: Colors.redAccent,
+              ),
               onPressed: isActive ? () => _declineFriend(userId) : null,
             ),
           ],
@@ -1605,57 +1723,38 @@ class _MwFriendsTabState extends State<MwFriendsTab>
       }
 
       if (ChatFriendshipService.isRequested(friendStatus)) {
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
-            color: Colors.white10,
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: Colors.white24),
-          ),
-          child: Text(
-            l10n.friendRequestedChip,
-            style: const TextStyle(
-              color: Colors.white70,
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        );
+        return _buildTinyPill(l10n.friendRequestedChip);
       }
 
       if (friendStatus == null) {
         if (canSendRequest) {
-          return IconButton(
-            tooltip: l10n.addFriendTooltip,
-            icon: Icon(
-              Icons.person_add_alt_1,
-              color: isActive ? Colors.white70 : Colors.white24,
+          return InkWell(
+            onTap: isActive ? () => _sendFriendRequest(userId) : null,
+            borderRadius: BorderRadius.circular(999),
+            child: Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.07),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white.withOpacity(0.10)),
+              ),
+              child: Icon(
+                Icons.person_add_alt_1_rounded,
+                color: isActive ? Colors.white70 : Colors.white24,
+                size: 18,
+              ),
             ),
-            onPressed: isActive ? () => _sendFriendRequest(userId) : null,
           );
         }
-        return const Icon(Icons.lock_outline, color: Colors.white38);
+        return const Icon(Icons.lock_outline_rounded, color: Colors.white38, size: 18);
       }
 
       if (hasUnread) {
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
-            color: Colors.redAccent,
-            borderRadius: BorderRadius.circular(999),
-          ),
-          child: Text(
-            unreadCount > 99 ? '99+' : '$unreadCount',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        );
+        return _buildUnreadBadge(unreadCount);
       }
 
-      return const Icon(Icons.chevron_right, color: Colors.white38);
+      return _buildRowChevron(enabled: canOpenChat);
     }
 
     final trailingKey = ValueKey<String>(
@@ -1669,64 +1768,105 @@ class _MwFriendsTabState extends State<MwFriendsTab>
 
     return AnimatedOpacity(
       duration: _tileAnim,
-      opacity: isActive ? (isBlockedRelationship ? 0.75 : 1.0) : 0.5,
+      opacity: isActive ? (isBlockedRelationship ? 0.78 : 1.0) : 0.52,
       child: AbsorbPointer(
         absorbing: isBusy,
-        child: Card(
-          margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-          color: Colors.white.withOpacity(0.08),
-          elevation: hasUnread ? 5 : 1,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: BorderSide(
-              color: hasUnread ? Colors.white.withOpacity(0.40) : Colors.white24,
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: _tileBg(
+              hasUnread: hasUnread,
+              isBlockedRelationship: isBlockedRelationship,
+              isActive: isActive,
             ),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: _tileBorder(
+                hasUnread: hasUnread,
+                isBlockedRelationship: isBlockedRelationship,
+              ),
+            ),
+            boxShadow: hasUnread
+                ? [
+              BoxShadow(
+                color: kPrimaryGold.withOpacity(0.08),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
+              ),
+            ]
+                : null,
           ),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(16),
-            onTap: canOpenChat ? openChat : null,
-            child: ListTile(
-              enabled: canOpenChat,
-              leading: _buildAvatar(
-                userId: userId,
-                profileUrl: profileUrl,
-                avatarType: avatarType,
-                isOnline: isOnlineForDisplay,
-                hideRealAvatar: false,
-              ),
-              title: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      displayName,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      overflow: TextOverflow.ellipsis,
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(18),
+              onTap: canOpenChat ? openChat : null,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                child: Row(
+                  children: [
+                    _buildAvatar(
+                      userId: userId,
+                      profileUrl: profileUrl,
+                      avatarType: avatarType,
+                      isOnline: isOnlineForDisplay,
+                      hideRealAvatar: false,
                     ),
-                  ),
-                  if (!canViewProfile && !ChatFriendshipService.isFriends(friendStatus))
-                    const Padding(
-                      padding: EdgeInsetsDirectional.only(start: 8),
-                      child: Icon(
-                        Icons.visibility_off,
-                        size: 16,
-                        color: Colors.white38,
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  displayName,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 14.5,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              if (!canViewProfile &&
+                                  !ChatFriendshipService.isFriends(friendStatus))
+                                const Padding(
+                                  padding: EdgeInsetsDirectional.only(start: 8),
+                                  child: Icon(
+                                    Icons.visibility_off_rounded,
+                                    size: 15,
+                                    color: Colors.white38,
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            subtitleText,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: subtitleColor,
+                              fontSize: 12.2,
+                              fontWeight: hasUnread ? FontWeight.w700 : FontWeight.w500,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                ],
-              ),
-              subtitle: Text(
-                subtitleText,
-                style: TextStyle(color: subtitleColor, fontSize: 12),
-              ),
-              trailing: AnimatedSwitcher(
-                duration: _trailingAnim,
-                transitionBuilder: (child, anim) => ScaleTransition(scale: anim, child: child),
-                child: KeyedSubtree(
-                  key: trailingKey,
-                  child: buildTrailing(),
+                    const SizedBox(width: 10),
+                    AnimatedSwitcher(
+                      duration: _trailingAnim,
+                      transitionBuilder: (child, anim) =>
+                          ScaleTransition(scale: anim, child: child),
+                      child: KeyedSubtree(
+                        key: trailingKey,
+                        child: trailingWidget(),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -1751,72 +1891,23 @@ class _MwFriendsTabState extends State<MwFriendsTab>
 
   Widget _sectionHeader(String title, int count) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 16, 14, 6),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.06),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: Colors.white24),
-            ),
-            child: Row(
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                  ),
-                ),
-                if (count > 0) ...[
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.white12,
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      '$count',
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _subSectionHeader(String title, int count) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 10, 14, 2),
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 6),
       child: Row(
         children: [
           Text(
             title,
-            style: TextStyle(
-              color: Colors.white.withOpacity(0.82),
+            style: const TextStyle(
+              color: Colors.white,
               fontWeight: FontWeight.w800,
-              fontSize: 12.5,
-              letterSpacing: 0.2,
+              fontSize: 15,
             ),
           ),
           if (count > 0) ...[
             const SizedBox(width: 8),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.10),
+                color: Colors.white.withOpacity(0.08),
                 borderRadius: BorderRadius.circular(999),
                 border: Border.all(color: Colors.white24),
               ),
@@ -1825,8 +1916,49 @@ class _MwFriendsTabState extends State<MwFriendsTab>
                 style: const TextStyle(
                   color: Colors.white70,
                   fontSize: 11,
-                  fontWeight: FontWeight.w700,
+                  fontWeight: FontWeight.w800,
                 ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _subSectionHeader(String title, int count) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
+      child: Row(
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: title.toLowerCase() == 'online'
+                  ? Colors.greenAccent
+                  : Colors.white38,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            title,
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.82),
+              fontWeight: FontWeight.w700,
+              fontSize: 12.5,
+              letterSpacing: 0.2,
+            ),
+          ),
+          if (count > 0) ...[
+            const SizedBox(width: 8),
+            Text(
+              '$count',
+              style: const TextStyle(
+                color: Colors.white54,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ],
@@ -1894,6 +2026,9 @@ class _MwFriendsTabState extends State<MwFriendsTab>
     final offlineFriendIds = <String>[];
 
     for (final id in friendIds) {
+      final data = _friendUserDataCache[id];
+      if (data != null && !_matchesSearch(data, id)) continue;
+
       final bool stableOnline = _stableOnlineBucket[id] ?? false;
       if (stableOnline) {
         onlineFriendIds.add(id);
@@ -2175,9 +2310,7 @@ class _MwFriendsTabState extends State<MwFriendsTab>
                       ],
                     )
                         : Text(
-                      _mwUsersHasMore
-                          ? l10n.loadMore
-                          : (l10n.noSearchResults ?? 'No more users'),
+                        _mwUsersHasMore ? l10n.loadMore : 'No more users'
                     ),
                   ),
                 ),

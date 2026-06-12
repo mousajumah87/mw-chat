@@ -2368,4 +2368,67 @@ class AppLocalizationsAr extends AppLocalizations {
     );
     return '$_temp0';
   }
+
+  @override
+  String get home_tab_chats => 'الدردشات';
+
+  @override
+  String get home_tab_people => 'الأشخاص';
+
+  @override
+  String get home_tab_stories => 'القصص';
+
+  @override
+  String get home_tab_groups => 'المجموعات';
+
+  @override
+  String get home_tab_calls => 'المكالمات';
+
+  @override
+  String get home_groups_subtitle => 'أنشئ وادِر مجموعاتك';
+
+  @override
+  String get home_groups_new => 'جديد';
+
+  @override
+  String get home_calls_subtitle => 'المكالمات الأخيرة والفائتة';
+
+  @override
+  String get home_invalid_peer => 'مستخدم غير صالح';
+
+  @override
+  String get home_default_chat_title => 'دردشة';
+
+  @override
+  String get groupDetailsTitle => 'تفاصيل المجموعة';
+
+  @override
+  String groupImagePickFailed(Object error) {
+    return 'فشل في اختيار صورة المجموعة: $error';
+  }
+
+  @override
+  String groupCreateFailed(Object error) {
+    return 'فشل في إنشاء المجموعة: $error';
+  }
+
+  @override
+  String get groupPhotoChange => 'تغيير صورة المجموعة';
+
+  @override
+  String get groupPhotoAdd => 'إضافة صورة للمجموعة';
+
+  @override
+  String get groupNameLabel => 'اسم المجموعة';
+
+  @override
+  String get groupNameHint => 'أدخل اسم المجموعة';
+
+  @override
+  String groupMembersCount(Object count) {
+    return 'الأعضاء ($count)';
+  }
+
+  @override
+  String get groupCreateButton => 'إنشاء المجموعة';
 }

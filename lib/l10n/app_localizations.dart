@@ -4273,6 +4273,120 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{count, plural, =0 {No viewers} =1 {1 viewer} other {{count} viewers}}'**
   String storySelectedViewersCount(int count);
+
+  /// No description provided for @home_tab_chats.
+  ///
+  /// In en, this message translates to:
+  /// **'Chats'**
+  String get home_tab_chats;
+
+  /// No description provided for @home_tab_people.
+  ///
+  /// In en, this message translates to:
+  /// **'People'**
+  String get home_tab_people;
+
+  /// No description provided for @home_tab_stories.
+  ///
+  /// In en, this message translates to:
+  /// **'Stories'**
+  String get home_tab_stories;
+
+  /// No description provided for @home_tab_groups.
+  ///
+  /// In en, this message translates to:
+  /// **'Groups'**
+  String get home_tab_groups;
+
+  /// No description provided for @home_tab_calls.
+  ///
+  /// In en, this message translates to:
+  /// **'Calls'**
+  String get home_tab_calls;
+
+  /// No description provided for @home_groups_subtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Create and manage your groups'**
+  String get home_groups_subtitle;
+
+  /// No description provided for @home_groups_new.
+  ///
+  /// In en, this message translates to:
+  /// **'New'**
+  String get home_groups_new;
+
+  /// No description provided for @home_calls_subtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Recent and missed calls'**
+  String get home_calls_subtitle;
+
+  /// No description provided for @home_invalid_peer.
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid peer'**
+  String get home_invalid_peer;
+
+  /// No description provided for @home_default_chat_title.
+  ///
+  /// In en, this message translates to:
+  /// **'Chat'**
+  String get home_default_chat_title;
+
+  /// No description provided for @groupDetailsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Group Details'**
+  String get groupDetailsTitle;
+
+  /// No description provided for @groupImagePickFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to pick group image: {error}'**
+  String groupImagePickFailed(Object error);
+
+  /// No description provided for @groupCreateFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to create group: {error}'**
+  String groupCreateFailed(Object error);
+
+  /// No description provided for @groupPhotoChange.
+  ///
+  /// In en, this message translates to:
+  /// **'Change group photo'**
+  String get groupPhotoChange;
+
+  /// No description provided for @groupPhotoAdd.
+  ///
+  /// In en, this message translates to:
+  /// **'Add group photo'**
+  String get groupPhotoAdd;
+
+  /// No description provided for @groupNameLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Group name'**
+  String get groupNameLabel;
+
+  /// No description provided for @groupNameHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter group name'**
+  String get groupNameHint;
+
+  /// No description provided for @groupMembersCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Members ({count})'**
+  String groupMembersCount(Object count);
+
+  /// No description provided for @groupCreateButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Create Group'**
+  String get groupCreateButton;
 }
 
 class _AppLocalizationsDelegate
